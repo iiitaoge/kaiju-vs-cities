@@ -35,12 +35,12 @@ local MoneyService = require(script.Parent.MoneyService)
 local RegionEconomyConfigs = require(script.Parent.RegionEconomyConfigs)
 local RegionStateService = require(script.Parent.RegionStateService)
 local RegionUpgradeConfigs = require(script.Parent.RegionUpgradeConfigs)
-local Regions = require(ReplicatedStorage.Shared.Building.Regions)
+local IncomeZoneConfigs = require(ReplicatedStorage.Shared.Building.IncomeZoneConfigs)
 
 local RegionUpgradeService = {}
 
 local function buildRegionHouses(player: Player, regionId: string, now: number)
-	for _, houses in pairs(Regions[regionId].Groups) do
+	for _, houses in pairs(IncomeZoneConfigs[regionId].Groups) do
 		for _, house in ipairs(houses) do
 			HouseStateService.Build(player, house.HouseId, now)
 		end

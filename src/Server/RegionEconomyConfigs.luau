@@ -18,7 +18,6 @@
 	- 无。运行时模块不得修改本配置。
 
 	字段：
-	- InitialUnlocked：新玩家是否默认拥有区域建设资格。
 	- UnlockCost：Locked -> Unlocked 的现金成本。
 	- PurchaseCost：已解锁区域从 Level 0 -> Level 1 的现金成本。
 	- BaseIncome：Level 1 时，区域全部已建造房屋在一个收入周期内的总收入。
@@ -33,7 +32,6 @@
 ]]
 
 export type RegionEconomyConfig = {
-	InitialUnlocked: boolean,
 	UnlockCost: number,
 	PurchaseCost: number,
 	BaseIncome: number,
@@ -45,7 +43,6 @@ export type RegionEconomyConfig = {
 
 local configs: { [string]: RegionEconomyConfig } = {
 	R1 = {
-		InitialUnlocked = true,
 		UnlockCost = 0,
 		PurchaseCost = 0,
 		BaseIncome = 2,
@@ -56,7 +53,6 @@ local configs: { [string]: RegionEconomyConfig } = {
 	},
 
 	R2 = {
-		InitialUnlocked = false,
 		UnlockCost = 3500,
 		PurchaseCost = 7000,
 		BaseIncome = 200,

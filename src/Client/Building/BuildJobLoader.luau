@@ -1,12 +1,15 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local InstancePath = require(ReplicatedStorage.Shared.InstancePath)
-local Regions = require(ReplicatedStorage.Shared.Building.Regions)
+local IncomeZoneConfigs = require(ReplicatedStorage.Shared.Building.IncomeZoneConfigs)
 
 local BuildJobLoader = {}
 
 function BuildJobLoader.Load(job)
-	local region = assert(Regions[job.RegionId], string.format("地区配置不存在：%s", job.RegionId))
+	local region = assert(
+		IncomeZoneConfigs[job.RegionId],
+		string.format("产钱 Zone 配置不存在：%s", job.RegionId)
+	)
 	local items = {}
 
 	for groupName, entries in pairs(region.Groups) do

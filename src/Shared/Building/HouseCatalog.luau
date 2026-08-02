@@ -1,4 +1,4 @@
-local Regions = require(script.Parent.Regions)
+local IncomeZoneConfigs = require(script.Parent.IncomeZoneConfigs)
 
 local HouseCatalog = {}
 
@@ -15,7 +15,7 @@ export type HouseDefinition = {
 local definitionsByHouseId: { [string]: HouseDefinition } = {}
 local sortedDefinitions: { HouseDefinition } = {}
 
-for regionId, region in pairs(Regions) do
+for regionId, region in pairs(IncomeZoneConfigs) do
 	for groupName, houses in pairs(region.Groups) do
 		for _, house in ipairs(houses) do
 			assert(
