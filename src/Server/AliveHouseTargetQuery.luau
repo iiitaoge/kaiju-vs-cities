@@ -6,6 +6,7 @@ export type HouseCandidate = {
 	HouseId: string,
 	CFrame: CFrame,
 	Size: Vector3,
+	HealthGeneration: number,
 }
 
 -- 输入：

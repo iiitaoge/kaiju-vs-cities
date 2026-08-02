@@ -433,13 +433,10 @@ function MultiplayerAttackAcceptanceSpec.Run(players: { Player })
 		end, REQUEST_TIMEOUT, "离服后 Plot Runtime 清理")
 		waitMonsterIdle(attackerB)
 
-		local probe = Instance.new("Model")
-		probe.Name = "CodexReservationProbe"
-		probe.Parent = workspace
-		local reservation = HouseTargetReservationService.TryAcquire(defender, HOUSE_ID, probe)
-		expect(reservation ~= nil, "玩家离开后房屋预约仍被占用")
-		expect(HouseTargetReservationService.Release(reservation), "无法释放验收探针预约")
-		probe:Destroy()
+		expect(
+			HouseTargetReservationService.GetActiveCount(defender, HOUSE_ID) == 0,
+			"玩家离开后仍残留房屋攻击凭证"
+		)
 
 		local riseDuration = BuildingPresentationConfigs[
 			HouseLifecycleConfigs.Default.PresentationId

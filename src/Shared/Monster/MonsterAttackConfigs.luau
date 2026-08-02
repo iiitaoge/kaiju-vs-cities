@@ -1,5 +1,6 @@
 return {
 	P1 = {
+		StructureDamage = 35,
 		-- NearbyHouseTargetSelector 的输入参数；Radius 是双方水平包围盒的最大检测间距。
 		Detection = {
 			Radius = 30,
@@ -18,6 +19,7 @@ return {
 	},
 
 	P4 = {
+		StructureDamage = 60,
 		-- NearbyHouseTargetSelector 的输入参数；Radius 是双方水平包围盒的最大检测间距。
 		Detection = {
 			Radius = 30,

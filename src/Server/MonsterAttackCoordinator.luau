@@ -18,6 +18,7 @@ export type ModelAnimationConfig = {
 }
 
 export type MonsterAttackConfig = {
+	StructureDamage: number,
 	Detection: {
 		Radius: number,
 	},
@@ -131,6 +132,11 @@ function MonsterAttackCoordinator.Execute(
 	assert(type(options.HouseAccess) == "table", "HouseAccess 必须是 table")
 	assert(type(options.ModelAnimationConfig) == "table", "ModelAnimationConfig 必须是 table")
 	assert(type(options.MonsterAttackConfig) == "table", "MonsterAttackConfig 必须是 table")
+	assert(
+		type(options.MonsterAttackConfig.StructureDamage) == "number"
+			and options.MonsterAttackConfig.StructureDamage > 0,
+		"StructureDamage 必须大于 0"
+	)
 	assert(type(options.MoveSpeed) == "number" and options.MoveSpeed > 0, "MoveSpeed 必须大于 0")
 	assert(
 		type(options.TurnDuration) == "number" and options.TurnDuration > 0,
@@ -378,18 +384,6 @@ function MonsterAttackCoordinator.Execute(
 			)
 		end
 
-		local reservation = HouseTargetReservationService.TryAcquire(
-			defender,
-			candidate.HouseId,
-			monster
-		)
-		if not reservation then
-			ignoredHouseIds[candidate.HouseId] = true
-			continue
-		end
-		ownedReservation = reservation
-		activeReservations[monster] = reservation
-
 		local latestTarget = options.HouseAccess.ResolveAliveTarget(
 			defender,
 			candidate.HouseId
@@ -399,6 +393,19 @@ function MonsterAttackCoordinator.Execute(
 			ignoredHouseIds[candidate.HouseId] = true
 			continue
 		end
+
+		local reservation = HouseTargetReservationService.TryAcquire(
+			defender,
+			candidate.HouseId,
+			monster,
+			latestTarget.HealthGeneration
+		)
+		if not reservation then
+			ignoredHouseIds[candidate.HouseId] = true
+			continue
+		end
+		ownedReservation = reservation
+		activeReservations[monster] = reservation
 
 		local pose = HouseAttackGeometry.ResolvePose(
 			monster,
@@ -481,6 +488,7 @@ function MonsterAttackCoordinator.Execute(
 					options.HouseAccess,
 					{
 						MaxGap = options.MonsterAttackConfig.Geometry.MaxGap,
+						Damage = options.MonsterAttackConfig.StructureDamage,
 						RewardAmount = options.RewardAmount,
 						RewardPlayer = options.RewardPlayer,
 					}
@@ -492,7 +500,9 @@ function MonsterAttackCoordinator.Execute(
 					ownedReservation = nil
 				end
 
-				if commitResult.Succeeded and options.OnHouseDestroyed then
+				if commitResult.Succeeded
+					and commitResult.Destroyed
+					and options.OnHouseDestroyed then
 					local callbackSucceeded, callbackError = pcall(
 						options.OnHouseDestroyed,
 						commitResult.HouseId,
@@ -519,7 +529,7 @@ function MonsterAttackCoordinator.Execute(
 		local playback = playbackOrError
 
 		-- 命中后即使马上被新命令取消，已经发生的状态和奖励也必须出现在旧命令输出中。
-		if commitResult and commitResult.Succeeded then
+		if commitResult and commitResult.Succeeded and commitResult.Destroyed then
 			table.insert(destroyedHouseIds, commitResult.HouseId)
 			rewardGranted += commitResult.RewardGranted
 		end

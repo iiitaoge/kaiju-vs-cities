@@ -21,6 +21,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local HouseAttackTargetAccess = require(script.Parent.HouseAttackTargetAccess)
+local HouseHealthStateService = require(script.Parent.HouseHealthStateService)
 local HouseIncomeService = require(script.Parent.HouseIncomeService)
 local HouseLifecycleCoordinator = require(script.Parent.HouseLifecycleCoordinator)
 local HouseStateService = require(script.Parent.HouseStateService)
@@ -28,6 +29,9 @@ local PlayerCityRuntimeCoordinator = require(script.Parent.PlayerCityRuntimeCoor
 local HouseCatalog = require(ReplicatedStorage.Shared.Building.HouseCatalog)
 local RuntimeBuildingBounds = require(ReplicatedStorage.Shared.Building.RuntimeBuildingBounds)
 local RuntimeBuildingIdentity = require(ReplicatedStorage.Shared.Building.RuntimeBuildingIdentity)
+local StructureDurabilityConfigs = require(
+	ReplicatedStorage.Shared.Building.StructureDurabilityConfigs
+)
 
 local PlayerRuntimeHouseAttackAccess = {}
 
@@ -62,6 +66,45 @@ local function resolveRuntimeModel(
 	return model, nil
 end
 
+local function writeHealthAttributes(
+	model: Model,
+	health: HouseHealthStateService.Snapshot
+)
+	model:SetAttribute("BuildingCurrentHealth", health.CurrentHealth)
+	model:SetAttribute("BuildingMaxHealth", health.MaxHealth)
+	model:SetAttribute("BuildingHealthGeneration", health.Generation)
+end
+
+local function ensureHealth(
+	player: Player,
+	houseId: string,
+	model: Model
+): (HouseHealthStateService.Snapshot?, string?)
+	local definition = HouseCatalog.Get(houseId)
+	if not definition then
+		return nil, "UnknownHouse"
+	end
+	local identity, identityReason = RuntimeBuildingIdentity.Read(model)
+	if not identity then
+		return nil, identityReason or "InvalidRuntimeBuildingIdentity"
+	end
+	local maxHealth = StructureDurabilityConfigs.GetMaxHealth(
+		definition.RegionId,
+		identity.Level
+	)
+	if not maxHealth then
+		return nil, "DurabilityConfigUnavailable"
+	end
+	local health = HouseHealthStateService.Ensure(
+		player,
+		houseId,
+		identity.Level,
+		maxHealth
+	)
+	writeHealthAttributes(model, health)
+	return health, nil
+end
+
 function PlayerRuntimeHouseAttackAccess.ResolveAliveTarget(
 	player: Player,
 	houseId: string
@@ -88,10 +131,15 @@ function PlayerRuntimeHouseAttackAccess.ResolveAliveTarget(
 	if not bounds then
 		return nil, boundsReason or "RuntimeBuildingBoundsUnavailable"
 	end
+	local health, healthReason = ensureHealth(player, houseId, model)
+	if not health then
+		return nil, healthReason or "HealthStateUnavailable"
+	end
 	return {
 		HouseId = houseId,
 		CFrame = bounds.CFrame,
 		Size = bounds.Size,
+		HealthGeneration = health.Generation,
 	}, nil
 end
 
@@ -114,6 +162,66 @@ function PlayerRuntimeHouseAttackAccess.ListAliveTargets(
 		end
 	end
 	return targets
+end
+
+function PlayerRuntimeHouseAttackAccess.ApplyDamage(
+	player: Player,
+	houseId: string,
+	expectedGeneration: number,
+	damage: number
+): HouseAttackTargetAccess.DamageResult
+	assertPlayer(player)
+	local target, targetReason = PlayerRuntimeHouseAttackAccess.ResolveAliveTarget(player, houseId)
+	if not target then
+		return {
+			Accepted = false,
+			Reason = targetReason or "HouseUnavailable",
+			HouseId = houseId,
+			Level = nil,
+			Generation = nil,
+			PreviousHealth = nil,
+			CurrentHealth = nil,
+			MaxHealth = nil,
+			DamageApplied = 0,
+			Depleted = false,
+		}
+	end
+
+	local result = HouseHealthStateService.ApplyDamage(
+		player,
+		houseId,
+		expectedGeneration,
+		damage
+	)
+	local model = PlayerCityRuntimeCoordinator.ResolveBuilding(player, houseId)
+	local current = HouseHealthStateService.Get(player, houseId)
+	if model and current then
+		writeHealthAttributes(model, current)
+	end
+	return result
+end
+
+function PlayerRuntimeHouseAttackAccess.RollbackDamage(
+	player: Player,
+	houseId: string,
+	expectedGeneration: number,
+	previousHealth: number
+): boolean
+	assertPlayer(player)
+	local rolledBack = HouseHealthStateService.RollbackDamage(
+		player,
+		houseId,
+		expectedGeneration,
+		previousHealth
+	)
+	if rolledBack then
+		local model = PlayerCityRuntimeCoordinator.ResolveBuilding(player, houseId)
+		local current = HouseHealthStateService.Get(player, houseId)
+		if model and current then
+			writeHealthAttributes(model, current)
+		end
+	end
+	return rolledBack
 end
 
 function PlayerRuntimeHouseAttackAccess.PrepareDestroy(

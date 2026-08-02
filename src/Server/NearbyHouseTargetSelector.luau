@@ -8,6 +8,7 @@ export type HouseCandidate = {
 	HouseId: string,
 	CFrame: CFrame,
 	Size: Vector3,
+	HealthGeneration: number,
 }
 
 export type SelectOptions = {
