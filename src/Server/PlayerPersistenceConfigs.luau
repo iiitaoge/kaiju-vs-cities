@@ -1,4 +1,4 @@
--- Studio 默认关闭真实 DataStore，避免本地测试误写线上数据；需要联调存档时只开启此开关。
+-- Studio 只连接独立开发 Store；正式服务器始终使用 ProductionStoreName。
 return table.freeze({
 	ProductionStoreName = "PlayerSave",
 	StudioStoreName = "PlayerSave_Development",
