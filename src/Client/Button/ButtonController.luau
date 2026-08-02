@@ -47,6 +47,25 @@ function ButtonController.Start(runAction)
 		local button = getButton(buttonName, config)
 		local isBusy = false
 		local handle
+		local refreshGeneration = 0
+
+		local function refreshWhenDataReady()
+			refreshGeneration += 1
+			local generation = refreshGeneration
+			isBusy = true
+			handle:SetState("Processing")
+			task.spawn(function()
+				while generation == refreshGeneration and Players.LocalPlayer.Parent do
+					task.wait(0.25)
+					local _, state = request(buttonName, "GetState")
+					if state ~= "PlayerDataNotReady" then
+						handle:SetState(state or config.InitialState)
+						isBusy = false
+						return
+					end
+				end
+			end)
+		end
 
 		handle = LocalButtonController.Bind(button, function()
 			if isBusy then
@@ -61,12 +80,20 @@ function ButtonController.Start(runAction)
 				runAction(action)
 			end
 
-			handle:SetState(nextState)
-			isBusy = false
+			if nextState == "PlayerDataNotReady" then
+				refreshWhenDataReady()
+			else
+				handle:SetState(nextState)
+				isBusy = false
+			end
 		end)
 
 		local _, initialState = request(buttonName, "GetState")
-		handle:SetState(initialState or config.InitialState)
+		if initialState == "PlayerDataNotReady" then
+			refreshWhenDataReady()
+		else
+			handle:SetState(initialState or config.InitialState)
+		end
 	end
 end
 
