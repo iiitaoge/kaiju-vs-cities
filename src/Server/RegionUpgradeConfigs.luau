@@ -18,8 +18,9 @@
 	- HouseAction：
 	  当前只支持 "Build"，表示这一级把该区域仍为 Unbuilt 的房屋建造成 Alive。
 	  没有该字段时，升级只改变区域等级。
-	- ClientAction：
-	  服务端升级成功后返回客户端的表现动作；由 LocalActionController 执行。
+	- PresentationId：
+	  升级提交并刷新服务器建筑后，选择 Shared.Building.BuildingPresentationConfigs
+	  中的一套纯表现参数。
 
 	说明：
 	- 本配置描述 UpgradeRegion 自己的效果。
@@ -31,15 +32,15 @@ return {
 		Levels = {
 			[1] = {
 				HouseAction = "Build",
-				ClientAction = { Kind = "Build", JobName = "Job1" },
+				PresentationId = "Standard",
 			},
 
 			[2] = {
-				ClientAction = { Kind = "Upgrade", JobName = "Job2" },
+				PresentationId = "Standard",
 			},
 
 			[3] = {
-				ClientAction = { Kind = "Upgrade", JobName = "Job3" },
+				PresentationId = "Standard",
 			},
 		},
 	},
@@ -48,15 +49,15 @@ return {
 		Levels = {
 			[1] = {
 				HouseAction = "Build",
-				ClientAction = { Kind = "Build", JobName = "Job4" },
+				PresentationId = "Standard",
 			},
 
 			[2] = {
-				ClientAction = { Kind = "Upgrade", JobName = "Job5" },
+				PresentationId = "Standard",
 			},
 
 			[3] = {
-				ClientAction = { Kind = "Upgrade", JobName = "Job6" },
+				PresentationId = "Standard",
 			},
 		},
 	},

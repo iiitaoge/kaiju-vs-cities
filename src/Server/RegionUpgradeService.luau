@@ -9,8 +9,7 @@
 
 	输出：
 	- Unlock：clientAction、按钮下一状态。
-	- Upgrade：当前等级 ClientAction、按钮下一状态。
-	- 失败时 clientAction 为 nil，第二返回值为 "Locked" 或 "Insufficient"。
+	- Upgrade：结构化 UpgradeResult，明确成功状态、旧/新等级、表现配置和按钮状态。
 
 	读取：
 	- RegionEconomyConfigs、RegionUpgradeConfigs、Regions。
@@ -38,6 +37,33 @@ local RegionUpgradeConfigs = require(script.Parent.RegionUpgradeConfigs)
 local IncomeZoneConfigs = require(ReplicatedStorage.Shared.Building.IncomeZoneConfigs)
 
 local RegionUpgradeService = {}
+
+export type UpgradeResult = {
+	Succeeded: boolean,
+	Reason: string?,
+	PreviousLevel: number,
+	NewLevel: number?,
+	PresentationId: string?,
+	NextButtonState: string,
+}
+
+local function upgradeResult(
+	succeeded: boolean,
+	reason: string?,
+	previousLevel: number,
+	newLevel: number?,
+	presentationId: string?,
+	nextButtonState: string
+): UpgradeResult
+	return {
+		Succeeded = succeeded,
+		Reason = reason,
+		PreviousLevel = previousLevel,
+		NewLevel = newLevel,
+		PresentationId = presentationId,
+		NextButtonState = nextButtonState,
+	}
+end
 
 local function buildRegionHouses(player: Player, regionId: string, now: number)
 	for _, houses in pairs(IncomeZoneConfigs[regionId].Groups) do
@@ -69,10 +95,10 @@ function RegionUpgradeService.Upgrade(player: Player, regionId: string)
 	local upgradeConfig = RegionUpgradeConfigs[regionId]
 	local economyConfig = RegionEconomyConfigs[regionId]
 	if not upgradeConfig or not economyConfig then
-		return nil, "Locked"
+		return upgradeResult(false, "UnknownRegion", 0, nil, nil, "Locked")
 	end
 	if not RegionStateService.GetUnlocked(player, regionId) then
-		return nil, "Locked"
+		return upgradeResult(false, "RegionLocked", 0, nil, nil, "Locked")
 	end
 
 	local currentLevel = RegionStateService.GetLevel(player, regionId)
@@ -80,19 +106,19 @@ function RegionUpgradeService.Upgrade(player: Player, regionId: string)
 	local levels = upgradeConfig.Levels
 	local levelConfig = levels[nextLevel]
 	if not levelConfig then
-		return nil, "Locked"
+		return upgradeResult(false, "MaxLevel", currentLevel, nil, nil, "Locked")
 	end
 
 	local now = os.time()
 	local settlement = HouseIncomeService.SettleRegionHouses(player, regionId, now)
 	if not settlement.Accepted then
-		return nil, "Locked"
+		return upgradeResult(false, "SettlementRejected", currentLevel, nil, nil, "Locked")
 	end
 
 	local cost = EconomyMath.GetUpgradeCost(economyConfig, currentLevel)
 	local spendResult = MoneyService.TrySpend(player, cost)
 	if not spendResult.Succeeded then
-		return nil, "Insufficient"
+		return upgradeResult(false, "InsufficientMoney", currentLevel, nil, nil, "Insufficient")
 	end
 
 	RegionStateService.SetLevel(player, regionId, nextLevel)
@@ -102,7 +128,14 @@ function RegionUpgradeService.Upgrade(player: Player, regionId: string)
 	end
 
 	local nextButtonState = if levels[nextLevel + 1] then "Ready" else "Locked"
-	return levelConfig.ClientAction, nextButtonState
+	return upgradeResult(
+		true,
+		nil,
+		currentLevel,
+		nextLevel,
+		levelConfig.PresentationId,
+		nextButtonState
+	)
 end
 
 return RegionUpgradeService
