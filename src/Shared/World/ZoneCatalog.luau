@@ -31,6 +31,22 @@ export type ZoneDefinition = {
 }
 
 local definitions: { [string]: ZoneDefinition } = {
+	D1 = {
+		ZoneId = "D1",
+		Kind = "Defense",
+		InitialUnlocked = false,
+		Slots = {
+			["D1-T1"] = { SlotId = "D1-T1", Kind = "DefenseTower" },
+		},
+	},
+	M1 = {
+		ZoneId = "M1",
+		Kind = "MonsterSpawn",
+		InitialUnlocked = true,
+		Slots = {
+			["M1-S1"] = { SlotId = "M1-S1", Kind = "MonsterSpawnPoint" },
+		},
+	},
 	R1 = {
 		ZoneId = "R1",
 		Kind = "Income",
