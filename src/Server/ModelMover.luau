@@ -138,4 +138,17 @@ function ModelMover.MoveTo(model: Model, targetCFrame: CFrame, speed: number): b
 	)
 end
 
+-- 输入：正在转向或移动的服务器模型。
+-- 输出：是否取消了一条活动 Tween。
+-- 副作用：停止当前权威移动；后续协调器可以安全切换到战斗或新命令。
+function ModelMover.Cancel(model: Model): boolean
+	local tween = activeTweens[model]
+	if not tween then
+		return false
+	end
+	activeTweens[model] = nil
+	tween:Cancel()
+	return true
+end
+
 return ModelMover

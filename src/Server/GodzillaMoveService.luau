@@ -126,4 +126,13 @@ function GodzillaMoveService.FaceTo(
 	return completed and latestRequestIds[model] == requestId
 end
 
+-- 输入：怪兽模型。
+-- 输出：是否取消了一条活动移动。
+-- 副作用：使当前 MoveTo / FaceTo 请求失效，并停止底层 Tween。
+function GodzillaMoveService.Cancel(model: Model): boolean
+	assert(model:IsA("Model"), "model 必须是 Model")
+	latestRequestIds[model] = (latestRequestIds[model] or 0) + 1
+	return ModelMover.Cancel(model)
+end
+
 return GodzillaMoveService
