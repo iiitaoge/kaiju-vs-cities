@@ -19,10 +19,16 @@
 	- UnlockRegion：需要 RegionId。
 	- UpgradeRegion：需要 RegionId。
 	- SetIncomeMultiplier：需要 RegionId、Value。
+	- MonsterSpawnPointPrimary：需要 SpawnPointId。
 ]]
 
 local HouseIncomeService = require(script.Parent.Parent.HouseIncomeService)
+local MonsterSpawnPointActionQuery = require(script.Parent.Parent.MonsterSpawnPointActionQuery)
+local MonsterSpawnPointPurchaseCoordinator = require(
+	script.Parent.Parent.MonsterSpawnPointPurchaseCoordinator
+)
 local RegionStateService = require(script.Parent.Parent.RegionStateService)
+local RegionUpgradeCityCoordinator = require(script.Parent.Parent.RegionUpgradeCityCoordinator)
 local RegionUpgradeService = require(script.Parent.Parent.RegionUpgradeService)
 
 local handlers = {
@@ -31,7 +37,7 @@ local handlers = {
 	end,
 
 	UpgradeRegion = function(player, action)
-		return RegionUpgradeService.Upgrade(player, action.RegionId)
+		return RegionUpgradeCityCoordinator.Upgrade(player, action.RegionId)
 	end,
 
 	SetIncomeMultiplier = function(player, action)
@@ -46,6 +52,20 @@ local handlers = {
 
 		RegionStateService.SetIncomeMultiplier(player, action.RegionId, action.Value)
 	end,
+
+	MonsterSpawnPointPrimary = function(player, action)
+		local outcome = MonsterSpawnPointPurchaseCoordinator.ExecutePrimary(
+			player,
+			action.SpawnPointId
+		)
+		return nil, outcome.NextButtonState
+	end,
+}
+
+local stateHandlers = {
+	MonsterSpawnPointPrimary = function(player, action)
+		return MonsterSpawnPointActionQuery.GetPrimaryButtonState(player, action.SpawnPointId)
+	end,
 }
 
 local ButtonActionExecutor = {}
@@ -56,6 +76,11 @@ function ButtonActionExecutor.Run(player, action)
 		string.format("未知的服务端按钮 Action Kind：%s", tostring(action.Kind))
 	)
 	return handler(player, action)
+end
+
+function ButtonActionExecutor.GetState(player, action): string?
+	local handler = stateHandlers[action.Kind]
+	return if handler then handler(player, action) else nil
 end
 
 return ButtonActionExecutor

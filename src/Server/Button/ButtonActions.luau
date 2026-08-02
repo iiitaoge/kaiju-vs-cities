@@ -22,6 +22,7 @@
 	动作字段：
 	- UnlockRegion / UpgradeRegion：RegionId。
 	- SetIncomeMultiplier：RegionId、Value。
+	- MonsterSpawnPointPrimary：SpawnPointId；未建造时建造，已建造时升级。
 ]]
 
 -- 配置键是 ButtonConfigs 中引用的 ActionId，与 Studio Model 名称无关。
@@ -32,5 +33,14 @@ return {
 
 	R1Bonus = {
 		{ RunOn = "Server", Kind = "SetIncomeMultiplier", RegionId = "R1", Value = 2 },
+	},
+
+	M1S1Primary = {
+		{
+			RunOn = "Server",
+			Kind = "MonsterSpawnPointPrimary",
+			SpawnPointId = "M1-S1",
+			Repeat = true,
+		},
 	},
 }
