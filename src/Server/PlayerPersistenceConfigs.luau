@@ -2,11 +2,13 @@
 return table.freeze({
 	ProductionStoreName = "PlayerSave",
 	StudioStoreName = "PlayerSave_Development",
-	StudioEnabled = false,
+	StudioEnabled = true,
 	KeyPrefix = "Player_",
 	AutosaveIntervalSeconds = 60,
+	SessionLeaseSeconds = 180,
 	ShutdownWaitSeconds = 25,
 	LoadAttempts = 3,
 	SaveAttempts = 3,
 	RetryDelaySeconds = 1,
+	FailedSaveRetryDelaySeconds = 10,
 })
