@@ -17,6 +17,9 @@ local HouseTargetReservationService = require(
 )
 local MoneyService = require(script.Parent.Parent.MoneyService)
 local MonsterRosterCoordinator = require(script.Parent.Parent.MonsterRosterCoordinator)
+local MonsterExpeditionReportService = require(
+	script.Parent.Parent.MonsterExpeditionReportService
+)
 local MonsterSpawnPointStateService = require(
 	script.Parent.Parent.MonsterSpawnPointStateService
 )
@@ -52,7 +55,8 @@ local MONSTER_ZONE_ID = "M1"
 local HOUSE_ID = "R1-H1"
 local HOUSE_ZONE_ID = "R1"
 local REQUEST_TIMEOUT = 15
-local MOVEMENT_TIMEOUT = 90
+-- Plot 最远相隔约 1200 studs；16 studs/s 的正式速度还要叠加转向和多次攻击动画。
+local MOVEMENT_TIMEOUT = 180
 local REBUILD_TIMEOUT = HouseLifecycleConfigs.Default.RebuildDelaySeconds + 15
 
 local function expect(condition: boolean, message: string)
@@ -255,6 +259,15 @@ function MultiplayerAttackAcceptanceSpec.Run(players: { Player })
 		end, MOVEMENT_TIMEOUT, player.Name .. " 怪兽回到 IdleAtSpawn")
 	end
 
+	local function waitReport(player: Player, commandId: number)
+		local report = nil
+		waitFor(function()
+			report = MonsterExpeditionReportService.Get(player, SPAWN_POINT_ID, commandId)
+			return report ~= nil
+		end, REQUEST_TIMEOUT, player.Name .. " 远征报告 " .. tostring(commandId))
+		return report
+	end
+
 	local function positionMonsterNearTarget(
 		player: Player,
 		entryPoint: Vector3,
@@ -334,6 +347,7 @@ function MultiplayerAttackAcceptanceSpec.Run(players: { Player })
 		local entryPoint = target.CFrame.Position
 
 		beginScenario("NormalFullFlow")
+		local normalBalance = MoneyService.Get(attackerA)
 		local normalRequest = sendAttack(attackerA, entryPoint)
 		local normalResponse = waitAttack(attackerA, normalRequest)
 		waitHouseState("Destroyed")
@@ -341,6 +355,11 @@ function MultiplayerAttackAcceptanceSpec.Run(players: { Player })
 		waitHouseState("Alive")
 		waitPresentation("HouseRebuilding", 1)
 		waitMonsterIdle(attackerA)
+		local normalReport = waitReport(attackerA, normalResponse.CommandId)
+		expect(normalReport.EndReason == "Completed", "正常远征报告结束原因错误")
+		expect(#normalReport.DestroyedHouseIds == 1, "正常远征报告缺少摧毁房屋")
+		expect(normalReport.RewardGranted == 10, "正常远征报告奖励错误")
+		expect(MoneyService.Get(attackerA) == normalBalance + 10, "正常摧毁奖励余额错误")
 		task.wait(0.2)
 		assertPresentation("HouseDestroyed", 1)
 		assertPresentation("HouseRebuilding", 1)
@@ -368,16 +387,27 @@ function MultiplayerAttackAcceptanceSpec.Run(players: { Player })
 		waitPresentation("HouseRebuilding", 1)
 		waitMonsterIdle(attackerA)
 		waitMonsterIdle(attackerB)
+		local concurrentReportA = waitReport(attackerA, concurrentResponseA.CommandId)
+		local concurrentReportB = waitReport(attackerB, concurrentResponseB.CommandId)
 		task.wait(0.2)
 		assertPresentation("HouseDestroyed", 1)
 		assertPresentation("HouseRebuilding", 1)
-		expect(MoneyService.Get(attackerA) == balanceA, "零奖励配置下攻击者 A 余额变化")
-		expect(MoneyService.Get(attackerB) == balanceB, "零奖励配置下攻击者 B 余额变化")
+		local rewardDeltaA = MoneyService.Get(attackerA) - balanceA
+		local rewardDeltaB = MoneyService.Get(attackerB) - balanceB
+		expect(rewardDeltaA + rewardDeltaB == 10, "并发最后一击奖励总额错误")
+		expect(
+			concurrentReportA.RewardGranted + concurrentReportB.RewardGranted == 10,
+			"并发远征报告奖励总额错误"
+		)
+		expect(
+			#concurrentReportA.DestroyedHouseIds + #concurrentReportB.DestroyedHouseIds == 1,
+			"并发远征报告只能记录一次摧毁"
+		)
 		table.insert(report.Scenarios, {
 			Name = "ConcurrentSameHouse",
 			CommandIds = { concurrentResponseA.CommandId, concurrentResponseB.CommandId },
 			SuccessfulDestroyCount = 1,
-			RewardDelta = 0,
+			RewardDelta = 10,
 			FinalMonsterStates = { "IdleAtSpawn", "IdleAtSpawn" },
 		})
 
