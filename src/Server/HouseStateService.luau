@@ -61,6 +61,33 @@ function HouseStateService.Get(player: Player, houseId: string)
 	return snapshot(getState(player, houseId))
 end
 
+-- 输入：持久化适配器已经验证过的建造事实、未领取金额和本次载入时间。
+-- 输出：安全会话状态；已建房屋一律 Alive，未建房屋一律 Unbuilt。
+-- 不恢复 Destroyed/Rebuilding、重建计时或临时生命值。
+function HouseStateService.RestoreDurable(
+	player: Player,
+	houseId: string,
+	built: boolean,
+	storedMoney: number,
+	now: number?
+)
+	assert(type(built) == "boolean", "built 必须是 boolean")
+	assert(
+		type(storedMoney) == "number"
+			and storedMoney == storedMoney
+			and storedMoney < math.huge
+			and storedMoney >= 0,
+		"storedMoney 必须是有限非负数"
+	)
+
+	local state = getState(player, houseId)
+	state:SetAttribute("LifeState", if built then "Alive" else "Unbuilt")
+	state:SetAttribute("StoredMoney", if built then storedMoney else 0)
+	state:SetAttribute("LastIncomeAt", if built then (now or os.time()) else nil)
+	state:SetAttribute("RespawnAt", nil)
+	return snapshot(state)
+end
+
 local function applyTransition(state: Folder, eventKind: string): boolean
 	local transition = HouseLifecycleRules.Apply(
 		state:GetAttribute("LifeState"),

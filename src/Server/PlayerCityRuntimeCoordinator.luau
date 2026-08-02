@@ -31,6 +31,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local HouseStateService = require(script.Parent.HouseStateService)
+local PlayerDataReadyService = require(script.Parent.PlayerDataReadyService)
 local PlayerBuildingRuntimeRegistry = require(script.Parent.PlayerBuildingRuntimeRegistry)
 local PlayerPlotAssignmentService = require(script.Parent.PlayerPlotAssignmentService)
 local ServerBuildingFactory = require(script.Parent.ServerBuildingFactory)
@@ -391,6 +392,10 @@ end
 
 function PlayerCityRuntimeCoordinator.Load(player: Player): LoadResult
 	assert(typeof(player) == "Instance" and player:IsA("Player"), "player 必须是 Player")
+	local ready, readyReason = PlayerDataReadyService.Wait(player)
+	if not ready then
+		return result(false, readyReason or "PlayerDataUnavailable", nil, 0)
+	end
 	if player.Parent ~= Players then
 		return result(false, "PlayerUnavailable", nil, 0)
 	end

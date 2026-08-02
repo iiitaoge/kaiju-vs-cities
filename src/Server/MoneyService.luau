@@ -5,6 +5,7 @@
 	输入：
 	- Start：无。
 	- Get：player。
+	- Set：player、有限非负 balance（仅供权威状态恢复）。
 	- Add：player、有限非负 amount。
 	- TrySpend：player、有限非负 amount。
 
@@ -63,6 +64,12 @@ end
 function MoneyService.Get(player: Player): number
 	local economyState = PlayerStateService.GetSection(player, "Economy")
 	return economyState:GetAttribute("Money") or 0
+end
+
+function MoneyService.Set(player: Player, balance: number): number
+	assertAmount(balance)
+	PlayerStateService.GetSection(player, "Economy"):SetAttribute("Money", balance)
+	return balance
 end
 
 function MoneyService.Add(player: Player, amount: number): number

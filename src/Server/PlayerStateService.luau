@@ -7,7 +7,7 @@
 	输入：
 	- Start：无。
 	- GetPlayerState / GetSection：player。
-	- GetEntity：player、"Zones"、"Houses" 或 "Monsters"、entityId。
+	- GetEntity：player、实体分区名、entityId。
 
 	输出：
 	- GetPlayerState：玩家状态 Folder。
@@ -24,6 +24,8 @@
 			- <HouseId> (Folder + Attributes)
 		- Monsters (Folder + Capacity Attribute)
 			- <SpawnPointId> (Folder + Attributes)
+		- MonsterSpawnPoints (Folder)
+			- <SpawnPointId> (Folder + Attributes)
 
 	不负责：
 	- 不解释业务字段，不计算金钱、区域或房屋规则。
@@ -35,7 +37,8 @@ local ServerStorage = game:GetService("ServerStorage")
 
 local PlayerStateService = {}
 
-export type SectionName = "Economy" | "Zones" | "Houses" | "Monsters"
+export type SectionName = "Economy" | "Zones" | "Houses" | "Monsters" | "MonsterSpawnPoints"
+export type EntitySectionName = "Zones" | "Houses" | "Monsters" | "MonsterSpawnPoints"
 
 -- 权威数据属于下方 Instance 树，而不属于当前 ModuleScript 的执行缓存。
 local ROOT_NAME = "RuntimePlayerStates"
@@ -45,6 +48,7 @@ local VALID_SECTIONS = {
 	Zones = true,
 	Houses = true,
 	Monsters = true,
+	MonsterSpawnPoints = true,
 }
 
 local started = false
@@ -146,7 +150,10 @@ function PlayerStateService.Start()
 	started = true
 
 	Players.PlayerAdded:Connect(ensurePlayerState)
-	Players.PlayerRemoving:Connect(removePlayerState)
+	Players.PlayerRemoving:Connect(function(player)
+		-- 让先注册的持久化回调有机会同步截取快照；之后再删除整棵会话状态。
+		task.defer(removePlayerState, player)
+	end)
 
 	for _, player in Players:GetPlayers() do
 		ensurePlayerState(player)
@@ -164,12 +171,15 @@ end
 
 function PlayerStateService.GetEntity(
 	player: Player,
-	sectionName: "Zones" | "Houses" | "Monsters",
+	sectionName: EntitySectionName,
 	entityId: string
 ): Folder
 	assert(
-		sectionName == "Zones" or sectionName == "Houses" or sectionName == "Monsters",
-		"实体只允许放在 Zones、Houses 或 Monsters"
+		sectionName == "Zones"
+			or sectionName == "Houses"
+			or sectionName == "Monsters"
+			or sectionName == "MonsterSpawnPoints",
+		"未知实体状态分区"
 	)
 	assert(type(entityId) == "string" and entityId ~= "", "entityId 必须是非空字符串")
 	return ensureFolder(PlayerStateService.GetSection(player, sectionName), entityId)
