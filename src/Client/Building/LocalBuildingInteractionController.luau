@@ -1,5 +1,6 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local HouseContactPresentationConfigs = require(script.Parent.HouseContactPresentationConfigs)
 local InstancePath = require(ReplicatedStorage.Shared.InstancePath)
 local LocalBuildingEffectPlayer = require(script.Parent.LocalBuildingEffectPlayer)
 local LocalBuildingTouchController = require(script.Parent.LocalBuildingTouchController)
@@ -18,7 +19,11 @@ function LocalBuildingInteractionController.Bind(
 
 	return LocalBuildingTouchController.Bind(model, {
 		OnEntered = function()
-			task.spawn(LocalBuildingEffectPlayer.PlayContact, model)
+			task.spawn(
+				LocalBuildingEffectPlayer.PlayContact,
+				model,
+				HouseContactPresentationConfigs
+			)
 			houseEntered:FireServer("Enter", houseId)
 		end,
 		OnExited = function()

@@ -2,14 +2,17 @@ local TweenService = game:GetService("TweenService")
 
 local LocalBuildingEffectPlayer = {}
 
-local SCALE_MULTIPLIER = 1.3
-local EXPAND_DURATION = 0.2
-local RETURN_DURATION = 0.25
+export type Config = {
+	ScaleMultiplier: number,
+	ExpandDuration: number,
+	ReturnDuration: number,
+}
 
 local activeModels = setmetatable({}, { __mode = "k" })
 
-function LocalBuildingEffectPlayer.PlayContact(model: Model): boolean
+function LocalBuildingEffectPlayer.PlayContact(model: Model, config: Config): boolean
 	assert(model:IsA("Model"), "model 必须是 Model")
+	assert(type(config) == "table", "config 必须是 table")
 	if activeModels[model] then
 		return false
 	end
@@ -28,8 +31,12 @@ function LocalBuildingEffectPlayer.PlayContact(model: Model): boolean
 	local ok, message = xpcall(function()
 		local expand = TweenService:Create(
 			scale,
-			TweenInfo.new(EXPAND_DURATION, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-			{ Value = originalScale * SCALE_MULTIPLIER }
+			TweenInfo.new(
+				config.ExpandDuration,
+				Enum.EasingStyle.Back,
+				Enum.EasingDirection.Out
+			),
+			{ Value = originalScale * config.ScaleMultiplier }
 		)
 		expand:Play()
 		expand.Completed:Wait()
@@ -37,7 +44,11 @@ function LocalBuildingEffectPlayer.PlayContact(model: Model): boolean
 
 		local returnTween = TweenService:Create(
 			scale,
-			TweenInfo.new(RETURN_DURATION, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+			TweenInfo.new(
+				config.ReturnDuration,
+				Enum.EasingStyle.Back,
+				Enum.EasingDirection.Out
+			),
 			{ Value = originalScale }
 		)
 		returnTween:Play()

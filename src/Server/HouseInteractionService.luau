@@ -10,7 +10,7 @@
 	- Action、HouseId、Accepted、Reward、Balance、Reason。
 
 	读取：
-	- HouseCatalog、HouseStateService、RegionStateService 和房屋空间边界。
+	- HouseCatalog、HouseStateService、玩家运行时建筑索引和建筑实际空间边界。
 
 	写入：
 	- 当前模块内部的进入状态与领取冷却。
@@ -29,16 +29,14 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local HouseIncomeService = require(script.Parent.HouseIncomeService)
+local HouseInteractionConfigs = require(script.Parent.HouseInteractionConfigs)
 local HouseStateService = require(script.Parent.HouseStateService)
-local RegionStateService = require(script.Parent.RegionStateService)
-local HouseBoundsResolver = require(ReplicatedStorage.Shared.Building.HouseBoundsResolver)
+local PlayerCityRuntimeCoordinator = require(script.Parent.PlayerCityRuntimeCoordinator)
 local HouseCatalog = require(ReplicatedStorage.Shared.Building.HouseCatalog)
+local RuntimeBuildingBounds = require(ReplicatedStorage.Shared.Building.RuntimeBuildingBounds)
+local RuntimeBuildingIdentity = require(ReplicatedStorage.Shared.Building.RuntimeBuildingIdentity)
 
 local HouseInteractionService = {}
-
-local REWARD_COOLDOWN = 0.1
-local POSITION_SYNC_GRACE_SECONDS = 0.35
-local POSITION_SYNC_RETRY_SECONDS = 0.05
 
 export type Action = "Enter" | "Exit"
 
@@ -97,7 +95,7 @@ end
 
 local function isCharacterInside(
 	player: Player,
-	target: HouseBoundsResolver.HouseTarget
+	target: RuntimeBuildingBounds.Target
 ): boolean
 	local character = player.Character
 	if not character or not character.Parent then
@@ -113,19 +111,39 @@ end
 
 local function waitForBoundaryState(
 	player: Player,
-	target: HouseBoundsResolver.HouseTarget,
+	target: RuntimeBuildingBounds.Target,
 	expectedInside: boolean
 ): boolean
-	local deadline = os.clock() + POSITION_SYNC_GRACE_SECONDS
+	local deadline = os.clock() + HouseInteractionConfigs.PositionSyncGraceSeconds
 
 	while isCharacterInside(player, target) ~= expectedInside do
 		if os.clock() >= deadline then
 			return false
 		end
-		task.wait(POSITION_SYNC_RETRY_SECONDS)
+		task.wait(HouseInteractionConfigs.PositionSyncRetrySeconds)
 	end
 
 	return true
+end
+
+local function resolveRuntimeTarget(
+	player: Player,
+	houseId: string
+): (RuntimeBuildingBounds.Target?, string?)
+	local model = PlayerCityRuntimeCoordinator.ResolveBuilding(player, houseId)
+	if not model then
+		return nil, "RuntimeBuildingUnavailable"
+	end
+
+	local identity, identityReason = RuntimeBuildingIdentity.Read(model)
+	if not identity then
+		return nil, identityReason or "InvalidRuntimeBuildingIdentity"
+	end
+	if identity.OwnerUserId ~= player.UserId or identity.HouseId ~= houseId then
+		return nil, "RuntimeBuildingIdentityMismatch"
+	end
+
+	return RuntimeBuildingBounds.Resolve(model)
 end
 
 function HouseInteractionService.Enter(player: Player, houseId: string): Result
@@ -143,11 +161,10 @@ function HouseInteractionService.Enter(player: Player, houseId: string): Result
 		return makeResult("Enter", houseId, false, "HouseNotAlive")
 	end
 
-	local level = RegionStateService.GetLevel(player, definition.RegionId)
-	if level <= 0 then
-		return makeResult("Enter", houseId, false, "RegionNotBuilt")
+	local target, targetReason = resolveRuntimeTarget(player, houseId)
+	if not target then
+		return makeResult("Enter", houseId, false, targetReason or "RuntimeBuildingUnavailable")
 	end
-	local target = HouseBoundsResolver.Resolve(definition, level)
 
 	local playerState = getPlayerState(player)
 	if playerState.Inside[houseId] then
@@ -167,7 +184,7 @@ function HouseInteractionService.Enter(player: Player, houseId: string): Result
 
 	local now = os.clock()
 	local lastRewardAt = playerState.LastRewardAt
-	if lastRewardAt and now - lastRewardAt < REWARD_COOLDOWN then
+	if lastRewardAt and now - lastRewardAt < HouseInteractionConfigs.RewardCooldown then
 		return makeResult("Enter", houseId, false, "Cooldown")
 	end
 
@@ -205,9 +222,8 @@ function HouseInteractionService.Exit(player: Player, houseId: string): Result
 	end
 
 	local playerState = getPlayerState(player)
-	local level = RegionStateService.GetLevel(player, definition.RegionId)
-	if level > 0 then
-		local target = HouseBoundsResolver.Resolve(definition, level)
+	local target = resolveRuntimeTarget(player, houseId)
+	if target then
 		if not waitForBoundaryState(player, target, false) then
 			return makeResult("Exit", houseId, false, "StillInside")
 		end
