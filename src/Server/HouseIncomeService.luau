@@ -83,7 +83,7 @@ local function getBuiltHouseCount(player: Player, regionId: string): number
 end
 
 -- 输入：player、已登记的 houseId。
--- 输出：房屋为 Alive 时的名义每秒收入；Unbuilt / Destroyed 返回 0 和明确原因。
+-- 输出：房屋为 Alive 时的名义每秒收入；其他生命周期状态返回 0 和明确原因。
 function HouseIncomeService.GetHouseRate(player: Player, houseId: string): RateResult
 	local definition = HouseCatalog.Get(houseId)
 	if not definition then

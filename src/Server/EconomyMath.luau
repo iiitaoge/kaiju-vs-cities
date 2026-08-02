@@ -59,7 +59,7 @@ function EconomyMath.GetRegionIncomePerSecond(
 		/ config.IncomeIntervalSeconds
 end
 
--- 输入：区域每秒总收入、当前已建造房屋数量（Alive + Destroyed）。
+-- 输入：区域每秒总收入、当前已建造房屋数量（Alive + Destroyed + Rebuilding）。
 -- 输出：一栋已建造房屋的每秒名义收入；没有已建造房屋时返回 0。
 function EconomyMath.GetHouseIncomePerSecond(
 	regionIncomePerSecond: number,

@@ -4,8 +4,10 @@
 
 	输入：
 	- player、houseId。
-	- Build / Revive 可选 now。
+	- Build / CompleteRebuild / RollbackDestroy 可选 now。
 	- Destroy 可选 respawnAt。
+	- BeginRebuild 接收本次计划对应的 expectedRespawnAt。
+	- AbortRebuild 接收下一次 respawnAt。
 	- CreditStoredMoney 接收已由收入模块算好的 amount 和 settledAt。
 
 	输出：
@@ -25,7 +27,12 @@
 	- Destroy 保留已经产生的 StoredMoney，只停止后续累计。
 ]]
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
 local PlayerStateService = require(script.Parent.PlayerStateService)
+local HouseLifecycleRules = require(
+	ReplicatedStorage.Shared.Building.HouseLifecycleRules
+)
 
 local HouseStateService = {}
 
@@ -54,37 +61,97 @@ function HouseStateService.Get(player: Player, houseId: string)
 	return snapshot(getState(player, houseId))
 end
 
--- 三种状态切换 Build	Destroy		Revive
+local function applyTransition(state: Folder, eventKind: string): boolean
+	local transition = HouseLifecycleRules.Apply(
+		state:GetAttribute("LifeState"),
+		eventKind
+	)
+	if not transition.Accepted then
+		return false
+	end
+	state:SetAttribute("LifeState", transition.NewState)
+	return true
+end
+
 function HouseStateService.Build(player: Player, houseId: string, now: number?)
 	local state = getState(player, houseId)
-	if state:GetAttribute("LifeState") ~= "Unbuilt" then
+	if not applyTransition(state, "Build") then
 		return snapshot(state), false
 	end
 
-	state:SetAttribute("LifeState", "Alive")
 	state:SetAttribute("LastIncomeAt", now or os.time())
+	state:SetAttribute("RespawnAt", nil)
 	return snapshot(state), true
 end
 
 function HouseStateService.Destroy(player: Player, houseId: string, respawnAt: number?)
 	local state = getState(player, houseId)
-	if state:GetAttribute("LifeState") ~= "Alive" then
+	if not applyTransition(state, "Destroy") then
 		return snapshot(state), false
 	end
 
-	state:SetAttribute("LifeState", "Destroyed")
 	state:SetAttribute("LastIncomeAt", nil)
 	state:SetAttribute("RespawnAt", respawnAt)
 	return snapshot(state), true
 end
 
-function HouseStateService.Revive(player: Player, houseId: string, now: number?)
+-- 输入：摧毁事务失败后的 player、houseId 和恢复计时起点。
+-- 输出：仅允许 Destroyed -> Alive；恢复收入但不改变 StoredMoney。
+function HouseStateService.RollbackDestroy(player: Player, houseId: string, now: number?)
 	local state = getState(player, houseId)
-	if state:GetAttribute("LifeState") ~= "Destroyed" then
+	if not applyTransition(state, "RollbackDestroy") then
 		return snapshot(state), false
 	end
 
-	state:SetAttribute("LifeState", "Alive")
+	state:SetAttribute("LastIncomeAt", now or os.time())
+	state:SetAttribute("RespawnAt", nil)
+	return snapshot(state), true
+end
+
+-- 输入：player、houseId，以及发起本次任务时记录的 RespawnAt。
+-- 输出：仅在当前 Destroyed 且计划未被替换时进入 Rebuilding。
+function HouseStateService.BeginRebuild(
+	player: Player,
+	houseId: string,
+	expectedRespawnAt: number
+)
+	local state = getState(player, houseId)
+	if state:GetAttribute("RespawnAt") ~= expectedRespawnAt then
+		return snapshot(state), false
+	end
+	if not applyTransition(state, "BeginRebuild") then
+		return snapshot(state), false
+	end
+
+	state:SetAttribute("RespawnAt", nil)
+	return snapshot(state), true
+end
+
+-- 输入：重建失败的 player、houseId 和下一次重试时间。
+-- 输出：Rebuilding -> Destroyed，并保存新 RespawnAt。
+function HouseStateService.AbortRebuild(
+	player: Player,
+	houseId: string,
+	respawnAt: number
+)
+	local state = getState(player, houseId)
+	if not applyTransition(state, "AbortRebuild") then
+		return snapshot(state), false
+	end
+
+	state:SetAttribute("LastIncomeAt", nil)
+	state:SetAttribute("RespawnAt", respawnAt)
+	return snapshot(state), true
+end
+
+-- 输入：完成重建的 player、houseId 和恢复计时起点。
+-- 输出：Rebuilding -> Alive；从完成时重新开始产钱。
+function HouseStateService.CompleteRebuild(player: Player, houseId: string, now: number?)
+	local state = getState(player, houseId)
+	if not applyTransition(state, "CompleteRebuild") then
+		return snapshot(state), false
+	end
+
 	state:SetAttribute("LastIncomeAt", now or os.time())
 	state:SetAttribute("RespawnAt", nil)
 	return snapshot(state), true
