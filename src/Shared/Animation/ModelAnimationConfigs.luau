@@ -1,7 +1,5 @@
 return {
 	P1 = {
-		TemplatePath = "ReplicatedStorage/Godzilla/P1",
-		SpawnPointPath = "Workspace/GodzillaPoint/Point01",
 		Animations = {
 			LeftAttack = 138906116804665,
 			Eat = 84366814671336,
@@ -17,8 +15,6 @@ return {
 	},
 
 	P4 = {
-		TemplatePath = "ReplicatedStorage/Godzilla/P4",
-		SpawnPointPath = "Workspace/GodzillaPoint/Point01",
 		Animations = {
 			LeftAttack = 138906116804665,
 			Eat = 84366814671336,

@@ -27,44 +27,18 @@ export type OperationResult = {
 	Record: MonsterRecord?,
 }
 
-local RUNTIME_ROOT_NAME = "RuntimeMonsters"
 local started = false
-
-local function runtimeRoot(): Folder
-	local existing = workspace:FindFirstChild(RUNTIME_ROOT_NAME)
-	if existing then
-		assert(existing:IsA("Folder"), RUNTIME_ROOT_NAME .. " 必须是 Folder")
-		return existing
-	end
-
-	local folder = Instance.new("Folder")
-	folder.Name = RUNTIME_ROOT_NAME
-	folder.Parent = workspace
-	return folder
-end
-
-local function playerRuntimeRoot(player: Player): Folder
-	local root = runtimeRoot()
-	local name = tostring(player.UserId)
-	local existing = root:FindFirstChild(name)
-	if existing then
-		assert(existing:IsA("Folder"), existing:GetFullName() .. " 必须是 Folder")
-		return existing
-	end
-
-	local folder = Instance.new("Folder")
-	folder.Name = name
-	folder:SetAttribute("OwnerUserId", player.UserId)
-	folder.Parent = root
-	return folder
-end
 
 local function resolveRuntimeModel(player: Player, spawnPointId: string): Model?
 	local indexed = MonsterRuntimeRegistry.Get(player, spawnPointId)
 	if indexed then
 		return indexed
 	end
-	for _, child in playerRuntimeRoot(player):GetChildren() do
+	local parent = MonsterRuntimeRegistry.GetParent(player, spawnPointId)
+	if not parent then
+		return nil
+	end
+	for _, child in parent:GetChildren() do
 		if child:IsA("Model")
 			and child:GetAttribute("MonsterSpawnPointId") == spawnPointId
 			and child:GetAttribute("MonsterOwnerUserId") == player.UserId then
@@ -98,11 +72,6 @@ function MonsterRosterCoordinator.Start()
 			if model.Parent then
 				model:Destroy()
 			end
-		end
-		local root = workspace:FindFirstChild(RUNTIME_ROOT_NAME)
-		local playerRoot = root and root:FindFirstChild(tostring(player.UserId))
-		if playerRoot then
-			playerRoot:Destroy()
 		end
 	end)
 end
@@ -167,16 +136,15 @@ function MonsterRosterCoordinator.List(player: Player): { MonsterRecord }
 	return result
 end
 
--- 输入：玩家、唯一出生点、模板身份、模板、出生位置和最大生命。
--- 输出：新增后的怪兽记录或明确失败原因。
--- 内部算法：验证一出生点一怪兽和容量，先建状态，再创建服务器模型；失败时回滚状态。
-function MonsterRosterCoordinator.CreateForSpawnPoint(
+local function createForSpawnPoint(
 	player: Player,
 	spawnPointId: string,
 	monsterKey: string,
 	template: Model,
 	spawnPoint: BasePart,
-	maxHealth: number
+	maxHealth: number,
+	runtimeParent: Instance,
+	enforceCapacity: boolean
 ): OperationResult
 	assert(player:IsA("Player"), "player 必须是 Player")
 	if type(spawnPointId) ~= "string" or spawnPointId == "" then
@@ -194,17 +162,22 @@ function MonsterRosterCoordinator.CreateForSpawnPoint(
 	if not validPositiveNumber(maxHealth) then
 		return operation(false, "InvalidMaxHealth", nil)
 	end
+	if typeof(runtimeParent) ~= "Instance" or not runtimeParent:IsDescendantOf(workspace) then
+		return operation(false, "InvalidRuntimeParent", nil)
+	end
 	if MonsterStateService.Get(player, spawnPointId) then
 		return operation(false, "SpawnPointAlreadyBound", nil)
 	end
 
-	local count = MonsterRosterCoordinator.GetCount(player)
-	local capacityCheck = MonsterCapacityRules.CheckAdd(
-		count,
-		MonsterStateService.GetCapacity(player)
-	)
-	if not capacityCheck.Allowed then
-		return operation(false, capacityCheck.Reason, nil)
+	if enforceCapacity then
+		local count = MonsterRosterCoordinator.GetCount(player)
+		local capacityCheck = MonsterCapacityRules.CheckAdd(
+			count,
+			MonsterStateService.GetCapacity(player)
+		)
+		if not capacityCheck.Allowed then
+			return operation(false, capacityCheck.Reason, nil)
+		end
 	end
 	local binding = SpawnPointMonsterBinding.Bind(spawnPoint, spawnPointId, monsterKey)
 	if not binding.Succeeded then
@@ -229,7 +202,7 @@ function MonsterRosterCoordinator.CreateForSpawnPoint(
 		MonsterModelFactory.Create,
 		template,
 		spawnPoint.CFrame,
-		playerRuntimeRoot(player),
+		runtimeParent,
 		{
 			OwnerUserId = player.UserId,
 			SpawnPointId = spawnPointId,
@@ -248,8 +221,55 @@ function MonsterRosterCoordinator.CreateForSpawnPoint(
 		return operation(false, "ModelCreateFailed", nil)
 	end
 
+	MonsterRuntimeRegistry.SetParent(player, spawnPointId, runtimeParent)
 	MonsterRuntimeRegistry.Set(player, spawnPointId, modelOrError)
 	return operation(true, nil, recordWithModel(player, state))
+end
+
+-- 输入：玩家、唯一出生点、模板身份、模板、出生位置、最大生命和玩家 Plot 运行时父级。
+-- 输出：新增后的怪兽记录或明确失败原因。
+-- 内部算法：验证一出生点一怪兽和容量，先建状态，再创建服务器模型；失败时回滚状态。
+function MonsterRosterCoordinator.CreateForSpawnPoint(
+	player: Player,
+	spawnPointId: string,
+	monsterKey: string,
+	template: Model,
+	spawnPoint: BasePart,
+	maxHealth: number,
+	runtimeParent: Instance
+): OperationResult
+	return createForSpawnPoint(
+		player,
+		spawnPointId,
+		monsterKey,
+		template,
+		spawnPoint,
+		maxHealth,
+		runtimeParent,
+		true
+	)
+end
+
+-- 仅供服务器加载已保存的已建造出生点；恢复已有资产时不重新套用新增容量限制。
+function MonsterRosterCoordinator.RestoreForSpawnPoint(
+	player: Player,
+	spawnPointId: string,
+	monsterKey: string,
+	template: Model,
+	spawnPoint: BasePart,
+	maxHealth: number,
+	runtimeParent: Instance
+): OperationResult
+	return createForSpawnPoint(
+		player,
+		spawnPointId,
+		monsterKey,
+		template,
+		spawnPoint,
+		maxHealth,
+		runtimeParent,
+		false
+	)
 end
 
 -- 输入：玩家、出生点和目标怪兽模板。
@@ -289,12 +309,16 @@ function MonsterRosterCoordinator.ReplaceForSpawnPoint(
 	end
 
 	local previous = MonsterRuntimeRegistry.Get(player, spawnPointId)
+	local runtimeParent = MonsterRuntimeRegistry.GetParent(player, spawnPointId)
+	if not runtimeParent then
+		return operation(false, "RuntimeParentUnavailable", recordWithModel(player, current))
+	end
 	local replaced, modelOrError = pcall(
 		MonsterModelFactory.Replace,
 		previous,
 		template,
 		current.SpawnCFrame,
-		playerRuntimeRoot(player),
+		runtimeParent,
 		{
 			OwnerUserId = player.UserId,
 			SpawnPointId = spawnPointId,
@@ -376,6 +400,57 @@ function MonsterRosterCoordinator.DestroyRuntimeModel(player: Player, spawnPoint
 	return false
 end
 
+-- 输入：玩家、出生点身份和该出生点 Instance。
+-- 输出：是否删除名册记录；仅允许空闲怪兽被移除。
+-- 内部算法：先验证状态与绑定，再删除模型、运行时父级、怪兽状态和出生点绑定。
+function MonsterRosterCoordinator.RemoveForSpawnPoint(
+	player: Player,
+	spawnPointId: string,
+	spawnPoint: BasePart
+): OperationResult
+	local current = MonsterStateService.Get(player, spawnPointId)
+	if not current then
+		return operation(false, "UnknownSpawnPoint", nil)
+	end
+	local permission = MonsterStateRules.CheckUpgrade(current.State)
+	if not permission.Allowed then
+		return operation(false, permission.Reason, recordWithModel(player, current))
+	end
+	local binding = SpawnPointMonsterBinding.Get(spawnPoint)
+	if binding.SpawnPointId ~= spawnPointId or binding.MonsterKey ~= current.MonsterKey then
+		return operation(false, "SpawnPointBindingMismatch", recordWithModel(player, current))
+	end
+
+	MonsterRosterCoordinator.DestroyRuntimeModel(player, spawnPointId)
+	MonsterRuntimeRegistry.RemoveParent(player, spawnPointId)
+	MonsterStateService.Remove(player, spawnPointId)
+	SpawnPointMonsterBinding.Unbind(spawnPoint, spawnPointId)
+	return operation(true, nil, nil)
+end
+
+-- 输入：玩家，以及是否同时清除会话怪兽状态。
+-- 输出：销毁的运行时模型数量。
+-- 内部算法：始终清空模型索引；显式重载时清除 Monsters，离服时由 PlayerStateService 删除整棵状态。
+function MonsterRosterCoordinator.UnloadRuntime(
+	player: Player,
+	clearMonsterState: boolean?
+): number
+	local removed = MonsterRuntimeRegistry.Clear(player)
+	local removedCount = 0
+	for _, model in removed do
+		if model.Parent then
+			model:Destroy()
+		end
+		removedCount += 1
+	end
+	if clearMonsterState == true then
+		for _, record in MonsterStateService.List(player) do
+			MonsterStateService.Remove(player, record.SpawnPointId)
+		end
+	end
+	return removedCount
+end
+
 function MonsterRosterCoordinator.SetRespawnAt(
 	player: Player,
 	spawnPointId: string,
@@ -403,12 +478,16 @@ function MonsterRosterCoordinator.Respawn(
 	if current.State ~= "Recovering" then
 		return operation(false, "MonsterNotRecovering", recordWithModel(player, current))
 	end
+	local runtimeParent = MonsterRuntimeRegistry.GetParent(player, spawnPointId)
+	if not runtimeParent then
+		return operation(false, "RuntimeParentUnavailable", recordWithModel(player, current))
+	end
 
 	local created, modelOrError = pcall(
 		MonsterModelFactory.Create,
 		template,
 		current.SpawnCFrame,
-		playerRuntimeRoot(player),
+		runtimeParent,
 		{
 			OwnerUserId = player.UserId,
 			SpawnPointId = spawnPointId,

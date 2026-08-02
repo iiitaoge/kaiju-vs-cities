@@ -1,6 +1,7 @@
 local MonsterRuntimeRegistry = {}
 
 local modelsByPlayer: { [Player]: { [string]: Model } } = setmetatable({}, { __mode = "k" })
+local parentsByPlayer: { [Player]: { [string]: Instance } } = setmetatable({}, { __mode = "k" })
 
 local function getPlayerModels(player: Player): { [string]: Model }
 	local models = modelsByPlayer[player]
@@ -9,6 +10,15 @@ local function getPlayerModels(player: Player): { [string]: Model }
 		modelsByPlayer[player] = models
 	end
 	return models
+end
+
+local function getPlayerParents(player: Player): { [string]: Instance }
+	local parents = parentsByPlayer[player]
+	if not parents then
+		parents = {}
+		parentsByPlayer[player] = parents
+	end
+	return parents
 end
 
 -- 输入：玩家、稳定出生点 ID 和 Workspace 怪兽模型。
@@ -22,6 +32,43 @@ function MonsterRuntimeRegistry.Set(player: Player, spawnPointId: string, model:
 	local previous = models[spawnPointId]
 	models[spawnPointId] = model
 	return previous
+end
+
+-- 模型死亡后仍保留运行时父级，使恢复流程能回到原玩家 Plot。
+function MonsterRuntimeRegistry.SetParent(
+	player: Player,
+	spawnPointId: string,
+	parent: Instance
+): Instance?
+	assert(player:IsA("Player"), "player 必须是 Player")
+	assert(type(spawnPointId) == "string" and spawnPointId ~= "", "spawnPointId 无效")
+	assert(typeof(parent) == "Instance", "parent 必须是 Instance")
+	local parents = getPlayerParents(player)
+	local previous = parents[spawnPointId]
+	parents[spawnPointId] = parent
+	return previous
+end
+
+function MonsterRuntimeRegistry.GetParent(player: Player, spawnPointId: string): Instance?
+	local parents = parentsByPlayer[player]
+	local parent = parents and parents[spawnPointId]
+	if parent and parent.Parent then
+		return parent
+	end
+	if parents then
+		parents[spawnPointId] = nil
+	end
+	return nil
+end
+
+function MonsterRuntimeRegistry.RemoveParent(player: Player, spawnPointId: string): Instance?
+	local parents = parentsByPlayer[player]
+	if not parents then
+		return nil
+	end
+	local parent = parents[spawnPointId]
+	parents[spawnPointId] = nil
+	return parent
 end
 
 function MonsterRuntimeRegistry.Get(player: Player, spawnPointId: string): Model?
@@ -66,6 +113,7 @@ function MonsterRuntimeRegistry.Clear(player: Player): { Model }
 	local removed = {}
 	local models = modelsByPlayer[player]
 	modelsByPlayer[player] = nil
+	parentsByPlayer[player] = nil
 	if not models then
 		return removed
 	end

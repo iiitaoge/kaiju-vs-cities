@@ -1,4 +1,6 @@
 local PlayerStateService = require(script.Parent.PlayerStateService)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local MonsterCapacityConfig = require(ReplicatedStorage.Shared.Monster.MonsterCapacityConfig)
 
 local MonsterStateService = {}
 
@@ -15,7 +17,7 @@ export type Snapshot = {
 local function getSection(player: Player): Folder
 	local section = PlayerStateService.GetSection(player, "Monsters")
 	if section:GetAttribute("Capacity") == nil then
-		section:SetAttribute("Capacity", 0)
+		section:SetAttribute("Capacity", MonsterCapacityConfig.InitialCapacity)
 	end
 	return section
 end
@@ -45,8 +47,24 @@ function MonsterStateService.GetCapacity(player: Player): number
 end
 
 function MonsterStateService.SetCapacity(player: Player, capacity: number): number
+	assert(
+		type(capacity) == "number" and capacity >= 1 and capacity % 1 == 0,
+		"capacity 必须是正整数"
+	)
 	getSection(player):SetAttribute("Capacity", capacity)
 	return capacity
+end
+
+-- 载档前清除只属于旧会话的怪兽血量、位置和行为状态；保留 Capacity Attribute。
+function MonsterStateService.ClearSession(player: Player): number
+	local removedCount = 0
+	for _, child in getSection(player):GetChildren() do
+		if child:IsA("Folder") then
+			child:Destroy()
+			removedCount += 1
+		end
+	end
+	return removedCount
 end
 
 function MonsterStateService.Get(player: Player, spawnPointId: string): Snapshot?
