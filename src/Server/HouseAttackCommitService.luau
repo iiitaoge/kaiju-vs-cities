@@ -9,6 +9,8 @@ export type CommitOptions = {
 	MaxGap: number,
 	-- 本次成功摧毁房屋应增加的金钱；没有隐藏默认值。
 	RewardAmount: number,
+	-- 成功摧毁后获得奖励的进攻玩家。
+	RewardPlayer: Player,
 }
 
 export type CommitResult = {
@@ -30,7 +32,7 @@ export type CommitResult = {
 -- 输入：
 --   reservation：HouseTargetReservationService.TryAcquire 返回的当前占用凭证。
 --   options.MaxGap：提交时允许的最大水平边缘间距。
---   options.RewardAmount：成功摧毁后发放给 reservation.Player 的奖励。
+--   options.RewardAmount：成功摧毁后发放给 options.RewardPlayer 的奖励。
 -- 输出：
 --   返回房屋状态变化、奖励、余额和预约释放结果；所有业务失败都通过 Reason 明示。
 -- 副作用：

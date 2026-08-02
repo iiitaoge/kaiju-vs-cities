@@ -10,6 +10,8 @@ export type CommitOptions = {
 	MaxGap: number,
 	-- 本次成功摧毁房屋应增加的金钱；没有隐藏默认值。
 	RewardAmount: number,
+	-- 本次成功摧毁房屋的进攻方奖励接收者。
+	RewardPlayer: Player,
 }
 
 export type CommitResult = {
@@ -46,7 +48,7 @@ end
 --   reservation：当前怪兽对房屋的有效预约。
 --   access：显式房屋数据源，负责最新范围、摧毁前准备和状态切换。
 --   options.MaxGap：提交时允许的最大水平边缘间距。
---   options.RewardAmount：成功摧毁后发放给 reservation.Player 的奖励。
+--   options.RewardAmount：成功摧毁后发放给 options.RewardPlayer 的奖励。
 -- 输出：
 --   返回房屋状态变化、奖励、余额和预约释放结果；业务失败通过 Reason 明示。
 -- 副作用：
@@ -64,6 +66,10 @@ function HouseAttackCommitter.Commit(
 		type(options.RewardAmount) == "number" and options.RewardAmount >= 0,
 		"RewardAmount 必须大于等于 0"
 	)
+	assert(
+		typeof(options.RewardPlayer) == "Instance" and options.RewardPlayer:IsA("Player"),
+		"RewardPlayer 必须是 Player"
+	)
 
 	local houseId = if type(reservation) == "table" and type(reservation.HouseId) == "string"
 		then reservation.HouseId
@@ -77,7 +83,7 @@ function HouseAttackCommitter.Commit(
 		return makeResult(houseId, false, reason, false, 0, nil, released)
 	end
 
-	local target, resolveReason = access.ResolveAliveTarget(reservation.Player, houseId)
+	local target, resolveReason = access.ResolveAliveTarget(reservation.Defender, houseId)
 	if not target then
 		return fail(resolveReason or "HouseUnavailable")
 	end
@@ -87,16 +93,16 @@ function HouseAttackCommitter.Commit(
 		return fail("OutOfRange")
 	end
 
-	local prepared, prepareReason = access.PrepareDestroy(reservation.Player, houseId)
+	local prepared, prepareReason = access.PrepareDestroy(reservation.Defender, houseId)
 	if not prepared then
 		return fail(prepareReason or "PrepareDestroyFailed")
 	end
 
-	if not access.Destroy(reservation.Player, houseId) then
+	if not access.Destroy(reservation.Defender, houseId) then
 		return fail("DestroyRejected")
 	end
 
-	local balance = MoneyService.Add(reservation.Player, options.RewardAmount)
+	local balance = MoneyService.Add(options.RewardPlayer, options.RewardAmount)
 	local released = HouseTargetReservationService.Release(reservation)
 	return makeResult(
 		houseId,

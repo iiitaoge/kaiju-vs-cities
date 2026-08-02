@@ -2,22 +2,22 @@ local HouseTargetReservationService = {}
 
 export type Reservation = {
 	Id: number,
-	Player: Player,
+	Defender: Player,
 	HouseId: string,
 	Monster: Model,
 }
 
-local reservationsByPlayer: { [Player]: { [string]: Reservation } } = setmetatable(
+local reservationsByDefender: { [Player]: { [string]: Reservation } } = setmetatable(
 	{},
 	{ __mode = "k" }
 )
 local nextReservationId = 0
 
-local function getPlayerReservations(player: Player)
-	local reservations = reservationsByPlayer[player]
+local function getDefenderReservations(defender: Player)
+	local reservations = reservationsByDefender[defender]
 	if not reservations then
 		reservations = {}
-		reservationsByPlayer[player] = reservations
+		reservationsByDefender[defender] = reservations
 	end
 
 	return reservations
@@ -27,8 +27,8 @@ local function isMonsterInWorkspace(monster: Model): boolean
 	return monster:IsDescendantOf(workspace)
 end
 
-local function clearIfStale(player: Player, houseId: string): Reservation?
-	local reservations = reservationsByPlayer[player]
+local function clearIfStale(defender: Player, houseId: string): Reservation?
+	local reservations = reservationsByDefender[defender]
 	local reservation = reservations and reservations[houseId]
 	if reservation and not isMonsterInWorkspace(reservation.Monster) then
 		reservations[houseId] = nil
@@ -39,18 +39,18 @@ local function clearIfStale(player: Player, houseId: string): Reservation?
 end
 
 -- 输入：
---   player：被攻击房屋状态所属的玩家。
+--   defender：被攻击房屋状态所属的玩家。
 --   houseId：准备占用的稳定房屋 ID。
 --   monster：准备攻击该房屋的 Workspace 怪兽模型。
 -- 输出：
 --   占用成功时返回不可变 Reservation；已被占用或怪兽不在 Workspace 时返回 nil。
 -- 副作用：成功时写入按 Player + HouseId 隔离的内存占用状态。
 function HouseTargetReservationService.TryAcquire(
-	player: Player,
+	defender: Player,
 	houseId: string,
 	monster: Model
 ): Reservation?
-	assert(player:IsA("Player"), "player 必须是 Player")
+	assert(defender:IsA("Player"), "defender 必须是 Player")
 	assert(type(houseId) == "string" and houseId ~= "", "houseId 必须是非空字符串")
 	assert(monster:IsA("Model"), "monster 必须是 Model")
 
@@ -58,18 +58,18 @@ function HouseTargetReservationService.TryAcquire(
 		return nil
 	end
 
-	if clearIfStale(player, houseId) then
+	if clearIfStale(defender, houseId) then
 		return nil
 	end
 
 	nextReservationId += 1
 	local reservation = table.freeze({
 		Id = nextReservationId,
-		Player = player,
+		Defender = defender,
 		HouseId = houseId,
 		Monster = monster,
 	})
-	getPlayerReservations(player)[houseId] = reservation
+	getDefenderReservations(defender)[houseId] = reservation
 	return reservation
 end
 
@@ -83,10 +83,10 @@ function HouseTargetReservationService.Validate(reservation: Reservation): boole
 		return false
 	end
 
-	local player = reservation.Player
+	local defender = reservation.Defender
 	local houseId = reservation.HouseId
 	local monster = reservation.Monster
-	if typeof(player) ~= "Instance" or not player:IsA("Player") then
+	if typeof(defender) ~= "Instance" or not defender:IsA("Player") then
 		return false
 	end
 	if type(houseId) ~= "string" then
@@ -96,7 +96,7 @@ function HouseTargetReservationService.Validate(reservation: Reservation): boole
 		return false
 	end
 
-	local current = clearIfStale(player, houseId)
+	local current = clearIfStale(defender, houseId)
 	return current == reservation
 end
 
@@ -110,7 +110,7 @@ function HouseTargetReservationService.Release(reservation: Reservation): boolea
 		return false
 	end
 
-	local reservations = reservationsByPlayer[reservation.Player]
+	local reservations = reservationsByDefender[reservation.Defender]
 	reservations[reservation.HouseId] = nil
 	return true
 end

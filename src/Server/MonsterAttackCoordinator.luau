@@ -39,6 +39,13 @@ export type ExecuteOptions = {
 	MoveSpeed: number,
 	TurnDuration: number,
 	RewardAmount: number,
+	RewardPlayer: Player,
+	-- 移动或攻击期间轮询外部防御事件；nil 表示当前没有中断。
+	PollInterruption: (() -> any?)?,
+	-- 处理中断并决定是否继续原来的房屋攻击路线。
+	HandleInterruption: ((any) -> { Continue: boolean, Reason: string? })?,
+	-- 房屋攻击链路进入移动或攻击阶段时通知上层状态协调器。
+	OnPhaseChanged: (("MovingToTarget" | "AttackingStructure") -> ())?,
 	-- 成功提交摧毁后调用；表现或网络通知由调用者注入。
 	OnHouseDestroyed: ((string, HouseAttackCommitter.CommitResult) -> ())?,
 }
@@ -95,7 +102,7 @@ local function releaseCurrentReservation(model: Model)
 end
 
 -- 输入：
---   player：房屋状态与奖励所属玩家。
+--   defender：被攻击房屋状态所属玩家。
 --   monster：已在 Workspace 的怪兽模型。
 --   destination：最终点击坐标；移动只使用 X/Z。
 --   options：显式注入房屋数据源、两类配置、移动参数、奖励和可选成功回调。
@@ -112,12 +119,12 @@ end
 --   移动怪兽、切换移动/攻击动画，并通过注入的数据源提交一次房屋摧毁和奖励。
 --   不创建怪兽、不监听 RemoteEvent、不直接播放客户端摧毁表现。
 function MonsterAttackCoordinator.Execute(
-	player: Player,
+	defender: Player,
 	monster: Model,
 	destination: Vector3,
 	options: ExecuteOptions
 ): CommandResult
-	assert(player:IsA("Player"), "player 必须是 Player")
+	assert(defender:IsA("Player"), "defender 必须是 Player")
 	assert(monster:IsA("Model"), "monster 必须是 Model")
 	assert(isFiniteVector3(destination), "destination 必须是有限 Vector3")
 	assert(type(options) == "table", "options 必须是 table")
@@ -132,6 +139,22 @@ function MonsterAttackCoordinator.Execute(
 	assert(
 		type(options.RewardAmount) == "number" and options.RewardAmount >= 0,
 		"RewardAmount 必须大于等于 0"
+	)
+	assert(
+		typeof(options.RewardPlayer) == "Instance" and options.RewardPlayer:IsA("Player"),
+		"RewardPlayer 必须是 Player"
+	)
+	assert(
+		options.PollInterruption == nil or type(options.PollInterruption) == "function",
+		"PollInterruption 必须是 function 或 nil"
+	)
+	assert(
+		options.HandleInterruption == nil or type(options.HandleInterruption) == "function",
+		"HandleInterruption 必须是 function 或 nil"
+	)
+	assert(
+		options.OnPhaseChanged == nil or type(options.OnPhaseChanged) == "function",
+		"OnPhaseChanged 必须是 function 或 nil"
 	)
 
 	releaseCurrentReservation(monster)
@@ -177,13 +200,49 @@ function MonsterAttackCoordinator.Execute(
 		})
 	end
 
+	local function pollInterruption()
+		if not options.PollInterruption then
+			return nil
+		end
+		local succeeded, value = pcall(options.PollInterruption)
+		if not succeeded then
+			error(value, 0)
+		end
+		return value
+	end
+
+	local function handleInterruption(value): (boolean, string?)
+		GodzillaMoveService.Cancel(monster)
+		if not options.HandleInterruption then
+			return false, "Interrupted"
+		end
+		local succeeded, result = pcall(options.HandleInterruption, value)
+		if not succeeded then
+			error(result, 0)
+		end
+		if type(result) ~= "table" or type(result.Continue) ~= "boolean" then
+			return false, "InvalidInterruptionResult"
+		end
+		return result.Continue, result.Reason
+	end
+
+	local function notifyPhase(phase: "MovingToTarget" | "AttackingStructure")
+		if not options.OnPhaseChanged then
+			return
+		end
+		local succeeded, callbackError = pcall(options.OnPhaseChanged, phase)
+		if not succeeded then
+			error(callbackError, 0)
+		end
+	end
+
 	local ignoredHouseIds = {}
 	local destroyedHouseIds = {}
 	local rewardGranted = 0
 
 	local function selectCurrentTarget(): NearbyHouseTargetSelector.HouseCandidate?
 		local candidates = {}
-		for _, candidate in options.HouseAccess.ListAliveTargets(player) do
+		for _, candidate in options.HouseAccess.ListAliveTargets(defender) do
 			if not ignoredHouseIds[candidate.HouseId] then
 				table.insert(candidates, candidate)
 			end
@@ -207,12 +266,17 @@ function MonsterAttackCoordinator.Execute(
 	local function moveUntilTarget(): (
 		boolean,
 		NearbyHouseTargetSelector.HouseCandidate?,
-		string?
+		string?,
+		any?
 	)
+		local initialInterruption = pollInterruption()
+		if initialInterruption ~= nil then
+			return false, nil, nil, initialInterruption
+		end
 		-- 攻击结束后先清理当前位置半径，不让怪兽在附近房屋之间反复起步。
 		local currentCandidate = selectCurrentTarget()
 		if currentCandidate then
-			return false, currentCandidate, nil
+			return false, currentCandidate, nil, nil
 		end
 
 		local pivotPosition = monster:GetPivot().Position
@@ -221,7 +285,7 @@ function MonsterAttackCoordinator.Execute(
 			destination.Z - pivotPosition.Z
 		)
 		if horizontalOffset.Magnitude <= 0.01 then
-			return true, nil, nil
+			return true, nil, nil, nil
 		end
 
 		local moveFinished = false
@@ -239,35 +303,53 @@ function MonsterAttackCoordinator.Execute(
 		end)
 
 		while isCurrent() and not moveFinished do
+			local interruption = pollInterruption()
+			if interruption ~= nil then
+				return false, nil, nil, interruption
+			end
 			local candidate = selectCurrentTarget()
 			if candidate then
-				return false, candidate, nil
+				return false, candidate, nil, nil
 			end
 			task.wait(DETECTION_INTERVAL)
 		end
 
 		if not isCurrent() then
-			return false, nil, "Cancelled"
+			return false, nil, "Cancelled", nil
 		end
 
 		-- 到达的同一时刻也要检查一次，避免遗漏刚进入半径的房屋。
 		local candidate = selectCurrentTarget()
 		if candidate then
-			return false, candidate, nil
+			return false, candidate, nil, nil
 		end
 		if moveFailure then
 			warn("移动到最终点失败：", moveFailure)
-			return false, nil, "MoveToDestinationFailed"
+			return false, nil, "MoveToDestinationFailed", nil
 		end
 		if not moveCompleted then
-			return false, nil, "MoveToDestinationFailed"
+			return false, nil, "MoveToDestinationFailed", nil
 		end
 
-		return true, nil, nil
+		return true, nil, nil, nil
 	end
 
 	while isCurrent() do
-		local reachedDestination, candidate, moveReason = moveUntilTarget()
+		notifyPhase("MovingToTarget")
+		local reachedDestination, candidate, moveReason, interruption = moveUntilTarget()
+		if interruption ~= nil then
+			local shouldContinue, interruptionReason = handleInterruption(interruption)
+			if shouldContinue then
+				continue
+			end
+			return makeResult(
+				false,
+				interruptionReason or "Interrupted",
+				false,
+				destroyedHouseIds,
+				rewardGranted
+			)
+		end
 		if not candidate then
 			if reachedDestination then
 				return makeResult(
@@ -297,7 +379,7 @@ function MonsterAttackCoordinator.Execute(
 		end
 
 		local reservation = HouseTargetReservationService.TryAcquire(
-			player,
+			defender,
 			candidate.HouseId,
 			monster
 		)
@@ -309,7 +391,7 @@ function MonsterAttackCoordinator.Execute(
 		activeReservations[monster] = reservation
 
 		local latestTarget = options.HouseAccess.ResolveAliveTarget(
-			player,
+			defender,
 			candidate.HouseId
 		)
 		if not latestTarget then
@@ -323,6 +405,7 @@ function MonsterAttackCoordinator.Execute(
 			latestTarget,
 			options.MonsterAttackConfig.Geometry.DesiredGap
 		)
+		notifyPhase("AttackingStructure")
 		local movedToAttackPosition = moveTo(pose.Position)
 		if not movedToAttackPosition then
 			releaseOwnedReservation()
@@ -370,6 +453,7 @@ function MonsterAttackCoordinator.Execute(
 			}
 		)
 		local commitResult: HouseAttackCommitter.CommitResult? = nil
+		local pendingInterruption = nil
 		local animationSucceeded, playbackOrError = pcall(
 			AttackAnimationPlayer.Play,
 			monster,
@@ -379,7 +463,11 @@ function MonsterAttackCoordinator.Execute(
 				Speed = options.MonsterAttackConfig.Animation.Speed,
 				Priority = Enum.AnimationPriority.Action,
 				IsCancelled = function()
-					return not isCurrent()
+					if not isCurrent() then
+						return true
+					end
+					pendingInterruption = pollInterruption()
+					return pendingInterruption ~= nil
 				end,
 			},
 			function()
@@ -394,6 +482,7 @@ function MonsterAttackCoordinator.Execute(
 					{
 						MaxGap = options.MonsterAttackConfig.Geometry.MaxGap,
 						RewardAmount = options.RewardAmount,
+						RewardPlayer = options.RewardPlayer,
 					}
 				)
 				if activeReservations[monster] == reservation then
@@ -433,6 +522,21 @@ function MonsterAttackCoordinator.Execute(
 		if commitResult and commitResult.Succeeded then
 			table.insert(destroyedHouseIds, commitResult.HouseId)
 			rewardGranted += commitResult.RewardGranted
+		end
+
+		if pendingInterruption ~= nil then
+			releaseOwnedReservation()
+			local shouldContinue, interruptionReason = handleInterruption(pendingInterruption)
+			if shouldContinue then
+				continue
+			end
+			return makeResult(
+				false,
+				interruptionReason or "Interrupted",
+				false,
+				destroyedHouseIds,
+				rewardGranted
+			)
 		end
 
 		if playback.Cancelled or not isCurrent() then

@@ -116,6 +116,7 @@ attackDestination.OnServerEvent:Connect(function(player, destination)
 				MoveSpeed = MonsterAttackTestConfig.Movement.MoveSpeed,
 				TurnDuration = MonsterAttackTestConfig.Movement.TurnDuration,
 				RewardAmount = MonsterAttackTestConfig.RewardAmount,
+				RewardPlayer = player,
 				OnHouseDestroyed = function(houseId, commitResult)
 					houseDestroyed:FireClient(player, houseId, commitResult.RewardGranted)
 				end,
