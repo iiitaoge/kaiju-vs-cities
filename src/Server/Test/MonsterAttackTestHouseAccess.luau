@@ -72,11 +72,14 @@ function MonsterAttackTestHouseAccess.PrepareDestroy(
 end
 
 -- 输入：player、已通过最新校验的测试 houseId。
--- 输出：是否首次完成 Alive -> Destroyed。
+-- 输出：是否首次完成 Alive -> Destroyed，以及失败原因。
 -- 副作用：只切换该玩家的测试房屋状态。
-function MonsterAttackTestHouseAccess.Destroy(player: Player, houseId: string): boolean
+function MonsterAttackTestHouseAccess.Destroy(
+	player: Player,
+	houseId: string
+): (boolean, string?)
 	local _, changed = HouseStateService.Destroy(player, houseId)
-	return changed
+	return changed, if changed then nil else "HouseNotAlive"
 end
 
 return MonsterAttackTestHouseAccess

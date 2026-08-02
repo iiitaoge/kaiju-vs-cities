@@ -1,6 +1,4 @@
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local HouseBoundsResolver = require(ReplicatedStorage.Shared.Building.HouseBoundsResolver)
+local HouseAttackTargetAccess = require(script.Parent.HouseAttackTargetAccess)
 
 local HouseAttackGeometry = {}
 
@@ -42,7 +40,7 @@ end
 -- 副作用：无，不移动或旋转模型。
 function HouseAttackGeometry.ResolvePose(
 	monster: Model,
-	houseTarget: HouseBoundsResolver.HouseTarget,
+	houseTarget: HouseAttackTargetAccess.HouseTarget,
 	desiredGap: number
 ): AttackPose
 	assert(monster:IsA("Model"), "monster 必须是 Model")
@@ -87,7 +85,7 @@ end
 -- 副作用：无。
 function HouseAttackGeometry.GetGap(
 	monster: Model,
-	houseTarget: HouseBoundsResolver.HouseTarget
+	houseTarget: HouseAttackTargetAccess.HouseTarget
 ): number
 	assert(monster:IsA("Model"), "monster 必须是 Model")
 	assert(type(houseTarget) == "table", "houseTarget 必须是 HouseTarget")

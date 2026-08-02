@@ -1,4 +1,4 @@
-local CatalogHouseAttackAccess = require(script.Parent.CatalogHouseAttackAccess)
+local PlayerRuntimeHouseAttackAccess = require(script.Parent.PlayerRuntimeHouseAttackAccess)
 
 local AliveHouseTargetQuery = {}
 
@@ -9,11 +9,11 @@ export type HouseCandidate = {
 }
 
 -- 输入：
---   player：房屋逻辑状态和区域等级所属的玩家。
+--   player：拥有服务器运行时城市的防守玩家。
 -- 输出：
---   该玩家当前所有 Alive 房屋的世界范围数组，顺序与 HouseCatalog.GetAll 一致。
+--   该玩家当前所有 Alive 权威房屋的实际世界范围，按 HouseCatalog 稳定排序。
 function AliveHouseTargetQuery.List(player: Player): { HouseCandidate }
-	return CatalogHouseAttackAccess.ListAliveTargets(player)
+	return PlayerRuntimeHouseAttackAccess.ListAliveTargets(player)
 end
 
 return AliveHouseTargetQuery

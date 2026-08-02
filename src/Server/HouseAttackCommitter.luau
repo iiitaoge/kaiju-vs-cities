@@ -53,7 +53,7 @@ end
 --   返回房屋状态变化、奖励、余额和预约释放结果；业务失败通过 Reason 明示。
 -- 副作用：
 --   可能通过 access 切换房屋状态、增加玩家金钱，并消费预约。
---   不播放动画、不选择下一栋房屋、不发送 RemoteEvent。
+--   自身不播放动画、不选择下一栋房屋；具体 access 可以协调后续生命周期表现。
 function HouseAttackCommitter.Commit(
 	reservation: HouseTargetReservationService.Reservation,
 	access: HouseAttackTargetAccess.Access,
@@ -98,8 +98,9 @@ function HouseAttackCommitter.Commit(
 		return fail(prepareReason or "PrepareDestroyFailed")
 	end
 
-	if not access.Destroy(reservation.Defender, houseId) then
-		return fail("DestroyRejected")
+	local destroyed, destroyReason = access.Destroy(reservation.Defender, houseId)
+	if not destroyed then
+		return fail(destroyReason or "DestroyRejected")
 	end
 
 	local balance = MoneyService.Add(options.RewardPlayer, options.RewardAmount)

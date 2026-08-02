@@ -13,8 +13,8 @@ export type Access = {
 	ResolveAliveTarget: (player: Player, houseId: string) -> (HouseTarget?, string?),
 	-- 输入 player、houseId；输出摧毁前业务准备是否成功及失败原因。
 	PrepareDestroy: (player: Player, houseId: string) -> (boolean, string?),
-	-- 输入 player、houseId；输出是否首次完成 Alive -> Destroyed。
-	Destroy: (player: Player, houseId: string) -> boolean,
+	-- 输入 player、houseId；输出是否首次完成 Alive -> Destroyed 并同步运行时建筑。
+	Destroy: (player: Player, houseId: string) -> (boolean, string?),
 }
 
 return HouseAttackTargetAccess

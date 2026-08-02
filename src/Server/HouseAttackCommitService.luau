@@ -1,6 +1,6 @@
-local CatalogHouseAttackAccess = require(script.Parent.CatalogHouseAttackAccess)
 local HouseAttackCommitter = require(script.Parent.HouseAttackCommitter)
 local HouseTargetReservationService = require(script.Parent.HouseTargetReservationService)
+local PlayerRuntimeHouseAttackAccess = require(script.Parent.PlayerRuntimeHouseAttackAccess)
 
 local HouseAttackCommitService = {}
 
@@ -36,13 +36,14 @@ export type CommitResult = {
 -- 输出：
 --   返回房屋状态变化、奖励、余额和预约释放结果；所有业务失败都通过 Reason 明示。
 -- 副作用：
---   重新校验后可能把房屋切换为 Destroyed、增加玩家金钱，并消费预约。
---   不播放动画、不选择下一栋房屋、不发送 RemoteEvent。
+--   重新校验后通过正式房屋访问器启动 Destroyed -> Rebuilding -> Alive 生命周期，
+--   增加玩家金钱并消费预约；生命周期协调器负责全员表现广播。
+--   本模块不选择下一栋房屋。
 function HouseAttackCommitService.Commit(
 	reservation: HouseTargetReservationService.Reservation,
 	options: CommitOptions
 ): CommitResult
-	return HouseAttackCommitter.Commit(reservation, CatalogHouseAttackAccess, options)
+	return HouseAttackCommitter.Commit(reservation, PlayerRuntimeHouseAttackAccess, options)
 end
 
 return HouseAttackCommitService
