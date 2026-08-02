@@ -1,5 +1,6 @@
 return {
-	Enabled = true,
+	-- 正式玩家 Plot 怪兽链已启用；旧的单场景测试链默认关闭，避免依赖 Workspace/MonsterAttackTest。
+	Enabled = false,
 	HouseIdPrefix = "TEST-",
 	MonsterKey = "P4",
 

@@ -11,6 +11,7 @@ export type SessionOptions = {
 	TowerAccess: DefenseTowerAccess.Access,
 	DefenderDetectionRadius: number,
 	OnDefeated: ((Player, string, MonsterDamageCoordinator.DamageSource) -> ())?,
+	OnTowerHit: ((string, number) -> ())?,
 }
 
 export type DefenseEvent = {
@@ -46,6 +47,7 @@ function CityDefenseCoordinator.Begin(
 			and options.DefenderDetectionRadius >= 0,
 		"DefenderDetectionRadius 无效"
 	)
+	assert(options.OnTowerHit == nil or type(options.OnTowerHit) == "function", "OnTowerHit 无效")
 
 	local closed = false
 	local attackerDefeated = false
@@ -93,6 +95,18 @@ function CityDefenseCoordinator.Begin(
 				tower.Damage,
 				{ OnDefeated = options.OnDefeated }
 			)
+			if damageResult.Succeeded
+				and damageResult.DamageApplied > 0
+				and options.OnTowerHit then
+				local callbackSucceeded, callbackError = pcall(
+					options.OnTowerHit,
+					tower.TowerId,
+					damageResult.DamageApplied
+				)
+				if not callbackSucceeded then
+					warn("防御塔命中回调失败：", callbackError)
+				end
+			end
 			if damageResult.Defeated then
 				attackerDefeated = true
 				return

@@ -31,6 +31,10 @@ export type ExpeditionResult = {
 	Reason: string?,
 	DestroyedHouseIds: { string },
 	RewardGranted: number,
+	DefeatedDefenderMonsterIds: { string },
+	AttackerDefeated: boolean,
+	TowerHitCount: number,
+	TowerDamageTaken: number,
 }
 
 local function updatePhase(player: Player, spawnPointId: string, phase: string)
@@ -70,7 +74,28 @@ function MonsterExpeditionCoordinator.Execute(
 			Reason = "AttackerUnavailable",
 			DestroyedHouseIds = {},
 			RewardGranted = 0,
+			DefeatedDefenderMonsterIds = {},
+			AttackerDefeated = false,
+			TowerHitCount = 0,
+			TowerDamageTaken = 0,
 		}
+	end
+
+	local defeatedDefenderMonsterIds = {}
+	local attackerDefeated = false
+	local towerHitCount = 0
+	local towerDamageTaken = 0
+	local function onDefeated(
+		defeatedPlayer: Player,
+		defeatedSpawnPointId: string,
+		source: MonsterDamageCoordinator.DamageSource
+	)
+		if defeatedPlayer == attacker then
+			attackerDefeated = true
+		elseif defeatedPlayer == defender then
+			table.insert(defeatedDefenderMonsterIds, defeatedSpawnPointId)
+		end
+		options.OnDefeated(defeatedPlayer, defeatedSpawnPointId, source)
 	end
 
 	local defenseSession = CityDefenseCoordinator.Begin(
@@ -80,7 +105,11 @@ function MonsterExpeditionCoordinator.Execute(
 		{
 			TowerAccess = options.Defense.TowerAccess,
 			DefenderDetectionRadius = options.Defense.DefenderDetectionRadius,
-			OnDefeated = options.OnDefeated,
+			OnDefeated = onDefeated,
+			OnTowerHit = function(_towerId, damageApplied)
+				towerHitCount += 1
+				towerDamageTaken += damageApplied
+			end,
 		}
 	)
 	local function closeDefense()
@@ -159,7 +188,7 @@ function MonsterExpeditionCoordinator.Execute(
 						AttackerResumeState = resumeState,
 						DefenderResumeState = "IdleAtSpawn",
 						IsCancelled = options.IsCancelled,
-						OnDefeated = options.OnDefeated,
+						OnDefeated = onDefeated,
 						SetMoving = options.SetCombatantMoving,
 					}
 				)
@@ -184,12 +213,17 @@ function MonsterExpeditionCoordinator.Execute(
 
 	local latest = MonsterRosterCoordinator.Get(attacker, attackerSpawnPointId)
 	if not latest or latest.State == "Defeated" or latest.State == "Recovering" then
+		attackerDefeated = true
 		return {
 			Succeeded = false,
 			EndReason = "Defeated",
 			Reason = "AttackerDefeated",
 			DestroyedHouseIds = attackResult.DestroyedHouseIds,
 			RewardGranted = attackResult.RewardGranted,
+			DefeatedDefenderMonsterIds = table.clone(defeatedDefenderMonsterIds),
+			AttackerDefeated = attackerDefeated,
+			TowerHitCount = towerHitCount,
+			TowerDamageTaken = towerDamageTaken,
 		}
 	end
 
@@ -224,6 +258,10 @@ function MonsterExpeditionCoordinator.Execute(
 		Reason = attackResult.Reason,
 		DestroyedHouseIds = attackResult.DestroyedHouseIds,
 		RewardGranted = attackResult.RewardGranted,
+		DefeatedDefenderMonsterIds = table.clone(defeatedDefenderMonsterIds),
+		AttackerDefeated = attackerDefeated,
+		TowerHitCount = towerHitCount,
+		TowerDamageTaken = towerDamageTaken,
 	}
 end
 

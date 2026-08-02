@@ -3,6 +3,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local EnemyTargetSelector = require(ReplicatedStorage.Shared.Monster.EnemyTargetSelector)
 local MonsterCapacityRules = require(ReplicatedStorage.Shared.Monster.MonsterCapacityRules)
 local MonsterCombatGeometry = require(ReplicatedStorage.Shared.Monster.MonsterCombatGeometry)
+local MonsterAttackProtocol = require(ReplicatedStorage.Shared.Monster.MonsterAttackProtocol)
+local MonsterAttackConfigs = require(ReplicatedStorage.Shared.Monster.MonsterAttackConfigs)
+local MonsterExpeditionConfigs = require(ReplicatedStorage.Shared.Monster.MonsterExpeditionConfigs)
 local MonsterHealthRules = require(ReplicatedStorage.Shared.Monster.MonsterHealthRules)
 local MonsterStateRules = require(ReplicatedStorage.Shared.Monster.MonsterStateRules)
 local TerritoryPointRules = require(ReplicatedStorage.Shared.Monster.TerritoryPointRules)
@@ -30,6 +33,21 @@ end
 -- 输出：全部独立规则通过时返回 true；任一契约变化时 assert 失败。
 -- 内部算法：覆盖容量边界、状态权限、伤害归零、旋转地盘、稳定选敌和包围盒距离。
 function MonsterRuleModulesSpec.Run(): boolean
+	expect(
+		MonsterAttackProtocol.TargetQueryRemoteName ~= MonsterAttackProtocol.CommandRemoteName,
+		"目标查询和攻击命令必须使用独立 Remote"
+	)
+	for _, monsterKey in { "P1", "P4" } do
+		local attack = MonsterAttackConfigs[monsterKey]
+		local expedition = MonsterExpeditionConfigs[monsterKey]
+		expect(attack ~= nil and attack.StructureDamage > 0, monsterKey .. " 建筑伤害无效")
+		expect(expedition ~= nil, monsterKey .. " 缺少正式远征配置")
+		expect(expedition.RewardAmount > 0, monsterKey .. " 摧毁奖励必须为正数")
+		expect(expedition.Movement.MoveSpeed > 0, monsterKey .. " 出征移速无效")
+		expect(expedition.RecoveryDuration >= 0, monsterKey .. " 恢复时间无效")
+		expect(expedition.Combat.Damage > 0, monsterKey .. " 互殴伤害无效")
+	end
+
 	local addAllowed = MonsterCapacityRules.CheckAdd(1, 2)
 	expect(addAllowed.Allowed, "容量未满时应允许新增")
 	expect(

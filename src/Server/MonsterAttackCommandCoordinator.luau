@@ -15,17 +15,20 @@ export type CommandResult = {
 	Monster: Model?,
 }
 
+export type CommandContext = {
+	CommandId: number,
+	Attacker: Player,
+	Defender: Player,
+	AttackerSpawnPointId: string,
+	EntryPoint: Vector3,
+	StartedAt: number,
+}
+
 export type ExecuteOptions = {
 	TerritoryAccess: PlayerTerritoryAccess.Access,
 	-- 必须立即开始异步之外的完整远征；本回调自身运行在新 task 中。
-	StartExpedition: (
-		Player,
-		Player,
-		string,
-		Vector3,
-		() -> boolean
-	) -> any,
-	OnCommandFinished: (Player, string, number, boolean, any) -> (),
+	StartExpedition: (CommandContext, () -> boolean) -> any,
+	OnCommandFinished: (CommandContext, boolean, any) -> (),
 }
 
 local commandIds: { [Player]: { [string]: number } } = setmetatable({}, { __mode = "k" })
@@ -148,6 +151,14 @@ function MonsterAttackCommandCoordinator.Execute(
 	end
 
 	local commandId = nextCommandId(attacker, attackerSpawnPointId)
+	local commandContext = table.freeze({
+		CommandId = commandId,
+		Attacker = attacker,
+		Defender = targetPlayer,
+		AttackerSpawnPointId = attackerSpawnPointId,
+		EntryPoint = entryPoint,
+		StartedAt = workspace:GetServerTimeNow(),
+	})
 	setActiveCommand(attacker, attackerSpawnPointId, commandId)
 	local function isCancelled(): boolean
 		return currentCommandId(attacker, attackerSpawnPointId) ~= commandId
@@ -158,10 +169,7 @@ function MonsterAttackCommandCoordinator.Execute(
 	task.spawn(function()
 		local succeeded, resultOrError = pcall(
 			options.StartExpedition,
-			attacker,
-			targetPlayer,
-			attackerSpawnPointId,
-			entryPoint,
+			commandContext,
 			isCancelled
 		)
 		if not succeeded then
@@ -172,9 +180,7 @@ function MonsterAttackCommandCoordinator.Execute(
 		end
 		local callbackSucceeded, callbackError = pcall(
 			options.OnCommandFinished,
-			attacker,
-			attackerSpawnPointId,
-			commandId,
+			commandContext,
 			succeeded,
 			resultOrError
 		)
