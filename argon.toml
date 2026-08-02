@@ -1,0 +1,16 @@
+# Keep the Studio plugin and Argon server on one predictable local endpoint.
+host = "localhost"
+port = 8000
+scan_ports = false
+
+# Keep the foreground server visible so disconnects cannot go unnoticed.
+run_async = false
+
+# This is a native Luau project with an explicit project file.
+detect_project = false
+smart_paths = false
+ts_mode = false
+
+# Generate the map used by Luau language tooling and avoid newline-only diffs.
+with_sourcemap = true
+ignore_line_endings = true
