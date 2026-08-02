@@ -1,7 +1,11 @@
 local MoneyService = require(script.Parent.MoneyService)
+local PlayerPlotAssignmentService = require(script.Parent.PlayerPlotAssignmentService)
 local PlayerStateService = require(script.Parent.PlayerStateService)
 local RegionStateService = require(script.Parent.RegionStateService)
+local ZoneStateService = require(script.Parent.ZoneStateService)
 
 PlayerStateService.Start()
+ZoneStateService.Start()
+PlayerPlotAssignmentService.Start()
 MoneyService.Start()
 RegionStateService.Start()
