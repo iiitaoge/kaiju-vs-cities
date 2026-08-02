@@ -1,6 +1,9 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local MonsterAttackSelectionStateMachine = require(
+	ReplicatedStorage.Shared.Monster.MonsterAttackSelectionStateMachine
+)
 local TerritoryPointRules = require(ReplicatedStorage.Shared.Monster.TerritoryPointRules)
 
 local AttackPanelCoordinator = {}
@@ -51,10 +54,23 @@ export type Session = {
 	IsOpen: () -> boolean,
 }
 
+local function failure(reason: string): RequestResult
+	return {
+		Succeeded = false,
+		Reason = reason,
+		CommandId = nil,
+		Monster = nil,
+	}
+end
+
 local function eligibleTargets(localPlayer: Player, values: { Target }): { Target }
 	local result = {}
 	for _, target in values do
-		if target.Player ~= localPlayer and target.Player.Parent == Players then
+		if type(target) == "table"
+			and typeof(target.Player) == "Instance"
+			and target.Player:IsA("Player")
+			and target.Player ~= localPlayer
+			and target.Player.Parent == Players then
 			table.insert(result, target)
 		end
 	end
@@ -66,7 +82,7 @@ end
 
 -- 输入：已选怪兽出生点和 UI/网络适配回调。
 -- 输出：供按钮和屏幕点击调用的面板会话。
--- 内部算法：维护稳定目标玩家索引，切换时通知镜头；坐标先本地校验，再提交服务器。
+-- 内部算法：纯状态机决定查询/切换/提交/关闭；本协调器只执行 Effect、领地规则和回调。
 function AttackPanelCoordinator.Open(
 	spawnPointId: string,
 	options: OpenOptions
@@ -81,82 +97,168 @@ function AttackPanelCoordinator.Open(
 	assert(type(options.OnAccepted) == "function", "OnAccepted 必须是 function")
 	assert(type(options.OnClosed) == "function", "OnClosed 必须是 function")
 
-	local open = true
-	local busy = false
-	local targets: { Target } = {}
-	local index = 0
+	local current = MonsterAttackSelectionStateMachine.New()
+	local targetsByUserId: { [number]: Target } = {}
+	local dispatch
 
-	local function current(): Target?
-		return if index >= 1 and index <= #targets then targets[index] else nil
+	local function currentTarget(): Target?
+		local targetPlayerId = current.TargetPlayerIds[current.CurrentIndex]
+		return if targetPlayerId then targetsByUserId[targetPlayerId] else nil
 	end
 
-	local function notifyCurrent(): Target?
-		local target = current()
-		if target then
-			options.OnTargetChanged(target)
-		else
-			options.OnTargetUnavailable()
+	local function queryTargets()
+		local succeeded, valuesOrError = pcall(options.GetTargets)
+		if not succeeded or type(valuesOrError) ~= "table" then
+			targetsByUserId = {}
+			dispatch({
+				Kind = "TargetsFailed",
+				Reason = if succeeded then "InvalidTargets" else "TargetQueryFailed",
+			})
+			return
 		end
-		return target
+
+		local nextTargetsByUserId = {}
+		local targetPlayerIds = {}
+		for _, target in eligibleTargets(options.LocalPlayer, valuesOrError) do
+			nextTargetsByUserId[target.Player.UserId] = target
+			table.insert(targetPlayerIds, target.Player.UserId)
+		end
+		targetsByUserId = nextTargetsByUserId
+		dispatch({
+			Kind = "TargetsLoaded",
+			TargetPlayerIds = targetPlayerIds,
+		})
 	end
 
-	local function reload(notify: boolean): Target?
-		if not open then
+	local function runRequest(effect): RequestResult
+		local targetPlayerId = effect.TargetPlayerId
+		local target = if targetPlayerId then targetsByUserId[targetPlayerId] else nil
+		if not target or target.Player.Parent ~= Players then
+			local result = failure("TargetUnavailable")
+			dispatch({ Kind = "SubmitRejected", Reason = result.Reason })
+			if targetPlayerId then
+				dispatch({ Kind = "TargetUnavailable", TargetPlayerId = targetPlayerId })
+			else
+				options.OnTargetUnavailable()
+			end
+			return result
+		end
+
+		local succeeded, resultOrError = pcall(
+			options.RequestAttack,
+			effect.SpawnPointId,
+			target.Player,
+			effect.EntryPoint
+		)
+		if not succeeded then
+			local result = failure("RequestFailed")
+			dispatch({ Kind = "SubmitRejected", Reason = result.Reason })
+			options.OnValidationFailed(result.Reason)
+			return result
+		end
+		if type(resultOrError) ~= "table" or type(resultOrError.Succeeded) ~= "boolean" then
+			local result = failure("InvalidServerResponse")
+			dispatch({ Kind = "SubmitRejected", Reason = result.Reason })
+			options.OnValidationFailed(result.Reason)
+			return result
+		end
+
+		local result = resultOrError :: RequestResult
+		if not result.Succeeded then
+			local reason = result.Reason or "CommandRejected"
+			dispatch({ Kind = "SubmitRejected", Reason = reason })
+			options.OnValidationFailed(reason)
+			return result
+		end
+		dispatch({ Kind = "SubmitAccepted", Result = result })
+		return result
+	end
+
+	local function runEffect(effect)
+		if effect.Kind == "QueryTargets" then
+			queryTargets()
 			return nil
 		end
-		local previous = current()
-		targets = eligibleTargets(options.LocalPlayer, options.GetTargets())
-		index = 0
-		if previous then
-			for targetIndex, target in targets do
-				if target.Player.UserId == previous.Player.UserId then
-					index = targetIndex
-					break
-				end
+		if effect.Kind == "TargetChanged" then
+			local target = if effect.TargetPlayerId
+				then targetsByUserId[effect.TargetPlayerId]
+				else nil
+			if target then
+				options.OnTargetChanged(target)
+			else
+				options.OnTargetUnavailable()
 			end
+			return target
 		end
-		if index == 0 and #targets > 0 then
-			index = 1
+		if effect.Kind == "RequestAttack" then
+			return runRequest(effect)
 		end
-		return if notify then notifyCurrent() else current()
+		if effect.Kind == "NotifyAccepted" then
+			local target = if effect.TargetPlayerId
+				then targetsByUserId[effect.TargetPlayerId]
+				else nil
+			local requestResult = effect.Result :: RequestResult
+			options.OnClosed(effect.Reason or "CommandAccepted")
+			if target then
+				options.OnAccepted(requestResult, target)
+			else
+				options.OnTargetUnavailable()
+			end
+			return requestResult
+		end
+		if effect.Kind == "CloseSelection" then
+			options.OnClosed(effect.Reason or "Cancelled")
+		end
+		return nil
+	end
+
+	dispatch = function(event)
+		local transition = MonsterAttackSelectionStateMachine.Apply(current, event)
+		current = transition.State
+		local effectResult = nil
+		if transition.Accepted and transition.Effect then
+			effectResult = runEffect(transition.Effect)
+		end
+		return transition, effectResult
+	end
+
+	local opened = dispatch({ Kind = "Open", SpawnPointId = spawnPointId })
+	assert(opened.Accepted, opened.Reason or "攻击选择状态机打开失败")
+
+	local function shift(kind: "NextTarget" | "PreviousTarget"): Target?
+		local transition = dispatch({ Kind = kind })
+		if not transition.Accepted then
+			if transition.Reason == "TargetUnavailable" then
+				options.OnTargetUnavailable()
+			end
+			return nil
+		end
+		return currentTarget()
 	end
 
 	local function refresh(): Target?
-		return reload(true)
-	end
-
-	local function shift(delta: number): Target?
-		if not open then
-			return nil
-		end
-		reload(false)
-		if #targets == 0 then
-			options.OnTargetUnavailable()
-			return nil
-		end
-		index = ((index - 1 + delta) % #targets) + 1
-		return notifyCurrent()
-	end
-
-	local function close(reason: string)
-		if not open then
-			return
-		end
-		open = false
-		options.OnClosed(reason)
+		local transition = dispatch({ Kind = "Refresh" })
+		return if transition.Accepted then currentTarget() else nil
 	end
 
 	local function submit(worldPoint: Vector3): RequestResult
-		if not open then
-			return { Succeeded = false, Reason = "PanelClosed", CommandId = nil, Monster = nil }
+		if current.Mode == "Closed" then
+			return failure("PanelClosed")
 		end
-		if busy then
-			return { Succeeded = false, Reason = "RequestBusy", CommandId = nil, Monster = nil }
+		if current.Mode == "LoadingTargets" or current.Mode == "Submitting" then
+			return failure("RequestBusy")
 		end
-		local target = current()
-		if not target then
+		local target = currentTarget()
+		if current.Mode ~= "Browsing" or not target then
 			options.OnTargetUnavailable()
-			return { Succeeded = false, Reason = "TargetUnavailable", CommandId = nil, Monster = nil }
+			return failure("TargetUnavailable")
+		end
+		if target.Player.Parent ~= Players then
+			dispatch({
+				Kind = "TargetUnavailable",
+				TargetPlayerId = target.Player.UserId,
+			})
+			return failure("TargetUnavailable")
 		end
 
 		local allowed = false
@@ -185,59 +287,40 @@ function AttackPanelCoordinator.Open(
 				or if validTerritoryCount > 0
 					then "EntryPointOutsideTerritory"
 					else "TargetTerritoryUnavailable"
+			dispatch({ Kind = "SubmitRejected", Reason = reason })
 			options.OnValidationFailed(reason)
-			return { Succeeded = false, Reason = reason, CommandId = nil, Monster = nil }
+			return failure(reason)
 		end
 
-		busy = true
-		local succeeded, resultOrError = pcall(
-			options.RequestAttack,
-			spawnPointId,
-			target.Player,
-			worldPoint
-		)
-		busy = false
-		if not succeeded then
-			options.OnValidationFailed("RequestFailed")
-			return { Succeeded = false, Reason = "RequestFailed", CommandId = nil, Monster = nil }
+		local transition, effectResult = dispatch({
+			Kind = "SubmitRequested",
+			EntryPoint = worldPoint,
+		})
+		if not transition.Accepted then
+			local reason = transition.Reason or "CommandRejected"
+			options.OnValidationFailed(reason)
+			return failure(reason)
 		end
-		if type(resultOrError) ~= "table" or type(resultOrError.Succeeded) ~= "boolean" then
-			options.OnValidationFailed("InvalidServerResponse")
-			return {
-				Succeeded = false,
-				Reason = "InvalidServerResponse",
-				CommandId = nil,
-				Monster = nil,
-			}
-		end
-		local result = resultOrError :: RequestResult
-		if not result.Succeeded then
-			options.OnValidationFailed(result.Reason or "CommandRejected")
-			return result
-		end
-
-		open = false
-		options.OnClosed("CommandAccepted")
-		options.OnAccepted(result, target)
-		return result
+		return effectResult or failure("InvalidServerResponse")
 	end
 
-	refresh()
 	return {
 		NextTarget = function()
-			return shift(1)
+			return shift("NextTarget")
 		end,
 		PreviousTarget = function()
-			return shift(-1)
+			return shift("PreviousTarget")
 		end,
 		RefreshTargets = refresh,
 		SubmitWorldPoint = submit,
 		Cancel = function()
-			close("Cancelled")
+			if current.Mode ~= "Closed" then
+				dispatch({ Kind = "Cancel" })
+			end
 		end,
-		GetCurrentTarget = current,
+		GetCurrentTarget = currentTarget,
 		IsOpen = function()
-			return open
+			return current.Mode ~= "Closed"
 		end,
 	}
 end
