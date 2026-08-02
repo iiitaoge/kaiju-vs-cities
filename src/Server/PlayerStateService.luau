@@ -7,21 +7,23 @@
 	输入：
 	- Start：无。
 	- GetPlayerState / GetSection：player。
-	- GetEntity：player、"Regions" 或 "Houses"、entityId。
+	- GetEntity：player、"Zones"、"Houses" 或 "Monsters"、entityId。
 
 	输出：
 	- GetPlayerState：玩家状态 Folder。
-	- GetSection：Economy / Regions / Houses Folder。
-	- GetEntity：区域或房屋的状态 Folder。
+	- GetSection：Economy / Zones / Houses / Monsters Folder。
+	- GetEntity：Zone 或业务实体的状态 Folder。
 
 	内部结构：
 	- ServerStorage/RuntimePlayerStates/<UserId>
 		- PlayerReference (ObjectValue)
 		- Economy (Folder)
-		- Regions (Folder)
-			- <RegionId> (Folder + Attributes)
+		- Zones (Folder)
+			- <ZoneId> (Folder + Attributes)
 		- Houses (Folder)
 			- <HouseId> (Folder + Attributes)
+		- Monsters (Folder + Capacity Attribute)
+			- <SpawnPointId> (Folder + Attributes)
 
 	不负责：
 	- 不解释业务字段，不计算金钱、区域或房屋规则。
@@ -33,15 +35,16 @@ local ServerStorage = game:GetService("ServerStorage")
 
 local PlayerStateService = {}
 
-export type SectionName = "Economy" | "Regions" | "Houses"
+export type SectionName = "Economy" | "Zones" | "Houses" | "Monsters"
 
 -- 权威数据属于下方 Instance 树，而不属于当前 ModuleScript 的执行缓存。
 local ROOT_NAME = "RuntimePlayerStates"
 local PLAYER_REFERENCE_NAME = "PlayerReference"
 local VALID_SECTIONS = {
 	Economy = true,
-	Regions = true,
+	Zones = true,
 	Houses = true,
+	Monsters = true,
 }
 
 local started = false
@@ -161,10 +164,13 @@ end
 
 function PlayerStateService.GetEntity(
 	player: Player,
-	sectionName: "Regions" | "Houses",
+	sectionName: "Zones" | "Houses" | "Monsters",
 	entityId: string
 ): Folder
-	assert(sectionName == "Regions" or sectionName == "Houses", "实体只允许放在 Regions 或 Houses")
+	assert(
+		sectionName == "Zones" or sectionName == "Houses" or sectionName == "Monsters",
+		"实体只允许放在 Zones、Houses 或 Monsters"
+	)
 	assert(type(entityId) == "string" and entityId ~= "", "entityId 必须是非空字符串")
 	return ensureFolder(PlayerStateService.GetSection(player, sectionName), entityId)
 end

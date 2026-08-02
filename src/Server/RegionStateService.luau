@@ -1,57 +1,42 @@
 --[[
 	职责：
-	- 保存区域运行时状态，并作为这些 Attribute 的唯一物理写入模块。
+	- 保留产钱区域现有 API。
+	- 通用 Unlocked/Level 委托给 ZoneStateService。
+	- 只直接保存产钱系统专有的 IncomeMultiplier 和 AutoIncome。
 
 	输入：
 	- player、regionId，以及对应字段的新值。
 
 	输出：
-	- Get：Unlocked、Level、IncomeMultiplier、AutoIncome 的快照。
-	- Getter：单个字段值。
-	- Setter：写入后的字段值。
-
-	读取：
-	- RegionEconomyConfigs.InitialUnlocked。
-	- PlayerStateService 的 Regions/<RegionId> Attributes。
-
-	写入：
-	- PlayerStateService 的 Regions/<RegionId> Attributes。
+	- Get：Unlocked、Level、IncomeMultiplier、AutoIncome 快照。
+	- Getter/Setter：对应字段值。
 
 	不负责：
-	- 不计算收入或价格。
-	- 不负责在等级、倍率变化前结算房屋收入；业务调用方必须先结算。
+	- 不计算收入或价格，不解释其他 Zone Kind。
 ]]
 
 local Players = game:GetService("Players")
 
 local PlayerStateService = require(script.Parent.PlayerStateService)
 local RegionEconomyConfigs = require(script.Parent.RegionEconomyConfigs)
+local ZoneStateService = require(script.Parent.ZoneStateService)
 
 local RegionStateService = {}
 
-local DEFAULT_LEVEL = 0
 local DEFAULT_INCOME_MULTIPLIER = 1
 local DEFAULT_AUTO_INCOME = false
 
 local function getRegionState(player: Player, regionId: string): Folder
-	return PlayerStateService.GetEntity(player, "Regions", regionId)
+	assert(RegionEconomyConfigs[regionId], string.format("未知产钱 Zone：%s", tostring(regionId)))
+	return PlayerStateService.GetEntity(player, "Zones", regionId)
 end
 
 local function initialize(player: Player)
-	for regionId, config in pairs(RegionEconomyConfigs) do
+	for regionId in pairs(RegionEconomyConfigs) do
 		local regionState = getRegionState(player, regionId)
-		if regionState:GetAttribute("Unlocked") == nil then
-			regionState:SetAttribute("Unlocked", config.InitialUnlocked)
-		end
-
-		if regionState:GetAttribute("Level") == nil then
-			regionState:SetAttribute("Level", DEFAULT_LEVEL)
-		end
-
 		if regionState:GetAttribute("IncomeMultiplier") == nil then
 			regionState:SetAttribute("IncomeMultiplier", DEFAULT_INCOME_MULTIPLIER)
 		end
-
 		if regionState:GetAttribute("AutoIncome") == nil then
 			regionState:SetAttribute("AutoIncome", DEFAULT_AUTO_INCOME)
 		end
@@ -68,44 +53,28 @@ end
 
 function RegionStateService.Get(player: Player, regionId: string)
 	return {
-		Unlocked = RegionStateService.GetUnlocked(player, regionId),
-		Level = RegionStateService.GetLevel(player, regionId),
+		Unlocked = ZoneStateService.GetUnlocked(player, regionId),
+		Level = ZoneStateService.GetLevel(player, regionId),
 		IncomeMultiplier = RegionStateService.GetIncomeMultiplier(player, regionId),
 		AutoIncome = RegionStateService.GetAutoIncome(player, regionId),
 	}
 end
 
 function RegionStateService.GetUnlocked(player: Player, regionId: string): boolean
-	local value = getRegionState(player, regionId):GetAttribute("Unlocked")
-	if value ~= nil then
-		return value
-	end
-
-	local config = RegionEconomyConfigs[regionId]
-	return if config then config.InitialUnlocked else false
+	return ZoneStateService.GetUnlocked(player, regionId)
 end
 
+
 function RegionStateService.SetUnlocked(player: Player, regionId: string, value: boolean): boolean
-	assert(type(value) == "boolean", "value 必须是 boolean")
-	getRegionState(player, regionId):SetAttribute("Unlocked", value)
-	return value
+	return ZoneStateService.SetUnlocked(player, regionId, value)
 end
 
 function RegionStateService.GetLevel(player: Player, regionId: string): number
-	return getRegionState(player, regionId):GetAttribute("Level") or DEFAULT_LEVEL
+	return ZoneStateService.GetLevel(player, regionId)
 end
 
 function RegionStateService.SetLevel(player: Player, regionId: string, value: number): number
-	assert(
-		type(value) == "number"
-			and value == value
-			and value < math.huge
-			and value >= 0
-			and value % 1 == 0,
-		"value 必须是有限非负整数"
-	)
-	getRegionState(player, regionId):SetAttribute("Level", value)
-	return value
+	return ZoneStateService.SetLevel(player, regionId, value)
 end
 
 function RegionStateService.GetIncomeMultiplier(player: Player, regionId: string): number
