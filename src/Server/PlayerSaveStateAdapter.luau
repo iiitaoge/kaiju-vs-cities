@@ -16,6 +16,9 @@ local RegionStateService = require(script.Parent.RegionStateService)
 local RegionUpgradeConfigs = require(script.Parent.RegionUpgradeConfigs)
 local ZoneStateService = require(script.Parent.ZoneStateService)
 local HouseCatalog = require(ReplicatedStorage.Shared.Building.HouseCatalog)
+local IncomeBuildingProgressionRules = require(
+	ReplicatedStorage.Shared.Building.IncomeBuildingProgressionRules
+)
 local MonsterCapacityConfig = require(ReplicatedStorage.Shared.Monster.MonsterCapacityConfig)
 local MonsterSpawnPointCatalog = require(
 	ReplicatedStorage.Shared.Monster.MonsterSpawnPointCatalog
@@ -58,6 +61,18 @@ local function restoreZone(player: Player, definition, savedZone)
 			definition.ZoneId,
 			if savedZone then savedZone.IncomeMultiplier else 1
 		)
+		RegionStateService.SetHealthMultiplier(
+			player,
+			definition.ZoneId,
+			if savedZone and savedZone.HealthMultiplier > 0
+				then savedZone.HealthMultiplier
+				else 1
+		)
+		RegionStateService.SetBoostPurchased(
+			player,
+			definition.ZoneId,
+			if savedZone then savedZone.BoostPurchased else false
+		)
 		RegionStateService.SetAutoIncome(
 			player,
 			definition.ZoneId,
@@ -79,10 +94,17 @@ function PlayerSaveStateAdapter.Apply(player: Player, data, now: number?)
 	local houseCount = 0
 	for _, definition in HouseCatalog.GetAll() do
 		local saved = data.Houses[definition.HouseId]
+		local regionLevel = ZoneStateService.GetLevel(player, definition.RegionId)
+		local modelLevel = IncomeBuildingProgressionRules.ResolveModelLevel(
+			regionLevel,
+			definition.BuildAtRegionLevel,
+			definition.RegionLevelsPerModelLevel,
+			definition.MaxModelLevel
+		)
 		local built = saved ~= nil
 			and saved.Built == true
 			and ZoneStateService.GetUnlocked(player, definition.RegionId)
-			and ZoneStateService.GetLevel(player, definition.RegionId) > 0
+			and modelLevel ~= nil
 		local storedMoney = if built then saved.StoredMoney else 0
 		HouseStateService.RestoreDurable(
 			player,
@@ -105,16 +127,19 @@ function PlayerSaveStateAdapter.Apply(player: Player, data, now: number?)
 	local spawnPointCount = 0
 	for _, definition in MonsterSpawnPointCatalog.GetAll() do
 		local saved = data.Monsters.SpawnPoints[definition.SpawnPointId]
+		local expectedMonsterKey = if saved
+			then MonsterSpawnPointCatalog.GetMonsterKey(definition.SpawnPointId, saved.Level)
+			else nil
 		local built = saved ~= nil
 			and saved.Built == true
 			and ZoneStateService.GetUnlocked(player, definition.ZoneId)
-			and definition.MonsterKeyByLevel[saved.Level] == saved.MonsterKey
+			and expectedMonsterKey ~= nil
 		MonsterSpawnPointStateService.Restore(
 			player,
 			definition.SpawnPointId,
 			built,
 			if built then saved.Level else 0,
-			if built then saved.MonsterKey else nil
+			if built then expectedMonsterKey else nil
 		)
 		if built then
 			spawnPointCount += 1
@@ -138,6 +163,11 @@ function PlayerSaveStateAdapter.Capture(player: Player, now: number?)
 			IncomeMultiplier = if definition.Kind == "Income"
 				then RegionStateService.GetIncomeMultiplier(player, definition.ZoneId)
 				else 1,
+			HealthMultiplier = if definition.Kind == "Income"
+				then RegionStateService.GetHealthMultiplier(player, definition.ZoneId)
+				else 1,
+			BoostPurchased = definition.Kind == "Income"
+				and RegionStateService.GetBoostPurchased(player, definition.ZoneId),
 			AutoIncome = if definition.Kind == "Income"
 				then RegionStateService.GetAutoIncome(player, definition.ZoneId)
 				else false,
