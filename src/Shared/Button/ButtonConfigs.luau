@@ -24,6 +24,7 @@
 ]]
 
 return {
+	-- 旧 Plot 过渡入口；Plot02～Plot06 场景迁移完成后删除。
 	["R1-Primary-Button"] = {
 		InitialState = "Locked",
 		ActionId = "R1Primary",
@@ -45,6 +46,86 @@ return {
 		ActionId = "R3Primary",
 		Scope = "PlayerPlot",
 		ZoneId = "R3",
+		MaxActivationDistance = 12,
+	},
+
+	["R1-Upgrade-Button"] = {
+		InitialState = "Locked",
+		ActionId = "R1Upgrade",
+		Scope = "PlayerPlot",
+		ZoneId = "R1",
+		MaxActivationDistance = 12,
+	},
+
+	["R1-Boost-Button"] = {
+		InitialState = "Locked",
+		ActionId = "R1Boost",
+		Scope = "PlayerPlot",
+		ZoneId = "R1",
+		MaxActivationDistance = 12,
+	},
+
+	["R2-Upgrade-Button"] = {
+		InitialState = "Locked",
+		ActionId = "R2Upgrade",
+		Scope = "PlayerPlot",
+		ZoneId = "R2",
+		MaxActivationDistance = 12,
+	},
+
+	["R2-Boost-Button"] = {
+		InitialState = "Locked",
+		ActionId = "R2Boost",
+		Scope = "PlayerPlot",
+		ZoneId = "R2",
+		MaxActivationDistance = 12,
+	},
+
+	["R3-Upgrade-Button"] = {
+		InitialState = "Locked",
+		ActionId = "R3Upgrade",
+		Scope = "PlayerPlot",
+		ZoneId = "R3",
+		MaxActivationDistance = 12,
+	},
+
+	["R3-Boost-Button"] = {
+		InitialState = "Locked",
+		ActionId = "R3Boost",
+		Scope = "PlayerPlot",
+		ZoneId = "R3",
+		MaxActivationDistance = 12,
+	},
+
+	["R4-Upgrade-Button"] = {
+		InitialState = "Locked",
+		ActionId = "R4Upgrade",
+		Scope = "PlayerPlot",
+		ZoneId = "R4",
+		MaxActivationDistance = 12,
+	},
+
+	["R4-Boost-Button"] = {
+		InitialState = "Locked",
+		ActionId = "R4Boost",
+		Scope = "PlayerPlot",
+		ZoneId = "R4",
+		MaxActivationDistance = 12,
+	},
+
+	["R5-Upgrade-Button"] = {
+		InitialState = "Locked",
+		ActionId = "R5Upgrade",
+		Scope = "PlayerPlot",
+		ZoneId = "R5",
+		MaxActivationDistance = 12,
+	},
+
+	["R5-Boost-Button"] = {
+		InitialState = "Locked",
+		ActionId = "R5Boost",
+		Scope = "PlayerPlot",
+		ZoneId = "R5",
 		MaxActivationDistance = 12,
 	},
 

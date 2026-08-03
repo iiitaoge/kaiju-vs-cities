@@ -26,10 +26,10 @@ local HouseLifecycleConfigs = require(script.Parent.HouseLifecycleConfigs)
 local HouseHealthStateService = require(script.Parent.HouseHealthStateService)
 local HouseStateService = require(script.Parent.HouseStateService)
 local PlayerCityRuntimeCoordinator = require(script.Parent.PlayerCityRuntimeCoordinator)
-local ZoneStateService = require(script.Parent.ZoneStateService)
-local StructureDurabilityConfigs = require(
-	ReplicatedStorage.Shared.Building.StructureDurabilityConfigs
+local PlayerStructureDurabilityResolver = require(
+	script.Parent.PlayerStructureDurabilityResolver
 )
+local ZoneStateService = require(script.Parent.ZoneStateService)
 
 local HouseLifecycleCoordinator = {}
 
@@ -112,15 +112,21 @@ local function finishRebuild(
 	if current == model and model.Parent then
 		local definition = HouseCatalog.Get(houseId)
 		local level = definition and ZoneStateService.GetLevel(player, definition.RegionId)
-		local maxHealth = definition and StructureDurabilityConfigs.GetMaxHealth(
+		local durability = definition and PlayerStructureDurabilityResolver.Resolve(
+			player,
 			definition.RegionId,
 			level
 		)
-		if not definition or not maxHealth then
+		if not definition or not durability then
 			warn(string.format("重建房屋缺少耐久配置：%s/%s", player.Name, houseId))
 			return
 		end
-		local health = HouseHealthStateService.ResetFull(player, houseId, level, maxHealth)
+		local health = HouseHealthStateService.ResetFull(
+			player,
+			houseId,
+			level,
+			durability.MaxHealth
+		)
 		model:SetAttribute("BuildingCurrentHealth", health.CurrentHealth)
 		model:SetAttribute("BuildingMaxHealth", health.MaxHealth)
 		model:SetAttribute("BuildingHealthGeneration", health.Generation)

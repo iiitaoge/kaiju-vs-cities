@@ -39,6 +39,9 @@ local WorkspacePlayerWorldAccess = require(script.Parent.WorkspacePlayerWorldAcc
 local ZoneStateService = require(script.Parent.ZoneStateService)
 local BuildingPlacement = require(ReplicatedStorage.Shared.Building.BuildingPlacement)
 local HouseCatalog = require(ReplicatedStorage.Shared.Building.HouseCatalog)
+local IncomeBuildingProgressionRules = require(
+	ReplicatedStorage.Shared.Building.IncomeBuildingProgressionRules
+)
 local InstancePath = require(ReplicatedStorage.Shared.InstancePath)
 
 local PlayerCityRuntimeCoordinator = {}
@@ -113,7 +116,7 @@ end
 local function resolveTemplate(
 	modelRootPath: string,
 	groupName: string,
-	variantName: string,
+	variantName: string?,
 	level: number,
 	rootCache: { [string]: Instance }
 ): (Model?, string?)
@@ -129,7 +132,7 @@ local function resolveTemplate(
 	end
 
 	local group = root:FindFirstChild(groupName)
-	local variant = group and group:FindFirstChild(variantName)
+	local variant = if variantName then group and group:FindFirstChild(variantName) else group
 	local template = variant and variant:FindFirstChild("level" .. level)
 	if not template or not template:IsA("Model") then
 		return nil, "BuildingTemplateUnavailable"
@@ -159,14 +162,6 @@ local function createBuildPlan(
 			continue
 		end
 
-		local slot = slotsById[definition.HouseId]
-		if not slot then
-			return nil, "MissingBuildingSlot:" .. definition.HouseId
-		end
-		if slot.ZoneId ~= definition.RegionId then
-			return nil, "BuildingSlotZoneMismatch:" .. definition.HouseId
-		end
-
 		local state = HouseStateService.Get(player, definition.HouseId)
 		if state.LifeState == "Unbuilt"
 			or state.LifeState == "Destroyed"
@@ -178,16 +173,33 @@ local function createBuildPlan(
 			return nil, "InvalidHouseLifeState:" .. definition.HouseId
 		end
 
-		local level = ZoneStateService.GetLevel(player, definition.RegionId)
-		if level <= 0 then
+		local slot = slotsById[definition.HouseId]
+		if not slot then
+			return nil, "MissingBuildingSlot:" .. definition.HouseId
+		end
+		if slot.ZoneId ~= definition.RegionId then
+			return nil, "BuildingSlotZoneMismatch:" .. definition.HouseId
+		end
+
+		local regionLevel = ZoneStateService.GetLevel(player, definition.RegionId)
+		if regionLevel <= 0 then
 			return nil, "AliveHouseInUnbuiltZone:" .. definition.HouseId
+		end
+		local modelLevel = IncomeBuildingProgressionRules.ResolveModelLevel(
+			regionLevel,
+			definition.BuildAtRegionLevel,
+			definition.RegionLevelsPerModelLevel,
+			definition.MaxModelLevel
+		)
+		if not modelLevel then
+			return nil, "AliveHouseBeforeBuildLevel:" .. definition.HouseId
 		end
 
 		local template, templateReason = resolveTemplate(
 			definition.ModelRoot,
 			definition.GroupName,
 			definition.VariantName,
-			level,
+			modelLevel,
 			rootCache
 		)
 		if not template then
@@ -200,7 +212,7 @@ local function createBuildPlan(
 			SlotId = slot.SlotId,
 			Template = template,
 			TargetPivot = BuildingPlacement.GetTargetPivot(template, slot.Point.CFrame),
-			Level = level,
+			Level = regionLevel,
 		})
 	end
 	return plan, nil
@@ -238,15 +250,24 @@ local function createRestorePlan(
 		return nil, "BuildingSlotZoneMismatch"
 	end
 
-	local level = ZoneStateService.GetLevel(player, definition.RegionId)
-	if level <= 0 then
+	local regionLevel = ZoneStateService.GetLevel(player, definition.RegionId)
+	if regionLevel <= 0 then
 		return nil, "HouseInUnbuiltZone"
+	end
+	local modelLevel = IncomeBuildingProgressionRules.ResolveModelLevel(
+		regionLevel,
+		definition.BuildAtRegionLevel,
+		definition.RegionLevelsPerModelLevel,
+		definition.MaxModelLevel
+	)
+	if not modelLevel then
+		return nil, "HouseBeforeBuildLevel"
 	end
 	local template, templateReason = resolveTemplate(
 		definition.ModelRoot,
 		definition.GroupName,
 		definition.VariantName,
-		level,
+		modelLevel,
 		{}
 	)
 	if not template then
@@ -258,7 +279,7 @@ local function createRestorePlan(
 		SlotId = targetSlot.SlotId,
 		Template = template,
 		TargetPivot = BuildingPlacement.GetTargetPivot(template, targetSlot.Point.CFrame),
-		Level = level,
+		Level = regionLevel,
 	}, nil
 end
 

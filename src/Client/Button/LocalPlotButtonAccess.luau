@@ -10,22 +10,44 @@
 
 local LocalPlotButtonAccess = {}
 
-local function find(ownerUserId: number, zoneId: string, buttonName: string): Model?
+local function findPlot(ownerUserId: number): Model?
 	local plots = workspace:FindFirstChild("PlayerPlots")
 	if not plots or not plots:IsA("Folder") then
 		return nil
 	end
 	for _, plot in plots:GetChildren() do
-		if not plot:IsA("Model") or plot:GetAttribute("OwnerUserId") ~= ownerUserId then
-			continue
+		if plot:IsA("Model") and plot:GetAttribute("OwnerUserId") == ownerUserId then
+			return plot
 		end
-		local zones = plot:FindFirstChild("Zones")
-		local zone = zones and zones:FindFirstChild(zoneId)
-		local buttons = zone and zone:FindFirstChild("Buttons")
-		local button = buttons and buttons:FindFirstChild(buttonName)
-		return if button and button:IsA("Model") then button else nil
 	end
 	return nil
+end
+
+function LocalPlotButtonAccess.FindInPlot(
+	plot: Model,
+	zoneId: string,
+	buttonName: string
+): Model?
+	local zones = plot:FindFirstChild("Zones")
+	local zone = zones and zones:FindFirstChild(zoneId)
+	local buttons = zone and zone:FindFirstChild("Buttons")
+	local button = buttons and buttons:FindFirstChild(buttonName)
+	return if button and button:IsA("Model") then button else nil
+end
+
+function LocalPlotButtonAccess.WaitForPlot(
+	ownerUserId: number,
+	timeout: number
+): Model?
+	local deadline = os.clock() + timeout
+	repeat
+		local plot = findPlot(ownerUserId)
+		if plot then
+			return plot
+		end
+		task.wait()
+	until os.clock() >= deadline
+	return findPlot(ownerUserId)
 end
 
 function LocalPlotButtonAccess.WaitFor(
@@ -36,13 +58,15 @@ function LocalPlotButtonAccess.WaitFor(
 ): Model?
 	local deadline = os.clock() + timeout
 	repeat
-		local button = find(ownerUserId, zoneId, buttonName)
+		local plot = findPlot(ownerUserId)
+		local button = plot and LocalPlotButtonAccess.FindInPlot(plot, zoneId, buttonName)
 		if button then
 			return button
 		end
 		task.wait()
 	until os.clock() >= deadline
-	return find(ownerUserId, zoneId, buttonName)
+	local plot = findPlot(ownerUserId)
+	return if plot then LocalPlotButtonAccess.FindInPlot(plot, zoneId, buttonName) else nil
 end
 
 return LocalPlotButtonAccess

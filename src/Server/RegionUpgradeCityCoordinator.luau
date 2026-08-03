@@ -19,12 +19,12 @@ local BuildingPresentationConfigs = require(
 	ReplicatedStorage.Shared.Building.BuildingPresentationConfigs
 )
 local HouseCatalog = require(ReplicatedStorage.Shared.Building.HouseCatalog)
-local StructureDurabilityConfigs = require(
-	ReplicatedStorage.Shared.Building.StructureDurabilityConfigs
-)
 local CityBuildingPresentationPublisher = require(script.Parent.CityBuildingPresentationPublisher)
 local HouseHealthStateService = require(script.Parent.HouseHealthStateService)
 local PlayerCityRuntimeCoordinator = require(script.Parent.PlayerCityRuntimeCoordinator)
+local PlayerStructureDurabilityResolver = require(
+	script.Parent.PlayerStructureDurabilityResolver
+)
 local RegionUpgradeService = require(script.Parent.RegionUpgradeService)
 
 local RegionUpgradeCityCoordinator = {}
@@ -55,10 +55,21 @@ function RegionUpgradeCityCoordinator.Upgrade(player: Player, regionId: string)
 		BuildingPresentationConfigs[presentationId],
 		"找不到建筑表现配置：" .. presentationId
 	)
-	local maxHealth = assert(
-		StructureDurabilityConfigs.GetMaxHealth(regionId, newLevel),
-		string.format("区域升级缺少耐久配置：%s/%s", regionId, tostring(newLevel))
+	local durability, durabilityReason = PlayerStructureDurabilityResolver.Resolve(
+		player,
+		regionId,
+		newLevel
 	)
+	assert(
+		durability,
+		string.format(
+			"区域升级缺少有效耐久：%s/%s (%s)",
+			regionId,
+			tostring(newLevel),
+			durabilityReason or "Unknown"
+		)
+	)
+	local maxHealth = durability.MaxHealth
 
 	-- 在替换运行时 Model 前迁移已有会话血量，保证受伤建筑升级时保持原比例。
 	for _, definition in HouseCatalog.GetAll() do

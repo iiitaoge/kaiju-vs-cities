@@ -24,6 +24,9 @@ local BuildingPresentationConfigs = require(
 )
 local BuildingPlacement = require(ReplicatedStorage.Shared.Building.BuildingPlacement)
 local HouseCatalog = require(ReplicatedStorage.Shared.Building.HouseCatalog)
+local IncomeBuildingProgressionRules = require(
+	ReplicatedStorage.Shared.Building.IncomeBuildingProgressionRules
+)
 local CityBuildingPresentationProtocol = require(
 	ReplicatedStorage.Shared.Building.CityBuildingPresentationProtocol
 )
@@ -82,24 +85,39 @@ local function resolveItems(command, config): { Item }
 			"服务器建筑 RegionId 不匹配：" .. houseId
 		)
 
+		local newModelLevel = assert(
+			IncomeBuildingProgressionRules.ResolveModelLevel(
+				command.NewLevel,
+				definition.BuildAtRegionLevel,
+				definition.RegionLevelsPerModelLevel,
+				definition.MaxModelLevel
+			),
+			"房屋尚未到建造等级：" .. houseId
+		)
 		local newTemplate = assert(
 			BuildingTemplateResolver.Resolve(
 				definition.ModelRoot,
 				definition.GroupName,
 				definition.VariantName,
-				command.NewLevel
+				newModelLevel
 			),
 			"找不到新等级模板：" .. houseId
 		)
-		local oldTemplate = if command.PreviousLevel > 0
+		local oldModelLevel = IncomeBuildingProgressionRules.ResolveModelLevel(
+			command.PreviousLevel,
+			definition.BuildAtRegionLevel,
+			definition.RegionLevelsPerModelLevel,
+			definition.MaxModelLevel
+		)
+		local oldTemplate = if oldModelLevel
 			then BuildingTemplateResolver.Resolve(
 				definition.ModelRoot,
 				definition.GroupName,
 				definition.VariantName,
-				command.PreviousLevel
+				oldModelLevel
 			)
 			else nil
-		if command.PreviousLevel > 0 then
+		if oldModelLevel then
 			assert(oldTemplate, "找不到旧等级模板：" .. houseId)
 		end
 
@@ -156,12 +174,14 @@ local function presentRegionUpgrade(command)
 
 		if command.PreviousLevel > 0 then
 			local demolishErrors = runParallel(items, function(item)
-				LocalBuildingDemolitionAnimation.Play(
-					item.OldTemplate :: Model,
-					item.OldTargetPivot :: CFrame,
-					item.GroundY,
-					config.Demolish
-				)
+				if item.OldTemplate and item.OldTargetPivot then
+					LocalBuildingDemolitionAnimation.Play(
+						item.OldTemplate,
+						item.OldTargetPivot,
+						item.GroundY,
+						config.Demolish
+					)
+				end
 			end)
 			if #demolishErrors > 0 then
 				warn("区域拆除表现部分失败：\n" .. table.concat(demolishErrors, "\n"))

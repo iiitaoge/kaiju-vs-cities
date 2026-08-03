@@ -1,8 +1,8 @@
 --[[
-	职责：验证 R3 主入口从锁定到建造、再到整区升级的服务器完整链路。
+	职责：验证 R3 主入口从解锁到建造、整区升级和满级状态的服务器完整链路。
 	输入：一名已完成数据加载且已分配 Plot 的在线 Player。
 	输出：各阶段动作及最终运行时建筑数量；测试结束恢复玩家原始持久状态和城市。
-	内部算法：保存快照 → 应用默认档 → 查询/充值/执行三阶段 → 核对 8 栋建筑 → 恢复快照。
+	内部算法：保存快照 → 应用默认档 → 查询/充值/执行四阶段 → 核对 8 栋建筑和满级状态 → 恢复快照。
 	不负责：触碰实体按钮、测试客户端动画或修改 DataStore。
 ]]
 
@@ -72,12 +72,20 @@ function Spec.Run(player: Player)
 		assert(upgrade.Succeeded and upgrade.Action == "Upgrade", "R3 升级失败")
 		local upgradeCount = assertRuntimeBuildings(player, 2)
 
+		MoneyService.Set(player, economy.UpgradeBaseCost * economy.CostGrowth)
+		local maxUpgrade = IncomeZonePrimaryCoordinator.Execute(player, REGION_ID)
+		assert(maxUpgrade.Succeeded and maxUpgrade.Action == "Upgrade", "R3 满级升级失败")
+		local maxCount = assertRuntimeBuildings(player, 3)
+		assert(maxUpgrade.NextButtonState == "Special", "满级升级按钮应为 Special")
+
 		return {
 			UnlockAction = unlock.Action,
 			BuildAction = build.Action,
 			UpgradeAction = upgrade.Action,
 			BuildCount = buildCount,
 			UpgradeCount = upgradeCount,
+			MaxCount = maxCount,
+			MaxButtonState = maxUpgrade.NextButtonState,
 		}
 	end, debug.traceback)
 

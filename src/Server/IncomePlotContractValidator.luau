@@ -2,7 +2,7 @@
 	职责：验证所有预放置 Plot 的产钱区域场景是否符合代码合同。
 	输入：ValidatePlot 接收 Plot Model；ValidateAll/AssertAll 读取 Workspace/PlayerPlots。
 	输出：{ Valid, Errors, PlotCount }；AssertAll 在合同不合法时终止启动。
-	内部算法：按 ZoneCatalog 遍历 Income Zone，逐一核对 Zone、Slot、Bounds 和主按钮。
+	内部算法：按 ZoneCatalog 遍历 Income Zone，逐一核对 Zone、Slot、Bounds 和新双按钮/旧主按钮合同。
 	不负责：修改场景、分配 Plot、读取玩家状态或生成运行时建筑。
 ]]
 
@@ -35,6 +35,38 @@ local function hasDirectBasePart(container: Instance?): boolean
 	return false
 end
 
+local function validateButton(
+	errors: { string },
+	buttons: Folder,
+	zonePrefix: string,
+	zoneId: string,
+	buttonName: string,
+	validateIdentity: boolean
+)
+	local buttonConfig = ButtonConfigs[buttonName]
+	add(
+		errors,
+		buttonConfig ~= nil
+			and buttonConfig.Scope == "PlayerPlot"
+			and buttonConfig.ZoneId == zoneId,
+		buttonName .. " 缺少同 Zone 的 PlayerPlot 配置"
+	)
+	local button = buttons:FindFirstChild(buttonName)
+	add(errors, button ~= nil and button:IsA("Model"), zonePrefix .. "/Buttons/" .. buttonName .. " 必须是 Model")
+	if not button or not button:IsA("Model") then
+		return
+	end
+	local pull = button:FindFirstChild("Pull")
+	local base = button:FindFirstChild("Part")
+	add(errors, pull ~= nil and pull:IsA("BasePart"), button:GetFullName() .. "/Pull 必须是 BasePart")
+	add(errors, base ~= nil and base:IsA("BasePart"), button:GetFullName() .. "/Part 必须是 BasePart")
+	if validateIdentity then
+		add(errors, button:GetAttribute("ZoneId") == zoneId, button:GetFullName() .. " ZoneId 错误")
+		add(errors, button:GetAttribute("ButtonId") == buttonName, button:GetFullName() .. " ButtonId 错误")
+		add(errors, button:GetAttribute("SpawnPointId") == nil, button:GetFullName() .. " 不应有 SpawnPointId")
+	end
+end
+
 function IncomePlotContractValidator.ValidatePlot(plot: Model): { string }
 	assert(plot:IsA("Model"), "plot 必须是 Model")
 	local errors = {}
@@ -52,6 +84,9 @@ function IncomePlotContractValidator.ValidatePlot(plot: Model): { string }
 
 		local zonePrefix = string.format("%s/Zones/%s", prefix, definition.ZoneId)
 		local zone = zones:FindFirstChild(definition.ZoneId)
+		if not isContainer(zone) and definition.RequiredOnAllPlots == false then
+			continue
+		end
 		add(errors, isContainer(zone), zonePrefix .. " 必须是 Model 或 Folder")
 		if not isContainer(zone) then
 			continue
@@ -83,23 +118,23 @@ function IncomePlotContractValidator.ValidatePlot(plot: Model): { string }
 			end
 		end
 
-		local buttonName = definition.ZoneId .. "-Primary-Button"
-		local buttonConfig = ButtonConfigs[buttonName]
-		add(
-			errors,
-			buttonConfig ~= nil
-				and buttonConfig.Scope == "PlayerPlot"
-				and buttonConfig.ZoneId == definition.ZoneId,
-			buttonName .. " 缺少同 Zone 的 PlayerPlot 配置"
-		)
 		if buttons and buttons:IsA("Folder") then
-			local button = buttons:FindFirstChild(buttonName)
-			add(errors, button ~= nil and button:IsA("Model"), zonePrefix .. "/Buttons/" .. buttonName .. " 必须是 Model")
-			if button and button:IsA("Model") then
-				local pull = button:FindFirstChild("Pull")
-				local base = button:FindFirstChild("Part")
-				add(errors, pull ~= nil and pull:IsA("BasePart"), button:GetFullName() .. "/Pull 必须是 BasePart")
-				add(errors, base ~= nil and base:IsA("BasePart"), button:GetFullName() .. "/Part 必须是 BasePart")
+			local upgradeName = definition.ZoneId .. "-Upgrade-Button"
+			local boostName = definition.ZoneId .. "-Boost-Button"
+			local usesDoubleButtons = buttons:FindFirstChild(upgradeName) ~= nil
+				or buttons:FindFirstChild(boostName) ~= nil
+			if usesDoubleButtons then
+				validateButton(errors, buttons, zonePrefix, definition.ZoneId, upgradeName, true)
+				validateButton(errors, buttons, zonePrefix, definition.ZoneId, boostName, true)
+			else
+				validateButton(
+					errors,
+					buttons,
+					zonePrefix,
+					definition.ZoneId,
+					definition.ZoneId .. "-Primary-Button",
+					false
+				)
 			end
 		end
 	end

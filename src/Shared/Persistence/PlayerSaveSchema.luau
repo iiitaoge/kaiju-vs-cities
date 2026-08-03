@@ -9,7 +9,7 @@
 local PlayerSaveSchema = {}
 
 PlayerSaveSchema.CurrentVersion = 1
-PlayerSaveSchema.ContentRevision = 2
+PlayerSaveSchema.ContentRevision = 4
 
 local function isFinite(value): boolean
 	return type(value) == "number"
@@ -37,6 +37,8 @@ local function normalizeZones(values)
 				Unlocked = value.Unlocked == true,
 				Level = nonNegativeInteger(value.Level, 0),
 				IncomeMultiplier = nonNegative(value.IncomeMultiplier, 1),
+				HealthMultiplier = nonNegative(value.HealthMultiplier, 1),
+				BoostPurchased = value.BoostPurchased == true,
 				AutoIncome = value.AutoIncome == true,
 			}
 		end

@@ -26,12 +26,12 @@ local HouseIncomeService = require(script.Parent.HouseIncomeService)
 local HouseLifecycleCoordinator = require(script.Parent.HouseLifecycleCoordinator)
 local HouseStateService = require(script.Parent.HouseStateService)
 local PlayerCityRuntimeCoordinator = require(script.Parent.PlayerCityRuntimeCoordinator)
+local PlayerStructureDurabilityResolver = require(
+	script.Parent.PlayerStructureDurabilityResolver
+)
 local HouseCatalog = require(ReplicatedStorage.Shared.Building.HouseCatalog)
 local RuntimeBuildingBounds = require(ReplicatedStorage.Shared.Building.RuntimeBuildingBounds)
 local RuntimeBuildingIdentity = require(ReplicatedStorage.Shared.Building.RuntimeBuildingIdentity)
-local StructureDurabilityConfigs = require(
-	ReplicatedStorage.Shared.Building.StructureDurabilityConfigs
-)
 
 local PlayerRuntimeHouseAttackAccess = {}
 
@@ -88,18 +88,19 @@ local function ensureHealth(
 	if not identity then
 		return nil, identityReason or "InvalidRuntimeBuildingIdentity"
 	end
-	local maxHealth = StructureDurabilityConfigs.GetMaxHealth(
+	local durability, durabilityReason = PlayerStructureDurabilityResolver.Resolve(
+		player,
 		definition.RegionId,
 		identity.Level
 	)
-	if not maxHealth then
-		return nil, "DurabilityConfigUnavailable"
+	if not durability then
+		return nil, durabilityReason or "DurabilityConfigUnavailable"
 	end
 	local health = HouseHealthStateService.Ensure(
 		player,
 		houseId,
 		identity.Level,
-		maxHealth
+		durability.MaxHealth
 	)
 	writeHealthAttributes(model, health)
 	return health, nil

@@ -101,4 +101,21 @@ function StructureHealthRules.Full(maxHealth: number): number?
 	return if isFinite(maxHealth) and maxHealth > 0 then maxHealth else nil
 end
 
+-- 输入：配置基础生命和玩家区域生命倍率。
+-- 输出：有限正数的有效最大生命；输入无效时返回 nil。
+function StructureHealthRules.ScaleMaxHealth(
+	baseMaxHealth: number,
+	healthMultiplier: number
+): number?
+	if not isFinite(baseMaxHealth)
+		or baseMaxHealth <= 0
+		or not isFinite(healthMultiplier)
+		or healthMultiplier <= 0
+	then
+		return nil
+	end
+	local scaled = baseMaxHealth * healthMultiplier
+	return if isFinite(scaled) and scaled > 0 then scaled else nil
+end
+
 return table.freeze(StructureHealthRules)

@@ -15,9 +15,6 @@
 	- 无。运行时模块不得修改本配置。
 
 	字段：
-	- HouseAction：
-	  当前只支持 "Build"，表示这一级把该区域仍为 Unbuilt 的房屋建造成 Alive。
-	  没有该字段时，升级只改变区域等级。
 	- PresentationId：
 	  升级提交并刷新服务器建筑后，选择 Shared.Building.BuildingPresentationConfigs
 	  中的一套纯表现参数。
@@ -31,7 +28,6 @@ return {
 	R1 = {
 		Levels = {
 			[1] = {
-				HouseAction = "Build",
 				PresentationId = "Standard",
 			},
 
@@ -48,7 +44,6 @@ return {
 	R2 = {
 		Levels = {
 			[1] = {
-				HouseAction = "Build",
 				PresentationId = "Standard",
 			},
 
@@ -65,7 +60,6 @@ return {
 	R3 = {
 		Levels = {
 			[1] = {
-				HouseAction = "Build",
 				PresentationId = "Standard",
 			},
 
@@ -76,6 +70,30 @@ return {
 			[3] = {
 				PresentationId = "Standard",
 			},
+		},
+	},
+
+	R4 = {
+		Levels = {
+			[1] = { PresentationId = "Standard" },
+			[2] = { PresentationId = "Standard" },
+			[3] = { PresentationId = "Standard" },
+			[4] = { PresentationId = "Standard" },
+			[5] = { PresentationId = "Standard" },
+			[6] = { PresentationId = "Standard" },
+			[7] = { PresentationId = "Standard" },
+			[8] = { PresentationId = "Standard" },
+		},
+	},
+
+	R5 = {
+		Levels = {
+			[1] = { PresentationId = "Standard" },
+			[2] = { PresentationId = "Standard" },
+			[3] = { PresentationId = "Standard" },
+			[4] = { PresentationId = "Standard" },
+			[5] = { PresentationId = "Standard" },
+			[6] = { PresentationId = "Standard" },
 		},
 	},
 }

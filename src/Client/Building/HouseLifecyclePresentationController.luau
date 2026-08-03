@@ -13,6 +13,9 @@ local BuildingPresentationConfigs = require(
 	ReplicatedStorage.Shared.Building.BuildingPresentationConfigs
 )
 local HouseCatalog = require(ReplicatedStorage.Shared.Building.HouseCatalog)
+local IncomeBuildingProgressionRules = require(
+	ReplicatedStorage.Shared.Building.IncomeBuildingProgressionRules
+)
 local BuildingTemplateResolver = require(script.Parent.BuildingTemplateResolver)
 local LocalBuildingDemolitionAnimation = require(script.Parent.LocalBuildingDemolitionAnimation)
 local LocalBuildingRiseAnimation = require(script.Parent.LocalBuildingRiseAnimation)
@@ -32,12 +35,21 @@ local function resolve(command, config)
 		LocalPlayerCityRuntimeAccess.FindSlot(plot, command.RegionId, command.HouseId),
 		"找不到房屋 Slot：" .. command.HouseId
 	)
+	local modelLevel = assert(
+		IncomeBuildingProgressionRules.ResolveModelLevel(
+			command.Level,
+			definition.BuildAtRegionLevel,
+			definition.RegionLevelsPerModelLevel,
+			definition.MaxModelLevel
+		),
+		"房屋尚未到建造等级：" .. command.HouseId
+	)
 	local template = assert(
 		BuildingTemplateResolver.Resolve(
 			definition.ModelRoot,
 			definition.GroupName,
 			definition.VariantName,
-			command.Level
+			modelLevel
 		),
 		"找不到房屋等级模板：" .. command.HouseId
 	)

@@ -27,6 +27,7 @@ export type ZoneDefinition = {
 	ZoneId: string,
 	Kind: string,
 	InitialUnlocked: boolean,
+	RequiredOnAllPlots: boolean?,
 	Slots: { [string]: SlotDefinition },
 }
 
@@ -90,6 +91,38 @@ local definitions: { [string]: ZoneDefinition } = {
 			["R3-H6"] = { SlotId = "R3-H6", Kind = "IncomeBuilding" },
 			["R3-H7"] = { SlotId = "R3-H7", Kind = "IncomeBuilding" },
 			["R3-H8"] = { SlotId = "R3-H8", Kind = "IncomeBuilding" },
+		},
+	},
+	R4 = {
+		ZoneId = "R4",
+		Kind = "Income",
+		InitialUnlocked = false,
+		-- R4 当前只在 Plot01 试做；其他 Plot 补场景后删除此字段。
+		RequiredOnAllPlots = false,
+		Slots = {
+			["R4-A1"] = { SlotId = "R4-A1", Kind = "IncomeBuilding" },
+			["R4-A2"] = { SlotId = "R4-A2", Kind = "IncomeBuilding" },
+			["R4-H1"] = { SlotId = "R4-H1", Kind = "IncomeBuilding" },
+			["R4-H2"] = { SlotId = "R4-H2", Kind = "IncomeBuilding" },
+			["R4-H3"] = { SlotId = "R4-H3", Kind = "IncomeBuilding" },
+			["R4-H4"] = { SlotId = "R4-H4", Kind = "IncomeBuilding" },
+			["R4-H5"] = { SlotId = "R4-H5", Kind = "IncomeBuilding" },
+			["R4-H6"] = { SlotId = "R4-H6", Kind = "IncomeBuilding" },
+			["R4-H7"] = { SlotId = "R4-H7", Kind = "IncomeBuilding" },
+		},
+	},
+	R5 = {
+		ZoneId = "R5",
+		Kind = "Income",
+		InitialUnlocked = false,
+		-- R5 当前只在 Plot01 试做；其他 Plot 补场景后删除此字段。
+		RequiredOnAllPlots = false,
+		Slots = {
+			["R5-H1"] = { SlotId = "R5-H1", Kind = "IncomeBuilding" },
+			["R5-H2"] = { SlotId = "R5-H2", Kind = "IncomeBuilding" },
+			["R5-H3"] = { SlotId = "R5-H3", Kind = "IncomeBuilding" },
+			["R5-H4"] = { SlotId = "R5-H4", Kind = "IncomeBuilding" },
+			["R5-H5"] = { SlotId = "R5-H5", Kind = "IncomeBuilding" },
 		},
 	},
 }

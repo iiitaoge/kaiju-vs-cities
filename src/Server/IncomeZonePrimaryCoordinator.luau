@@ -7,12 +7,11 @@
 ]]
 
 local IncomeZoneActionQuery = require(script.Parent.IncomeZoneActionQuery)
+local PlayerRegionTransactionLock = require(script.Parent.PlayerRegionTransactionLock)
 local RegionUpgradeCityCoordinator = require(script.Parent.RegionUpgradeCityCoordinator)
 local RegionUpgradeService = require(script.Parent.RegionUpgradeService)
 
 local IncomeZonePrimaryCoordinator = {}
-
-local locks: { [Player]: { [string]: boolean } } = setmetatable({}, { __mode = "k" })
 
 local function result(succeeded: boolean, reason: string?, action: string, snapshot)
 	return {
@@ -62,23 +61,18 @@ local function executeUnlocked(player: Player, regionId: string)
 end
 
 function IncomeZonePrimaryCoordinator.Execute(player: Player, regionId: string)
-	local playerLocks = locks[player]
-	if not playerLocks then
-		playerLocks = {}
-		locks[player] = playerLocks
-	end
-	if playerLocks[regionId] then
+	local release = PlayerRegionTransactionLock.TryAcquire(player, regionId)
+	if not release then
 		local snapshot = IncomeZoneActionQuery.Get(player, regionId)
 		local busy = result(false, "ActionBusy", "None", snapshot)
 		busy.NextButtonState = "Processing"
 		return busy
 	end
 
-	playerLocks[regionId] = true
 	local succeeded, outcome = xpcall(function()
 		return executeUnlocked(player, regionId)
 	end, debug.traceback)
-	playerLocks[regionId] = nil
+	release()
 	if not succeeded then
 		warn(string.format("产钱区域主操作异常：%s/%s (%s)", player.Name, regionId, tostring(outcome)))
 		return result(false, "RegionTransactionError", "None", IncomeZoneActionQuery.Get(player, regionId))

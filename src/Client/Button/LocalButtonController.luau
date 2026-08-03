@@ -7,8 +7,8 @@ local PRESS_COLOR = Color3.fromRGB(128, 128, 128)
 local STATE_COLORS = {
 	Ready = Color3.fromRGB(72, 190, 92),
 	Insufficient = Color3.fromRGB(196, 64, 64),
-	Processing = Color3.fromRGB(128, 128, 128),
-	Locked = Color3.fromRGB(70, 125, 210),
+	Processing = Color3.fromRGB(70, 125, 210),
+	Locked = Color3.fromRGB(82, 82, 82),
 	Special = Color3.fromRGB(235, 190, 65),
 }
 

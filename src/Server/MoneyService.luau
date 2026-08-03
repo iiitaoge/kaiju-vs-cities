@@ -18,6 +18,7 @@
 
 	写入：
 	- PlayerStateService 的 Economy.Money Attribute。
+	- Player.MoneyBalance Attribute 作为只读客户端镜像，供 UI/按钮刷新。
 
 	不负责：
 	- 不计算建筑收入或购买价格。
@@ -31,6 +32,7 @@ local PlayerStateService = require(script.Parent.PlayerStateService)
 
 local MoneyService = {}
 local log = DebugLog.Create("MoneyService")
+local MONEY_BALANCE_ATTRIBUTE = "MoneyBalance"
 
 export type SpendResult = {
 	Succeeded: boolean,
@@ -51,6 +53,13 @@ local function initialize(player: Player)
 	if economyState:GetAttribute("Money") == nil then
 		economyState:SetAttribute("Money", 0)
 	end
+	player:SetAttribute(MONEY_BALANCE_ATTRIBUTE, economyState:GetAttribute("Money"))
+end
+
+local function write(player: Player, balance: number): number
+	PlayerStateService.GetSection(player, "Economy"):SetAttribute("Money", balance)
+	player:SetAttribute(MONEY_BALANCE_ATTRIBUTE, balance)
+	return balance
 end
 
 function MoneyService.Start()
@@ -68,16 +77,14 @@ end
 
 function MoneyService.Set(player: Player, balance: number): number
 	assertAmount(balance)
-	PlayerStateService.GetSection(player, "Economy"):SetAttribute("Money", balance)
-	return balance
+	return write(player, balance)
 end
 
 function MoneyService.Add(player: Player, amount: number): number
 	assertAmount(amount)
 
-	local economyState = PlayerStateService.GetSection(player, "Economy")
 	local money = MoneyService.Get(player) + amount
-	economyState:SetAttribute("Money", money)
+	write(player, money)
 	log("Add", player.Name, amount, money)
 	return money
 end
@@ -95,7 +102,7 @@ function MoneyService.TrySpend(player: Player, amount: number): SpendResult
 	end
 
 	local newBalance = balance - amount
-	PlayerStateService.GetSection(player, "Economy"):SetAttribute("Money", newBalance)
+	write(player, newBalance)
 	log("Spend", player.Name, amount, newBalance)
 	return {
 		Succeeded = true,

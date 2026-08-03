@@ -99,7 +99,9 @@ function IncomeZoneActionQuery.Get(player: Player, regionId: string)
 		Upgrade = upgradeStatus,
 		PrimaryAction = primaryAction,
 		Primary = primaryStatus,
-		PrimaryButtonState = if not primaryStatus.Allowed
+		PrimaryButtonState = if primaryStatus.Reason == "MaxLevel"
+			then "Special"
+			elseif not primaryStatus.Allowed
 			then "Locked"
 			elseif not primaryStatus.Affordable then "Insufficient"
 			else "Ready",

@@ -7,7 +7,10 @@ export type HouseDefinition = {
 	RegionId: string,
 	ModelRoot: string,
 	GroupName: string,
-	VariantName: string,
+	VariantName: string?,
+	BuildAtRegionLevel: number,
+	RegionLevelsPerModelLevel: number,
+	MaxModelLevel: number?,
 }
 
 local definitionsByHouseId: { [string]: HouseDefinition } = {}
@@ -21,12 +24,38 @@ for regionId, region in pairs(IncomeZoneConfigs) do
 				string.format("重复的 HouseId：%s", house.HouseId)
 			)
 
+			local buildAtRegionLevel = house.BuildAtRegionLevel or 1
+			local regionLevelsPerModelLevel = house.RegionLevelsPerModelLevel or 1
+			local maxModelLevel = house.MaxModelLevel
+			assert(
+				type(buildAtRegionLevel) == "number"
+					and buildAtRegionLevel >= 1
+					and buildAtRegionLevel % 1 == 0,
+				house.HouseId .. " BuildAtRegionLevel 无效"
+			)
+			assert(
+				type(regionLevelsPerModelLevel) == "number"
+					and regionLevelsPerModelLevel >= 1
+					and regionLevelsPerModelLevel % 1 == 0,
+				house.HouseId .. " RegionLevelsPerModelLevel 无效"
+			)
+			assert(
+				maxModelLevel == nil
+					or (type(maxModelLevel) == "number"
+						and maxModelLevel >= 1
+						and maxModelLevel % 1 == 0),
+				house.HouseId .. " MaxModelLevel 无效"
+			)
+
 			definitionsByHouseId[house.HouseId] = {
 				HouseId = house.HouseId,
 				RegionId = regionId,
 				ModelRoot = region.ModelRoot,
 				GroupName = groupName,
 				VariantName = house.VariantName,
+				BuildAtRegionLevel = buildAtRegionLevel,
+				RegionLevelsPerModelLevel = regionLevelsPerModelLevel,
+				MaxModelLevel = maxModelLevel,
 			}
 		end
 	end

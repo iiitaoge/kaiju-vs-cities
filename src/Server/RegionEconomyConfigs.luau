@@ -30,6 +30,7 @@
 	- R1 模仿住宅区。
 	- R2 模仿市中心。
 	- R3 使用第三组城市模板的首版占位数值。
+	- R4、R5 使用快速跑通建造链路的测试数值。
 ]]
 
 export type RegionEconomyConfig = {
@@ -46,7 +47,7 @@ local configs: { [string]: RegionEconomyConfig } = {
 	R1 = {
 		UnlockCost = 0,
 		PurchaseCost = 0,
-		BaseIncome = 2,
+		BaseIncome = 50,
 		IncomeGrowth = 1.6,
 		IncomeIntervalSeconds = 1,
 		UpgradeBaseCost = 100,
@@ -54,23 +55,43 @@ local configs: { [string]: RegionEconomyConfig } = {
 	},
 
 	R2 = {
-		UnlockCost = 3500,
-		PurchaseCost = 7000,
-		BaseIncome = 200,
+		UnlockCost = 100,
+		PurchaseCost = 200,
+		BaseIncome = 500,
 		IncomeGrowth = 1.6,
 		IncomeIntervalSeconds = 1,
-		UpgradeBaseCost = 40000,
+		UpgradeBaseCost = 1000,
 		CostGrowth = 1.6,
 	},
 
 	R3 = {
-		UnlockCost = 50000,
-		PurchaseCost = 100000,
-		BaseIncome = 1500,
+		UnlockCost = 500,
+		PurchaseCost = 1000,
+		BaseIncome = 2500,
 		IncomeGrowth = 1.6,
 		IncomeIntervalSeconds = 1,
-		UpgradeBaseCost = 500000,
+		UpgradeBaseCost = 5000,
 		CostGrowth = 1.6,
+	},
+
+	R4 = {
+		UnlockCost = 0,
+		PurchaseCost = 0,
+		BaseIncome = 10000,
+		IncomeGrowth = 1.5,
+		IncomeIntervalSeconds = 1,
+		UpgradeBaseCost = 100,
+		CostGrowth = 1.25,
+	},
+
+	R5 = {
+		UnlockCost = 0,
+		PurchaseCost = 0,
+		BaseIncome = 100000,
+		IncomeGrowth = 2,
+		IncomeIntervalSeconds = 1,
+		UpgradeBaseCost = 10,
+		CostGrowth = 1.2,
 	},
 }
 

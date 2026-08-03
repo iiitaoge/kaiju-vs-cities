@@ -11,6 +11,7 @@
 	- SettleHouse：本次新增收入、结算后的 StoredMoney。
 	- SettleRegionHouses：逐栋结算的数量和新增收入总和。
 	- CollectHouse：目标房屋领取金额和玩家新余额。
+	- CollectRegion：目标区域结算、领取总额和玩家新余额。
 
 	读取：
 	- RegionEconomyConfigs
@@ -25,8 +26,7 @@
 	不负责：
 	- 不建造、摧毁或复活房屋。
 	- 不决定按钮执行什么动作。
-	- 不提供区域公共收入池或区域领取。
-	- 不实现自动领取。
+	- 不实现自动领取循环。
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -67,6 +67,15 @@ export type CollectionResult = {
 	Reason: string?,
 	Collected: number,
 	Balance: number,
+}
+
+export type RegionCollectionResult = {
+	Accepted: boolean,
+	Reason: string?,
+	Generated: number,
+	Collected: number,
+	Balance: number,
+	SettledHouseCount: number,
 }
 
 local function getBuiltHouseCount(player: Player, regionId: string): number
@@ -270,12 +279,55 @@ function HouseIncomeService.CollectHouse(
 	end
 
 	local collected = HouseStateService.TakeStoredMoney(player, houseId)
-	local balance = MoneyService.Add(player, collected)
+	local balance = if collected > 0
+		then MoneyService.Add(player, collected)
+		else MoneyService.Get(player)
 	return {
 		Accepted = true,
 		Reason = nil,
 		Collected = collected,
 		Balance = balance,
+	}
+end
+
+-- 输入：player、regionId、本次统一结算时间。
+-- 输出：结算全部 Alive 房屋，并一次性领取该区域所有已建房屋的 StoredMoney。
+function HouseIncomeService.CollectRegion(
+	player: Player,
+	regionId: string,
+	now: number?
+): RegionCollectionResult
+	local settlement = HouseIncomeService.SettleRegionHouses(player, regionId, now)
+	if not settlement.Accepted then
+		return {
+			Accepted = false,
+			Reason = settlement.Reason,
+			Generated = settlement.Generated,
+			Collected = 0,
+			Balance = MoneyService.Get(player),
+			SettledHouseCount = settlement.SettledCount,
+		}
+	end
+
+	local collected = 0
+	for _, definition in HouseCatalog.GetAll() do
+		if definition.RegionId == regionId
+			and HouseStateService.Get(player, definition.HouseId).LifeState ~= "Unbuilt"
+		then
+			local amount = HouseStateService.TakeStoredMoney(player, definition.HouseId)
+			collected += amount
+		end
+	end
+	local balance = if collected > 0
+		then MoneyService.Add(player, collected)
+		else MoneyService.Get(player)
+	return {
+		Accepted = true,
+		Reason = nil,
+		Generated = settlement.Generated,
+		Collected = collected,
+		Balance = balance,
+		SettledHouseCount = settlement.SettledCount,
 	}
 end
 

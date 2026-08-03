@@ -17,10 +17,13 @@
 
 	支持的 Kind：
 	- IncomeZonePrimary：需要 RegionId。
+	- IncomeZoneBoost：需要 RegionId。
 	- MonsterSpawnPointPrimary：需要 SpawnPointId。
 ]]
 
 local IncomeZoneActionQuery = require(script.Parent.Parent.IncomeZoneActionQuery)
+local IncomeZoneBoostCoordinator = require(script.Parent.Parent.IncomeZoneBoostCoordinator)
+local IncomeZoneBoostQuery = require(script.Parent.Parent.IncomeZoneBoostQuery)
 local IncomeZonePrimaryCoordinator = require(script.Parent.Parent.IncomeZonePrimaryCoordinator)
 local MonsterSpawnPointActionQuery = require(script.Parent.Parent.MonsterSpawnPointActionQuery)
 local MonsterSpawnPointPurchaseCoordinator = require(
@@ -29,6 +32,11 @@ local MonsterSpawnPointPurchaseCoordinator = require(
 local handlers = {
 	IncomeZonePrimary = function(player, action)
 		local outcome = IncomeZonePrimaryCoordinator.Execute(player, action.RegionId)
+		return nil, outcome.NextButtonState
+	end,
+
+	IncomeZoneBoost = function(player, action)
+		local outcome = IncomeZoneBoostCoordinator.Execute(player, action.RegionId)
 		return nil, outcome.NextButtonState
 	end,
 
@@ -44,6 +52,10 @@ local handlers = {
 local stateHandlers = {
 	IncomeZonePrimary = function(player, action)
 		return IncomeZoneActionQuery.GetPrimaryButtonState(player, action.RegionId)
+	end,
+
+	IncomeZoneBoost = function(player, action)
+		return IncomeZoneBoostQuery.GetButtonState(player, action.RegionId)
 	end,
 
 	MonsterSpawnPointPrimary = function(player, action)

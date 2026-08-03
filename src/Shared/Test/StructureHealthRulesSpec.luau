@@ -31,6 +31,8 @@ function StructureHealthRulesSpec.Run(): boolean
 	expect(migrated == 40, "升级没有继承血量比例")
 	expect(StructureHealthRules.Full(240) == 240, "满血规则错误")
 	expect(StructureHealthRules.Full(0) == nil, "无效最大生命值被接受")
+	expect(StructureHealthRules.ScaleMaxHealth(100, 2) == 200, "生命倍率计算错误")
+	expect(StructureHealthRules.ScaleMaxHealth(100, 0) == nil, "无效生命倍率被接受")
 
 	for _, regionId in { "R1", "R2" } do
 		local previous = 0

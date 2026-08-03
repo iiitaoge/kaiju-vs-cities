@@ -21,6 +21,7 @@
 
 	动作字段：
 	- IncomeZonePrimary：RegionId；根据权威状态执行解锁、建造或升级。
+	- IncomeZoneBoost：RegionId；一次性开启收入/生命翻倍和自动收入。
 	- MonsterSpawnPointPrimary：SpawnPointId；未建造时建造，已建造时升级。
 ]]
 
@@ -36,6 +37,37 @@ return {
 
 	R3Primary = {
 		{ RunOn = "Server", Kind = "IncomeZonePrimary", RegionId = "R3", Repeat = true },
+	},
+
+	R1Upgrade = {
+		{ RunOn = "Server", Kind = "IncomeZonePrimary", RegionId = "R1", Repeat = true },
+	},
+	R1Boost = {
+		{ RunOn = "Server", Kind = "IncomeZoneBoost", RegionId = "R1", Repeat = true },
+	},
+	R2Upgrade = {
+		{ RunOn = "Server", Kind = "IncomeZonePrimary", RegionId = "R2", Repeat = true },
+	},
+	R2Boost = {
+		{ RunOn = "Server", Kind = "IncomeZoneBoost", RegionId = "R2", Repeat = true },
+	},
+	R3Upgrade = {
+		{ RunOn = "Server", Kind = "IncomeZonePrimary", RegionId = "R3", Repeat = true },
+	},
+	R3Boost = {
+		{ RunOn = "Server", Kind = "IncomeZoneBoost", RegionId = "R3", Repeat = true },
+	},
+	R4Upgrade = {
+		{ RunOn = "Server", Kind = "IncomeZonePrimary", RegionId = "R4", Repeat = true },
+	},
+	R4Boost = {
+		{ RunOn = "Server", Kind = "IncomeZoneBoost", RegionId = "R4", Repeat = true },
+	},
+	R5Upgrade = {
+		{ RunOn = "Server", Kind = "IncomeZonePrimary", RegionId = "R5", Repeat = true },
+	},
+	R5Boost = {
+		{ RunOn = "Server", Kind = "IncomeZoneBoost", RegionId = "R5", Repeat = true },
 	},
 
 	M1S1Primary = {

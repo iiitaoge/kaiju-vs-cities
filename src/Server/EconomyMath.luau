@@ -20,9 +20,15 @@
 	- 不修改余额、区域或房屋状态。
 ]]
 
-local RegionEconomyConfigs = require(script.Parent.RegionEconomyConfigs)
-
-type RegionEconomyConfig = RegionEconomyConfigs.RegionEconomyConfig
+type RegionEconomyConfig = {
+	UnlockCost: number,
+	PurchaseCost: number,
+	BaseIncome: number,
+	IncomeGrowth: number,
+	IncomeIntervalSeconds: number,
+	UpgradeBaseCost: number,
+	CostGrowth: number,
+}
 
 local EconomyMath = {}
 

@@ -18,7 +18,7 @@
 	写入：
 	- 通过 MoneyService 扣款。
 	- 通过 RegionStateService 写 Unlocked / Level。
-	- 按等级配置通过 HouseStateService 建造房屋。
+	- 按 HouseCatalog 的建造进度通过 HouseStateService 建造房屋。
 
 	不负责：
 	- 不计算或领取单栋房屋收入。
@@ -34,7 +34,10 @@ local MoneyService = require(script.Parent.MoneyService)
 local RegionEconomyConfigs = require(script.Parent.RegionEconomyConfigs)
 local RegionStateService = require(script.Parent.RegionStateService)
 local RegionUpgradeConfigs = require(script.Parent.RegionUpgradeConfigs)
-local IncomeZoneConfigs = require(ReplicatedStorage.Shared.Building.IncomeZoneConfigs)
+local HouseCatalog = require(ReplicatedStorage.Shared.Building.HouseCatalog)
+local IncomeBuildingProgressionRules = require(
+	ReplicatedStorage.Shared.Building.IncomeBuildingProgressionRules
+)
 
 local RegionUpgradeService = {}
 
@@ -65,10 +68,24 @@ local function upgradeResult(
 	}
 end
 
-local function buildRegionHouses(player: Player, regionId: string, now: number)
-	for _, houses in pairs(IncomeZoneConfigs[regionId].Groups) do
-		for _, house in ipairs(houses) do
-			HouseStateService.Build(player, house.HouseId, now)
+local function buildEligibleRegionHouses(
+	player: Player,
+	regionId: string,
+	regionLevel: number,
+	now: number
+)
+	for _, definition in HouseCatalog.GetAll() do
+		if definition.RegionId ~= regionId then
+			continue
+		end
+		local modelLevel = IncomeBuildingProgressionRules.ResolveModelLevel(
+			regionLevel,
+			definition.BuildAtRegionLevel,
+			definition.RegionLevelsPerModelLevel,
+			definition.MaxModelLevel
+		)
+		if modelLevel then
+			HouseStateService.Build(player, definition.HouseId, now)
 		end
 	end
 end
@@ -106,7 +123,7 @@ function RegionUpgradeService.Upgrade(player: Player, regionId: string)
 	local levels = upgradeConfig.Levels
 	local levelConfig = levels[nextLevel]
 	if not levelConfig then
-		return upgradeResult(false, "MaxLevel", currentLevel, nil, nil, "Locked")
+		return upgradeResult(false, "MaxLevel", currentLevel, nil, nil, "Special")
 	end
 
 	local now = os.time()
@@ -122,12 +139,9 @@ function RegionUpgradeService.Upgrade(player: Player, regionId: string)
 	end
 
 	RegionStateService.SetLevel(player, regionId, nextLevel)
+	buildEligibleRegionHouses(player, regionId, nextLevel, now)
 
-	if levelConfig.HouseAction == "Build" then
-		buildRegionHouses(player, regionId, now)
-	end
-
-	local nextButtonState = if levels[nextLevel + 1] then "Ready" else "Locked"
+	local nextButtonState = if levels[nextLevel + 1] then "Ready" else "Special"
 	return upgradeResult(
 		true,
 		nil,
