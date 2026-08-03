@@ -1,7 +1,7 @@
 --[[
-	职责：组装玩家存档会话获取、状态恢复、自动保存、离服最终提交和关服等待。
-	输入：Start 无参数；SavePlayer 接收在线 player。
-	输出：通过 PlayerDataReadyService 发布 Ready/Cancelled；SavePlayer 返回是否已排队。
+	职责：组装玩家存档会话获取、状态恢复、自动保存、离服最终提交、Studio 删档和关服等待。
+	输入：Start 无参数；SavePlayer/DeleteStudioSave 接收在线 player。
+	输出：通过 PlayerDataReadyService 发布 Ready/Cancelled；保存和 Studio 删档返回结构化结果。
 	内部算法：获取独占租约 → 应用存档 → 快照合并队列 → Revision 条件提交 → 最终提交释放租约。
 	安全规则：加载/版本/应用失败或会话冲突时拒绝玩家进入；失败提交保留同一 CommitId 重试。
 	不负责：业务状态计算、Plot/模型生成、攻击恢复、UI 或跨 Place 会话交接。
@@ -10,6 +10,7 @@
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local PlayerDataReadyService = require(script.Parent.PlayerDataReadyService)
 local PlayerDataStoreAccess = require(script.Parent.PlayerDataStoreAccess)
@@ -305,6 +306,99 @@ end
 
 function PlayerPersistenceCoordinator.SavePlayer(player: Player): (boolean, string?)
 	return queuePlayer(player, false)
+end
+
+local function scheduleResetKick(player: Player, message: string)
+	task.delay(0.25, function()
+		if player.Parent == Players then
+			player:Kick(message)
+		end
+	end)
+end
+
+-- 输入：点击 Studio 一键删档的在线 Player。
+-- 输出：Succeeded、Reason、Detail；成功后玩家会退出，下一次 Play 载入默认档。
+-- 内部算法：禁止新保存 → 等正在执行的保存结束 → 提交默认档并释放租约 → 删除开发 Key → 退出。
+function PlayerPersistenceCoordinator.DeleteStudioSave(player: Player)
+	assert(typeof(player) == "Instance" and player:IsA("Player"), "player 必须是 Player")
+	if not RunService:IsStudio() then
+		return { Succeeded = false, Reason = "StudioOnly", Detail = nil }
+	end
+	if player.Parent ~= Players then
+		return { Succeeded = false, Reason = "PlayerUnavailable", Detail = nil }
+	end
+	local readiness = PlayerDataReadyService.Get(player)
+	if readiness.Status ~= "Ready" then
+		return { Succeeded = false, Reason = "PlayerDataNotReady", Detail = nil }
+	end
+	local record = sessionsByUserId[player.UserId]
+	if not record then
+		return { Succeeded = false, Reason = "SaveSessionUnavailable", Detail = nil }
+	end
+
+	-- 先从会话索引移除并关闭门禁，确保 PlayerRemoving/Autosave 不会把旧内存重新写回。
+	sessionsByUserId[player.UserId] = nil
+	record.Pending = nil
+	record.Latest = nil
+	record.ReleaseRequested = true
+	PlayerDataReadyService.Cancel(player, "StudioSaveReset")
+
+	local deadline = os.clock() + PlayerPersistenceConfigs.ShutdownWaitSeconds
+	while record.Running and os.clock() < deadline do
+		task.wait(0.05)
+	end
+	if record.Running then
+		local reason = "SaveQueueBusy"
+		warn(string.format("Studio 删档等待保存队列超时：%s/%d", player.Name, player.UserId))
+		scheduleResetKick(player, "Studio 测试删档失败，请查看 Output 后重新 Play。")
+		return { Succeeded = false, Reason = reason, Detail = nil }
+	end
+
+	-- 先用当前 Session/Revision 提交默认档，形成防回写屏障。
+	-- 即使后续 RemoveAsync 失败，下一次 Play 也只能读到干净默认档。
+	local resetCommitId = HttpService:GenerateGUID(false)
+	local resetCommitted = retry(function()
+		return PlayerDataStoreAccess.Commit(
+			player.UserId,
+			record.SessionId,
+			record.Revision,
+			resetCommitId,
+			PlayerSaveSchema.Default(),
+			true
+		)
+	end, PlayerPersistenceConfigs.SaveAttempts)
+	if not resetCommitted.Succeeded then
+		warn(string.format(
+			"Studio 测试删档防回写提交失败：%s/%d (%s%s)",
+			player.Name,
+			player.UserId,
+			resetCommitted.Reason or "Unknown",
+			if resetCommitted.Detail then ": " .. resetCommitted.Detail else ""
+		))
+		scheduleResetKick(player, "Studio 测试删档失败，请查看 Output 后重新 Play。")
+		return {
+			Succeeded = false,
+			Reason = resetCommitted.Reason or "ResetCommitFailed",
+			Detail = resetCommitted.Detail,
+		}
+	end
+
+	local deleted = PlayerDataStoreAccess.DeleteStudioSave(player.UserId)
+	if not deleted.Succeeded then
+		warn(string.format(
+			"Studio 测试删档失败：%s/%d (%s%s)",
+			player.Name,
+			player.UserId,
+			deleted.Reason or "Unknown",
+			if deleted.Detail then ": " .. deleted.Detail else ""
+		))
+		scheduleResetKick(player, "Studio 测试删档失败，请查看 Output 后重新 Play。")
+		return deleted
+	end
+
+	print(string.format("Studio 测试存档已删除：Player_%d", player.UserId))
+	scheduleResetKick(player, "Studio 测试存档已删除，请重新 Play。")
+	return deleted
 end
 
 local function playerRemoving(player: Player)

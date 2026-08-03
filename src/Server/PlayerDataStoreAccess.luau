@@ -1,7 +1,7 @@
 --[[
 	职责：封装带会话租约和 Revision 条件的单次玩家 DataStore 更新。
-	输入：Acquire 接收 UserId、SessionId、时间；Commit 额外接收预期 Revision、CommitId、存档和释放标记。
-	输出：Succeeded、Data、Revision、Reason、Detail、Retryable。
+	输入：Acquire 接收 UserId、SessionId、时间；Commit 额外接收预期 Revision、CommitId、存档和释放标记；DeleteStudioSave 接收 UserId。
+	输出：Succeeded、Data、Revision、Reason、Detail、Retryable；开发删档返回 Succeeded、Reason、Detail。
 	内部算法：Studio/线上选独立 Store → UpdateAsync 内执行纯会话规则 → 规范化提交后的信封。
 	不负责：业务 Schema 生成、状态快照、调用重试、保存队列、玩家生命周期或 UI。
 ]]
@@ -122,6 +122,42 @@ function PlayerDataStoreAccess.Commit(
 			releaseSession
 		)
 	end)
+end
+
+-- 输入：需要删除开发存档的 UserId。
+-- 输出：删除是否成功和稳定失败原因；非 Studio 环境永远拒绝。
+-- 副作用：只删除 StudioStoreName 下的 Player_<UserId>，绝不访问正式 Store。
+function PlayerDataStoreAccess.DeleteStudioSave(userId: number)
+	if not RunService:IsStudio() then
+		return {
+			Succeeded = false,
+			Reason = "StudioOnly",
+			Detail = nil,
+		}
+	end
+	if not Configs.StudioEnabled then
+		return {
+			Succeeded = false,
+			Reason = "PersistenceDisabled",
+			Detail = nil,
+		}
+	end
+
+	local succeeded, failure = pcall(function()
+		getStore():RemoveAsync(getKey(userId))
+	end)
+	if not succeeded then
+		return {
+			Succeeded = false,
+			Reason = "DataStoreError",
+			Detail = tostring(failure),
+		}
+	end
+	return {
+		Succeeded = true,
+		Reason = nil,
+		Detail = nil,
+	}
 end
 
 return PlayerDataStoreAccess
