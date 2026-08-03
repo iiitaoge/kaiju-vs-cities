@@ -5,6 +5,10 @@ local CityBuildingPresentationController = require(
 local LocalPlayerBuildingInteractionCoordinator = require(
 	script.Parent.Building.LocalPlayerBuildingInteractionCoordinator
 )
+local MonsterBuildPresentationController = require(
+	script.Parent.Monster.MonsterBuildPresentationController
+)
+local StudioSaveResetController = require(script.Parent.StudioSaveResetController)
 
 -- 输入：服务器意外返回的旧式客户端 Action。
 -- 输出：无；立即报错，避免重新引入只在本机生成建筑的链路。
@@ -13,6 +17,8 @@ local function rejectLegacyClientAction(action)
 	error("服务器返回了已废弃的客户端 Action：" .. tostring(action and action.Kind))
 end
 
+StudioSaveResetController.Start()
 CityBuildingPresentationController.Start()
+MonsterBuildPresentationController.Start()
 LocalPlayerBuildingInteractionCoordinator.Start()
 ButtonController.Start(rejectLegacyClientAction)
