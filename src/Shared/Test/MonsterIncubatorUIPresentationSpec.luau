@@ -25,6 +25,11 @@ function MonsterIncubatorUIPresentationSpec.Run(): boolean
 	local config = MonsterIncubatorUIPresentationConfig
 	local scaleConfig = config.ResponsiveScale
 	expectNear(
+		config.VerticalOffsetRatio,
+		-0.1,
+		"UI 锚点必须留在罐体中下部，避免正对罐体时面板越出屏幕"
+	)
+	expectNear(
 		ResponsiveUIScale.Compute(Vector2.new(960, 720), false, scaleConfig),
 		1,
 		"参考视口应使用 1 倍缩放"

@@ -17,6 +17,6 @@ return table.freeze({
 	CameraMaxDistance = 80,
 	BaseCanvasSize = Vector2.new(220, 220),
 	SurfacePadding = 1.5,
-	VerticalOffsetRatio = -0.4,
+	VerticalOffsetRatio = -0.1,
 	ResponsiveScale = responsiveScale,
 })
