@@ -1,3 +1,5 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
 local AttackAnimationPlayer = require(script.Parent.AttackAnimationPlayer)
 local AttackAnimationSelector = require(script.Parent.AttackAnimationSelector)
 local GodzillaMoveService = require(script.Parent.GodzillaMoveService)
@@ -7,6 +9,7 @@ local HouseAttackGeometry = require(script.Parent.HouseAttackGeometry)
 local HouseAttackTargetAccess = require(script.Parent.HouseAttackTargetAccess)
 local NearbyHouseTargetSelector = require(script.Parent.NearbyHouseTargetSelector)
 local HouseTargetReservationService = require(script.Parent.HouseTargetReservationService)
+local ValueValidation = require(ReplicatedStorage.Shared.ValueValidation)
 
 local MonsterAttackCoordinator = {}
 
@@ -66,16 +69,6 @@ local activeReservations: {
 	[Model]: HouseTargetReservationService.Reservation,
 } = setmetatable({}, { __mode = "k" })
 
-local function isFiniteVector3(value): boolean
-	return typeof(value) == "Vector3"
-		and value.X == value.X
-		and value.Y == value.Y
-		and value.Z == value.Z
-		and math.abs(value.X) < math.huge
-		and math.abs(value.Y) < math.huge
-		and math.abs(value.Z) < math.huge
-end
-
 local function makeResult(
 	succeeded: boolean,
 	reason: string?,
@@ -127,7 +120,10 @@ function MonsterAttackCoordinator.Execute(
 ): CommandResult
 	assert(defender:IsA("Player"), "defender 必须是 Player")
 	assert(monster:IsA("Model"), "monster 必须是 Model")
-	assert(isFiniteVector3(destination), "destination 必须是有限 Vector3")
+	assert(
+		ValueValidation.IsFiniteVector3(destination),
+		"destination 必须是有限 Vector3"
+	)
 	assert(type(options) == "table", "options 必须是 table")
 	assert(type(options.HouseAccess) == "table", "HouseAccess 必须是 table")
 	assert(type(options.ModelAnimationConfig) == "table", "ModelAnimationConfig 必须是 table")

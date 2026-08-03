@@ -6,24 +6,25 @@
 	不负责：玩家、Instance、目录配置、DataStore、运行时状态或默认内容解锁。
 ]]
 
+local ValueValidation = require(script.Parent.Parent.ValueValidation)
+
 local PlayerSaveSchema = {}
 
 PlayerSaveSchema.CurrentVersion = 1
 PlayerSaveSchema.ContentRevision = 4
 
-local function isFinite(value): boolean
-	return type(value) == "number"
-		and value == value
-		and value > -math.huge
-		and value < math.huge
-end
-
 local function nonNegative(value, fallback: number): number
-	return if isFinite(value) and value >= 0 then value else fallback
+	return if ValueValidation.IsFiniteNumber(value) and value >= 0
+		then value
+		else fallback
 end
 
 local function nonNegativeInteger(value, fallback: number): number
-	return if isFinite(value) and value >= 0 and value % 1 == 0 then value else fallback
+	return if ValueValidation.IsFiniteNumber(value)
+		and value >= 0
+		and value % 1 == 0
+		then value
+		else fallback
 end
 
 local function normalizeZones(values)

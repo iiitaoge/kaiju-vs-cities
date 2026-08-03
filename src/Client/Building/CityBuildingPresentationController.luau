@@ -216,8 +216,11 @@ function CityBuildingPresentationController.Start()
 	started = true
 
 	local remotes = ReplicatedStorage:WaitForChild("Remotes")
-	local remote = remotes:WaitForChild("CityBuildingPresentation")
-	assert(remote:IsA("RemoteEvent"), "CityBuildingPresentation 必须是 RemoteEvent")
+	local remote = remotes:WaitForChild(CityBuildingPresentationProtocol.RemoteName)
+	assert(
+		remote:IsA("RemoteEvent"),
+		CityBuildingPresentationProtocol.RemoteName .. " 必须是 RemoteEvent"
+	)
 	remote.OnClientEvent:Connect(function(command)
 		local valid, reason = CityBuildingPresentationProtocol.Validate(command)
 		if not valid then

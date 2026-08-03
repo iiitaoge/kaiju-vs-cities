@@ -1,23 +1,13 @@
 local UserInputService = game:GetService("UserInputService")
 
-local WorldPointInputController = {}
+local WorldPointResolver = require(script.Parent.Parent.WorldPointResolver)
 
-local MAX_RAY_DISTANCE = 10_000
+local WorldPointInputController = {}
 
 export type Session = {
 	Stop: () -> (),
 	IsActive: () -> boolean,
 }
-
-local function resolve(screenPosition: Vector2): Vector3?
-	local camera = workspace.CurrentCamera
-	if not camera then
-		return nil
-	end
-	local ray = camera:ScreenPointToRay(screenPosition.X, screenPosition.Y)
-	local result = workspace:Raycast(ray.Origin, ray.Direction * MAX_RAY_DISTANCE)
-	return if result then result.Position else nil
-end
 
 -- 输入：每次有效世界点击的回调。
 -- 输出：持续监听鼠标和触摸的输入会话，直到显式 Stop。
@@ -46,7 +36,7 @@ function WorldPointInputController.Start(onSelected: (Vector3) -> ()): Session
 			and input.UserInputType ~= Enum.UserInputType.Touch then
 			return
 		end
-		local point = resolve(Vector2.new(input.Position.X, input.Position.Y))
+		local point = WorldPointResolver.Resolve(Vector2.new(input.Position.X, input.Position.Y))
 		if point then
 			onSelected(point)
 		end

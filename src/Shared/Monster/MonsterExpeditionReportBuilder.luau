@@ -6,6 +6,8 @@
 	不负责：运行战斗、发奖励、保存历史、Remote 或 UI。
 ]]
 
+local ValueValidation = require(script.Parent.Parent.ValueValidation)
+
 local MonsterExpeditionReportBuilder = {}
 
 export type Context = {
@@ -46,13 +48,6 @@ local validEndReasons = {
 	Failed = true,
 }
 
-local function isFinite(value): boolean
-	return type(value) == "number"
-		and value == value
-		and value > -math.huge
-		and value < math.huge
-end
-
 local function normalizeIds(values): { string }
 	local result = {}
 	local seen = {}
@@ -76,7 +71,7 @@ local function assertContext(context: Context)
 	assert(type(context.AttackerSpawnPointId) == "string" and context.AttackerSpawnPointId ~= "", "SpawnPointId 无效")
 	assert(type(context.MonsterKey) == "string" and context.MonsterKey ~= "", "MonsterKey 无效")
 	assert(typeof(context.EntryPoint) == "Vector3", "EntryPoint 必须是 Vector3")
-	assert(isFinite(context.StartedAt), "StartedAt 无效")
+	assert(ValueValidation.IsFiniteNumber(context.StartedAt), "StartedAt 无效")
 end
 
 function MonsterExpeditionReportBuilder.Build(
@@ -87,7 +82,11 @@ function MonsterExpeditionReportBuilder.Build(
 ): Report
 	assertContext(context)
 	assert(type(executionSucceeded) == "boolean", "executionSucceeded 必须是 boolean")
-	assert(isFinite(finishedAt) and finishedAt >= context.StartedAt, "finishedAt 无效")
+	assert(
+		ValueValidation.IsFiniteNumber(finishedAt)
+			and finishedAt >= context.StartedAt,
+		"finishedAt 无效"
+	)
 
 	local validResult = executionSucceeded
 		and type(executionResult) == "table"
@@ -98,7 +97,7 @@ function MonsterExpeditionReportBuilder.Build(
 		then executionResult.Reason
 		else if executionSucceeded then "InvalidExpeditionResult" else "ExecutionError"
 	local rewardGranted = if validResult
-		and isFinite(executionResult.RewardGranted)
+		and ValueValidation.IsFiniteNumber(executionResult.RewardGranted)
 		and executionResult.RewardGranted >= 0
 		then executionResult.RewardGranted
 		else 0
@@ -109,7 +108,7 @@ function MonsterExpeditionReportBuilder.Build(
 		then executionResult.TowerHitCount
 		else 0
 	local towerDamageTaken = if validResult
-		and isFinite(executionResult.TowerDamageTaken)
+		and ValueValidation.IsFiniteNumber(executionResult.TowerDamageTaken)
 		and executionResult.TowerDamageTaken >= 0
 		then executionResult.TowerDamageTaken
 		else 0

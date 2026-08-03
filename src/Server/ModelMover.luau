@@ -1,33 +1,13 @@
 local TweenService = game:GetService("TweenService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local ServerRemoteAccess = require(script.Parent.ServerRemoteAccess)
 
 local ModelMover = {}
 
 local activeTweens = setmetatable({}, { __mode = "k" })
 local latestVisualRequestIds = setmetatable({}, { __mode = "k" })
 
-local function getVisualRemote(): RemoteEvent
-	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-	if not remotes then
-		remotes = Instance.new("Folder")
-		remotes.Name = "Remotes"
-		remotes.Parent = ReplicatedStorage
-	end
-	assert(remotes:IsA("Folder"), "ReplicatedStorage.Remotes 必须是 Folder")
-
-	local existing = remotes:FindFirstChild("ModelMovementVisual")
-	if existing then
-		assert(existing:IsA("RemoteEvent"), "ModelMovementVisual 必须是 RemoteEvent")
-		return existing
-	end
-
-	local remote = Instance.new("RemoteEvent")
-	remote.Name = "ModelMovementVisual"
-	remote.Parent = remotes
-	return remote
-end
-
-local visualRemote = getVisualRemote()
+local visualRemote = ServerRemoteAccess.EnsureEvent("ModelMovementVisual")
 
 local function disableCollisions(model: Model)
 	for _, descendant in model:GetDescendants() do

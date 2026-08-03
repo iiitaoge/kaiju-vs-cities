@@ -6,20 +6,9 @@
 	不负责：模板、Runtime、Clone、动画或怪兽出生点。
 ]]
 
-local WorkspaceMonsterIncubatorSlotAccess = {}
+local UniqueNamedChildAccess = require(script.Parent.UniqueNamedChildAccess)
 
-local function findUniqueChild(parent: Instance, name: string): (Instance?, string?)
-	local found = nil
-	for _, child in parent:GetChildren() do
-		if child.Name == name then
-			if found then
-				return nil, "DuplicateIncubatorSlot"
-			end
-			found = child
-		end
-	end
-	return found, nil
-end
+local WorkspaceMonsterIncubatorSlotAccess = {}
 
 function WorkspaceMonsterIncubatorSlotAccess.Resolve(
 	plot: Model,
@@ -42,9 +31,12 @@ function WorkspaceMonsterIncubatorSlotAccess.Resolve(
 	if not slots or not slots:IsA("Folder") then
 		return nil, "MissingIncubatorSlots"
 	end
-	local point, duplicateReason = findUniqueChild(slots, incubatorSlotId)
-	if duplicateReason then
-		return nil, duplicateReason
+	local point, pointDuplicated = UniqueNamedChildAccess.Find(
+		slots,
+		incubatorSlotId
+	)
+	if pointDuplicated then
+		return nil, "DuplicateIncubatorSlot"
 	end
 	if not point or not point:IsA("BasePart") then
 		return nil, "MissingIncubatorSlot"

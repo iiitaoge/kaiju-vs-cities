@@ -196,8 +196,11 @@ function MonsterBuildPresentationController.Start()
 	end
 	started = true
 	local remotes = ReplicatedStorage:WaitForChild("Remotes")
-	local remote = remotes:WaitForChild("MonsterBuildPresentation")
-	assert(remote:IsA("RemoteEvent"), "MonsterBuildPresentation 必须是 RemoteEvent")
+	local remote = remotes:WaitForChild(MonsterBuildPresentationProtocol.RemoteName)
+	assert(
+		remote:IsA("RemoteEvent"),
+		MonsterBuildPresentationProtocol.RemoteName .. " 必须是 RemoteEvent"
+	)
 	remote.OnClientEvent:Connect(function(command)
 		local valid, reason = MonsterBuildPresentationProtocol.Validate(command)
 		if not valid then

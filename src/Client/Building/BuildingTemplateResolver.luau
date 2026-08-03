@@ -6,18 +6,11 @@
 	不负责：不读取玩家状态、不计算放置位置、不 Clone 模型。
 ]]
 
-local BuildingTemplateResolver = {}
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local function resolvePath(path: string): Instance?
-	local current: Instance = game
-	for segment in string.gmatch(path, "[^/]+") do
-		current = current:FindFirstChild(segment)
-		if not current then
-			return nil
-		end
-	end
-	return current
-end
+local InstancePath = require(ReplicatedStorage.Shared.InstancePath)
+
+local BuildingTemplateResolver = {}
 
 function BuildingTemplateResolver.Resolve(
 	modelRoot: string,
@@ -35,7 +28,7 @@ function BuildingTemplateResolver.Resolve(
 		return nil
 	end
 
-	local root = resolvePath(modelRoot)
+	local root = InstancePath.Find(modelRoot)
 	local group = root and root:FindFirstChild(groupName)
 	local variant = if variantName then group and group:FindFirstChild(variantName) else group
 	local template = variant and variant:FindFirstChild("level" .. level)

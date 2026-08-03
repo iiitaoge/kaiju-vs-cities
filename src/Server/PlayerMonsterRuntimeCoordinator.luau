@@ -15,7 +15,7 @@
 	内部算法：
 	- 读取出生点配置、保存状态和已解锁 MonsterSpawnPoint Slot。
 	- 先协调罐体建造/恢复，再解析 MonsterKey 模板并由怪兽名册创建或替换；
-	  首次建造等待罐体表现完成后才创建怪兽，升级只对怪兽播放拆除加建造表现。
+	  首次建造等待罐体表现完成后才创建怪兽；升级只在模板变化时播放拆除加建造表现。
 	- Build 由名册容量规则拒绝超限；Load 恢复既有资产，不因容量后来降低而删除怪兽。
 
 	不负责：建造价格、容量升级价格、攻击 UI 或存档读写。
@@ -45,6 +45,7 @@ local BuildingPresentationConfigs = require(
 local MonsterIncubatorConfigs = require(
 	ReplicatedStorage.Shared.Monster.MonsterIncubatorConfigs
 )
+local MonsterCatalog = require(ReplicatedStorage.Shared.Monster.MonsterCatalog)
 local MonsterSpawnPointCatalog = require(
 	ReplicatedStorage.Shared.Monster.MonsterSpawnPointCatalog
 )
@@ -81,6 +82,7 @@ type RuntimeActionPlan = {
 	RiseDuration: number,
 	DemolishDuration: number,
 	PreviousMonsterKey: string?,
+	TemplateChanged: boolean,
 }
 
 type CreatedLoadItem = {
@@ -277,6 +279,7 @@ local function prepareBuild(player: Player, spawnPointId: string): (RuntimeActio
 		RiseDuration = presentation.Rise.TotalDuration,
 		DemolishDuration = presentation.Demolish.TotalDuration,
 		PreviousMonsterKey = nil,
+		TemplateChanged = true,
 	}, nil
 end
 
@@ -329,6 +332,10 @@ local function prepareUpgrade(
 	if not monsterKey or not template or not monsterDefinition then
 		return nil, resolveReason or "MonsterResolveFailed"
 	end
+	local templateChanged = MonsterCatalog.HasTemplateChanged(record.MonsterKey, monsterKey)
+	if templateChanged == nil then
+		return nil, "MonsterTemplateComparisonUnavailable"
+	end
 	local runtimeRoot = PlotMonsterRuntimeAccess.Get(plot)
 	if not runtimeRoot then
 		return nil, "MonsterRuntimeUnavailable"
@@ -350,6 +357,7 @@ local function prepareUpgrade(
 		RiseDuration = presentation.Rise.TotalDuration,
 		DemolishDuration = presentation.Demolish.TotalDuration,
 		PreviousMonsterKey = record.MonsterKey,
+		TemplateChanged = templateChanged,
 	}, nil
 end
 
@@ -565,22 +573,24 @@ function PlayerMonsterRuntimeCoordinator.Upgrade(
 		return result(false, upgraded.Reason, upgraded.Record, nil)
 	end
 	MonsterSpawnPointStateService.MarkBuilt(player, spawnPointId, targetLevel, plan.MonsterKey)
-	local presented = MonsterBuildPresentationPublisher.PublishAndWait({
-		Kind = "MonsterUpgrade",
-		OwnerUserId = player.UserId,
-		SpawnPointId = spawnPointId,
-		PresentationId = plan.PresentationId,
-		PreviousMonsterKey = assert(plan.PreviousMonsterKey),
-		MonsterKey = plan.MonsterKey,
-	}, plan.DemolishDuration + plan.RiseDuration, nil)
-	if not presented.Succeeded then
-		-- 模型替换和保存身份已经提交；表现失败不能把成功升级误报为购买失败并退款。
-		warn(string.format(
-			"怪兽升级已提交，但拆除/建造表现失败：%s/%s (%s)",
-			player.Name,
-			spawnPointId,
-			presented.Reason or "Unknown"
-		))
+	if plan.TemplateChanged then
+		local presented = MonsterBuildPresentationPublisher.PublishAndWait({
+			Kind = "MonsterUpgrade",
+			OwnerUserId = player.UserId,
+			SpawnPointId = spawnPointId,
+			PresentationId = plan.PresentationId,
+			PreviousMonsterKey = assert(plan.PreviousMonsterKey),
+			MonsterKey = plan.MonsterKey,
+		}, plan.DemolishDuration + plan.RiseDuration, nil)
+		if not presented.Succeeded then
+			-- 模型替换和保存身份已经提交；表现失败不能把成功升级误报为购买失败并退款。
+			warn(string.format(
+				"怪兽升级已提交，但拆除/建造表现失败：%s/%s (%s)",
+				player.Name,
+				spawnPointId,
+				presented.Reason or "Unknown"
+			))
+		end
 	end
 	return result(true, nil, upgraded.Record, nil)
 end

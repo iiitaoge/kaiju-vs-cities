@@ -3,25 +3,14 @@
 
 	输入：OwnerUserId、ZoneId、ButtonName、等待时长。
 	输出：Plot/Zones/<ZoneId>/Buttons/<ButtonName> 下的 Model，超时返回 nil。
-	内部算法：只遍历 PlayerPlots 的 OwnerUserId，再走固定子路径。
+	内部算法：委托 LocalPlayerPlotAccess 定位 Plot，再走按钮固定子路径。
 
 	不负责：按钮状态、业务请求或触碰监听。
 ]]
 
-local LocalPlotButtonAccess = {}
+local LocalPlayerPlotAccess = require(script.Parent.Parent.LocalPlayerPlotAccess)
 
-local function findPlot(ownerUserId: number): Model?
-	local plots = workspace:FindFirstChild("PlayerPlots")
-	if not plots or not plots:IsA("Folder") then
-		return nil
-	end
-	for _, plot in plots:GetChildren() do
-		if plot:IsA("Model") and plot:GetAttribute("OwnerUserId") == ownerUserId then
-			return plot
-		end
-	end
-	return nil
-end
+local LocalPlotButtonAccess = {}
 
 function LocalPlotButtonAccess.FindInPlot(
 	plot: Model,
@@ -39,15 +28,7 @@ function LocalPlotButtonAccess.WaitForPlot(
 	ownerUserId: number,
 	timeout: number
 ): Model?
-	local deadline = os.clock() + timeout
-	repeat
-		local plot = findPlot(ownerUserId)
-		if plot then
-			return plot
-		end
-		task.wait()
-	until os.clock() >= deadline
-	return findPlot(ownerUserId)
+	return LocalPlayerPlotAccess.Wait(ownerUserId, timeout)
 end
 
 function LocalPlotButtonAccess.WaitFor(
@@ -58,14 +39,14 @@ function LocalPlotButtonAccess.WaitFor(
 ): Model?
 	local deadline = os.clock() + timeout
 	repeat
-		local plot = findPlot(ownerUserId)
+		local plot = LocalPlayerPlotAccess.Find(ownerUserId)
 		local button = plot and LocalPlotButtonAccess.FindInPlot(plot, zoneId, buttonName)
 		if button then
 			return button
 		end
 		task.wait()
 	until os.clock() >= deadline
-	local plot = findPlot(ownerUserId)
+	local plot = LocalPlayerPlotAccess.Find(ownerUserId)
 	return if plot then LocalPlotButtonAccess.FindInPlot(plot, zoneId, buttonName) else nil
 end
 

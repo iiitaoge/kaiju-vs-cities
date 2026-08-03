@@ -16,15 +16,23 @@ local function getSegments(path: string): { string }
 	return segments
 end
 
-function InstancePath.Get(path: string): Instance
+function InstancePath.Find(path: string): Instance?
 	local current: Instance = game
 
 	for _, segment in getSegments(path) do
 		local child = current:FindFirstChild(segment)
-		assert(child, string.format("找不到 Instance：%s", path))
+		if not child then
+			return nil
+		end
 		current = child
 	end
 
+	return current
+end
+
+function InstancePath.Get(path: string): Instance
+	local current = InstancePath.Find(path)
+	assert(current, string.format("找不到 Instance：%s", path))
 	return current
 end
 

@@ -18,5 +18,7 @@ local kinds = table.freeze({
 
 return table.freeze({
 	RemoteName = "CodexMultiplayerAttackAcceptance",
+	TestArgument = "MultiplayerAttackAcceptance",
+	RequiredPlayerCount = 3,
 	Kinds = kinds,
 })

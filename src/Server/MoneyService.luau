@@ -28,11 +28,11 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local DebugLog = require(ReplicatedStorage.Shared.DebugLog)
+local MoneyProtocol = require(ReplicatedStorage.Shared.Economy.MoneyProtocol)
 local PlayerStateService = require(script.Parent.PlayerStateService)
 
 local MoneyService = {}
 local log = DebugLog.Create("MoneyService")
-local MONEY_BALANCE_ATTRIBUTE = "MoneyBalance"
 
 export type SpendResult = {
 	Succeeded: boolean,
@@ -53,12 +53,12 @@ local function initialize(player: Player)
 	if economyState:GetAttribute("Money") == nil then
 		economyState:SetAttribute("Money", 0)
 	end
-	player:SetAttribute(MONEY_BALANCE_ATTRIBUTE, economyState:GetAttribute("Money"))
+	player:SetAttribute(MoneyProtocol.BalanceAttributeName, economyState:GetAttribute("Money"))
 end
 
 local function write(player: Player, balance: number): number
 	PlayerStateService.GetSection(player, "Economy"):SetAttribute("Money", balance)
-	player:SetAttribute(MONEY_BALANCE_ATTRIBUTE, balance)
+	player:SetAttribute(MoneyProtocol.BalanceAttributeName, balance)
 	return balance
 end
 

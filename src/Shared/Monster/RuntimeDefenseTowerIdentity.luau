@@ -5,6 +5,8 @@
 	不负责：查 Plot、读配置、检查解锁、目标选择或伤害。
 ]]
 
+local ValueValidation = require(script.Parent.Parent.ValueValidation)
+
 local RuntimeDefenseTowerIdentity = {}
 
 export type Identity = {
@@ -15,10 +17,6 @@ export type Identity = {
 	ConfigId: string,
 	Active: boolean,
 }
-
-local function isNonEmptyString(value): boolean
-	return type(value) == "string" and value ~= ""
-end
 
 function RuntimeDefenseTowerIdentity.Read(instance: Instance): (Identity?, string?)
 	if typeof(instance) ~= "Instance"
@@ -34,16 +32,16 @@ function RuntimeDefenseTowerIdentity.Read(instance: Instance): (Identity?, strin
 	if type(ownerUserId) ~= "number" or ownerUserId == 0 or ownerUserId % 1 ~= 0 then
 		return nil, "InvalidTowerOwnerUserId"
 	end
-	if not isNonEmptyString(towerId) then
+	if not ValueValidation.IsNonEmptyString(towerId) then
 		return nil, "InvalidTowerId"
 	end
-	if not isNonEmptyString(zoneId) then
+	if not ValueValidation.IsNonEmptyString(zoneId) then
 		return nil, "InvalidTowerZoneId"
 	end
-	if not isNonEmptyString(slotId) then
+	if not ValueValidation.IsNonEmptyString(slotId) then
 		return nil, "InvalidTowerSlotId"
 	end
-	if not isNonEmptyString(configId) then
+	if not ValueValidation.IsNonEmptyString(configId) then
 		return nil, "InvalidTowerConfigId"
 	end
 	if type(active) ~= "boolean" then

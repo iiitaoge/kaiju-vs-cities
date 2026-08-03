@@ -7,27 +7,11 @@
 
 local TweenService = game:GetService("TweenService")
 
-local LocalBuildingRiseAnimation = {}
+local LocalBuildingAnimationPartPreparer = require(
+	script.Parent.LocalBuildingAnimationPartPreparer
+)
 
-local function getParts(model: Model): { BasePart }
-	local parts = {}
-	for _, descendant in model:GetDescendants() do
-		if descendant:IsA("BasePart") then
-			descendant.Anchored = true
-			descendant.CanCollide = false
-			descendant.CanTouch = false
-			descendant.CanQuery = false
-			table.insert(parts, descendant)
-		end
-	end
-	table.sort(parts, function(a, b)
-		if math.abs(a.Position.Y - b.Position.Y) > 0.01 then
-			return a.Position.Y < b.Position.Y
-		end
-		return a:GetFullName() < b:GetFullName()
-	end)
-	return parts
-end
+local LocalBuildingRiseAnimation = {}
 
 function LocalBuildingRiseAnimation.Play(
 	template: Model,
@@ -44,33 +28,61 @@ function LocalBuildingRiseAnimation.Play(
 	visual:PivotTo(targetPivot)
 	visual.Parent = workspace
 
-	local parts = getParts(visual)
+	local items = LocalBuildingAnimationPartPreparer.Prepare(
+		visual,
+		"LowToHigh"
+	)
 	local targets = {}
 	local transparencies = {}
+	local surfaceTransparencies = {}
 	local undergroundY = groundY - config.MoveDistance
-	for _, part in parts do
+	for _, item in items do
+		local part = item.Part
 		targets[part] = part.CFrame
 		transparencies[part] = part.Transparency
 		part.Transparency = 1
 		part.CFrame += Vector3.new(0, undergroundY - part.Position.Y, 0)
+		for _, surfaceVisual in item.SurfaceVisuals do
+			surfaceTransparencies[surfaceVisual] = surfaceVisual.Transparency
+			surfaceVisual.Transparency = 1
+		end
 	end
 
 	local startWindow = math.max(0, config.TotalDuration - config.MoveDuration)
-	for index, part in parts do
-		local startDelay = if #parts > 1
-			then (index - 1) / (#parts - 1) * startWindow
+	for index, item in items do
+		local part = item.Part
+		local startDelay = if #items > 1
+			then (index - 1) / (#items - 1) * startWindow
 			else 0
+		local tweenInfo = TweenInfo.new(
+			config.MoveDuration,
+			Enum.EasingStyle.Back,
+			Enum.EasingDirection.Out
+		)
 		local tween = TweenService:Create(
 			part,
-			TweenInfo.new(config.MoveDuration, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+			tweenInfo,
 			{
 				CFrame = targets[part],
 				Transparency = transparencies[part],
 			}
 		)
+		local surfaceTweens = {}
+		for _, surfaceVisual in item.SurfaceVisuals do
+			table.insert(surfaceTweens, TweenService:Create(
+				surfaceVisual,
+				tweenInfo,
+				{ Transparency = surfaceTransparencies[surfaceVisual] }
+			))
+		end
 		task.delay(startDelay, function()
 			if part.Parent then
 				tween:Play()
+			end
+			for surfaceIndex, surfaceTween in surfaceTweens do
+				if item.SurfaceVisuals[surfaceIndex].Parent then
+					surfaceTween:Play()
+				end
 			end
 		end)
 	end

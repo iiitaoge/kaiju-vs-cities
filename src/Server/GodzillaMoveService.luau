@@ -1,4 +1,7 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
 local ModelMover = require(script.Parent.ModelMover)
+local ValueValidation = require(ReplicatedStorage.Shared.ValueValidation)
 
 local GodzillaMoveService = {}
 
@@ -13,15 +16,8 @@ export type MoveOptions = {
 
 local latestRequestIds = setmetatable({}, { __mode = "k" })
 
-local function isFiniteNumber(value: number): boolean
-	return value == value and math.abs(value) < math.huge
-end
-
 local function isValidPosition(position): boolean
-	return typeof(position) == "Vector3"
-		and isFiniteNumber(position.X)
-		and isFiniteNumber(position.Y)
-		and isFiniteNumber(position.Z)
+	return ValueValidation.IsFiniteVector3(position)
 end
 
 local function validateInputs(model: Model, options: MoveOptions)

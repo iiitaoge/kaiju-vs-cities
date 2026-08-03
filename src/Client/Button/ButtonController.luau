@@ -2,6 +2,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 
 local ButtonConfigs = require(ReplicatedStorage.Shared.Button.ButtonConfigs)
+local MoneyProtocol = require(ReplicatedStorage.Shared.Economy.MoneyProtocol)
 local InstancePath = require(ReplicatedStorage.Shared.InstancePath)
 local LocalButtonController = require(script.Parent.LocalButtonController)
 local LocalPlotButtonAccess = require(script.Parent.LocalPlotButtonAccess)
@@ -10,7 +11,6 @@ local buttonRequest = InstancePath.Get("ReplicatedStorage/Remotes/ButtonRequest"
 assert(buttonRequest:IsA("RemoteFunction"), "ButtonRequest 必须是 RemoteFunction")
 
 local ButtonController = {}
-local MONEY_BALANCE_ATTRIBUTE = "MoneyBalance"
 
 local function getButton(buttonName: string, config, ownPlot: Model?): Model?
 	if config.Scope == "Global" then
@@ -139,7 +139,7 @@ function ButtonController.Start(runAction)
 		end
 	end
 
-	Players.LocalPlayer:GetAttributeChangedSignal(MONEY_BALANCE_ATTRIBUTE):Connect(
+	Players.LocalPlayer:GetAttributeChangedSignal(MoneyProtocol.BalanceAttributeName):Connect(
 		scheduleRefreshAllButtons
 	)
 end

@@ -10,10 +10,13 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
+local StudioSaveResetProtocol = require(
+	ReplicatedStorage.Shared.Persistence.StudioSaveResetProtocol
+)
+
 local StudioSaveResetController = {}
 
 local GUI_NAME = "StudioSaveResetGui"
-local REMOTE_NAME = "StudioSaveReset"
 local started = false
 
 local function createButton(parent: Instance): TextButton
@@ -61,8 +64,11 @@ function StudioSaveResetController.Start()
 
 	local remote = ReplicatedStorage
 		:WaitForChild("Remotes")
-		:WaitForChild(REMOTE_NAME)
-	assert(remote:IsA("RemoteFunction"), REMOTE_NAME .. " 必须是 RemoteFunction")
+		:WaitForChild(StudioSaveResetProtocol.RemoteName)
+	assert(
+		remote:IsA("RemoteFunction"),
+		StudioSaveResetProtocol.RemoteName .. " 必须是 RemoteFunction"
+	)
 
 	local busy = false
 	button.Activated:Connect(function()

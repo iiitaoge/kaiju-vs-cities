@@ -3,34 +3,19 @@
 
 	输入：Player、GetSnapshot/Upgrade、SpawnPointId。
 	输出：协调器的 Succeeded、Reason、Snapshot。
-	内部算法：创建唯一 RemoteFunction、校验基础输入、保护调用并返回稳定错误。
+	内部算法：通过 ServerRemoteAccess 获取唯一 RemoteFunction、校验基础输入并保护调用。
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local MonsterManagementCoordinator = require(script.Parent.MonsterManagementCoordinator)
 local PlayerDataReadyService = require(script.Parent.PlayerDataReadyService)
+local ServerRemoteAccess = require(script.Parent.ServerRemoteAccess)
 local MonsterManagementProtocol = require(
 	ReplicatedStorage.Shared.Monster.MonsterManagementProtocol
 )
 
-local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-if not remotes then
-	remotes = Instance.new("Folder")
-	remotes.Name = "Remotes"
-	remotes.Parent = ReplicatedStorage
-end
-assert(remotes:IsA("Folder"), "ReplicatedStorage.Remotes 必须是 Folder")
-
-local existing = remotes:FindFirstChild(MonsterManagementProtocol.RemoteName)
-if existing then
-	assert(existing:IsA("RemoteFunction"), MonsterManagementProtocol.RemoteName .. " 必须是 RemoteFunction")
-else
-	existing = Instance.new("RemoteFunction")
-	existing.Name = MonsterManagementProtocol.RemoteName
-	existing.Parent = remotes
-end
-local remote = existing :: RemoteFunction
+local remote = ServerRemoteAccess.EnsureFunction(MonsterManagementProtocol.RemoteName)
 
 remote.OnServerInvoke = function(player, requestKind, spawnPointId)
 	if PlayerDataReadyService.Get(player).Status ~= "Ready" then

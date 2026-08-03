@@ -13,6 +13,7 @@ local MonsterIncubatorTemplateAccess = require(script.Parent.MonsterIncubatorTem
 local RegionEconomyConfigs = require(script.Parent.RegionEconomyConfigs)
 local RegionUpgradeConfigs = require(script.Parent.RegionUpgradeConfigs)
 local HouseCatalog = require(ReplicatedStorage.Shared.Building.HouseCatalog)
+local InstancePath = require(ReplicatedStorage.Shared.InstancePath)
 local BuildingPresentationConfigs = require(
 	ReplicatedStorage.Shared.Building.BuildingPresentationConfigs
 )
@@ -33,17 +34,6 @@ local ZoneCatalog = require(ReplicatedStorage.Shared.World.ZoneCatalog)
 
 local ContentContractValidator = {}
 
-local function resolvePath(path: string): Instance?
-	local current: Instance = game
-	for segment in string.gmatch(path, "[^/]+") do
-		current = current:FindFirstChild(segment)
-		if not current then
-			return nil
-		end
-	end
-	return current
-end
-
 local function add(errors, condition: boolean, message: string)
 	if not condition then
 		table.insert(errors, message)
@@ -56,7 +46,7 @@ local function resolveHouseTemplate(house, modelLevel: number): Instance?
 		table.insert(segments, house.VariantName)
 	end
 	table.insert(segments, "level" .. modelLevel)
-	return resolvePath(table.concat(segments, "/"))
+	return InstancePath.Find(table.concat(segments, "/"))
 end
 
 function ContentContractValidator.Validate()
@@ -202,7 +192,7 @@ function ContentContractValidator.Validate()
 				local monster = MonsterCatalog.Get(monsterKey)
 				add(errors, monster ~= nil, spawnPoint.SpawnPointId .. " 引用了未知 MonsterKey " .. monsterKey)
 				if monster then
-					local template = resolvePath(monster.TemplatePath)
+					local template = InstancePath.Find(monster.TemplatePath)
 					add(
 						errors,
 						template ~= nil and template:IsA("Model") and template.PrimaryPart ~= nil,

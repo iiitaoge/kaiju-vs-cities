@@ -26,10 +26,28 @@ local standard = {
 	},
 }
 
+local monsterStandard = {
+	ResolveTimeout = 5,
+	Demolish = {
+		MoveDistance = 8,
+		TotalDuration = 1,
+		MoveDuration = 0.3,
+	},
+	Rise = {
+		MoveDistance = 8,
+		TotalDuration = 2,
+		MoveDuration = 0.5,
+	},
+}
+
 table.freeze(standard.Demolish)
 table.freeze(standard.Rise)
 table.freeze(standard)
+table.freeze(monsterStandard.Demolish)
+table.freeze(monsterStandard.Rise)
+table.freeze(monsterStandard)
 
 return table.freeze({
 	Standard = standard,
+	MonsterStandard = monsterStandard,
 })

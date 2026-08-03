@@ -12,6 +12,7 @@ local RunService = game:GetService("RunService")
 local MonsterBuildPresentationProtocol = require(
 	ReplicatedStorage.Shared.Monster.MonsterBuildPresentationProtocol
 )
+local ServerRemoteAccess = require(script.Parent.ServerRemoteAccess)
 
 local MonsterBuildPresentationPublisher = {}
 
@@ -20,32 +21,14 @@ export type Result = {
 	Reason: string?,
 }
 
-local REMOTE_NAME = "MonsterBuildPresentation"
 local remote: RemoteEvent? = nil
 
 local function getRemote(): RemoteEvent
 	if remote and remote.Parent then
 		return remote
 	end
-	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-	if not remotes then
-		remotes = Instance.new("Folder")
-		remotes.Name = "Remotes"
-		remotes.Parent = ReplicatedStorage
-	end
-	assert(remotes:IsA("Folder"), "ReplicatedStorage.Remotes 必须是 Folder")
-
-	local existing = remotes:FindFirstChild(REMOTE_NAME)
-	if existing then
-		assert(existing:IsA("RemoteEvent"), REMOTE_NAME .. " 必须是 RemoteEvent")
-		remote = existing
-		return existing
-	end
-	local created = Instance.new("RemoteEvent")
-	created.Name = REMOTE_NAME
-	created.Parent = remotes
-	remote = created
-	return created
+	remote = ServerRemoteAccess.EnsureEvent(MonsterBuildPresentationProtocol.RemoteName)
+	return remote
 end
 
 function MonsterBuildPresentationPublisher.Start()

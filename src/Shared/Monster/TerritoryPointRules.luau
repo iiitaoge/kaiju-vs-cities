@@ -1,3 +1,5 @@
+local ValueValidation = require(script.Parent.Parent.ValueValidation)
+
 local TerritoryPointRules = {}
 
 export type CheckOptions = {
@@ -11,17 +13,6 @@ export type CheckResult = {
 	LocalPoint: Vector3?,
 }
 
-local function isFiniteNumber(value): boolean
-	return type(value) == "number" and value == value and math.abs(value) < math.huge
-end
-
-local function isFiniteVector3(value): boolean
-	return typeof(value) == "Vector3"
-		and isFiniteNumber(value.X)
-		and isFiniteNumber(value.Y)
-		and isFiniteNumber(value.Z)
-end
-
 -- 输入：地盘包围盒、世界坐标和可选水平边距。
 -- 输出：坐标是否落在地盘的 X/Z 范围内，以及对应局部坐标。
 -- 内部算法：把世界坐标转换到地盘局部空间，只验证水平边界。
@@ -32,7 +23,7 @@ function TerritoryPointRules.Check(
 	options: CheckOptions?
 ): CheckResult
 	if typeof(territoryCFrame) ~= "CFrame"
-		or not isFiniteVector3(territorySize)
+		or not ValueValidation.IsFiniteVector3(territorySize)
 		or territorySize.X <= 0
 		or territorySize.Z <= 0 then
 		return {
@@ -41,7 +32,7 @@ function TerritoryPointRules.Check(
 			LocalPoint = nil,
 		}
 	end
-	if not isFiniteVector3(worldPoint) then
+	if not ValueValidation.IsFiniteVector3(worldPoint) then
 		return {
 			Allowed = false,
 			Reason = "InvalidEntryPoint",
@@ -52,7 +43,7 @@ function TerritoryPointRules.Check(
 	local padding = if options and options.HorizontalPadding ~= nil
 		then options.HorizontalPadding
 		else 0
-	if not isFiniteNumber(padding) then
+	if not ValueValidation.IsFiniteNumber(padding) then
 		return {
 			Allowed = false,
 			Reason = "InvalidPadding",

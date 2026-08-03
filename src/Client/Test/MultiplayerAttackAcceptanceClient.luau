@@ -12,6 +12,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local MonsterAttackRemoteClient = require(
 	script.Parent.Parent.Monster.MonsterAttackRemoteClient
 )
+local CityBuildingPresentationProtocol = require(
+	ReplicatedStorage.Shared.Building.CityBuildingPresentationProtocol
+)
 local MultiplayerAttackAcceptanceProtocol = require(
 	ReplicatedStorage.Shared.Test.MultiplayerAttackAcceptanceProtocol
 )
@@ -35,10 +38,13 @@ function MultiplayerAttackAcceptanceClient.Run(control: RemoteEvent)
 
 	local remotes = ReplicatedStorage:WaitForChild("Remotes", 10)
 	assert(remotes and remotes:IsA("Folder"), "找不到 ReplicatedStorage/Remotes")
-	local presentationRemote = remotes:WaitForChild("CityBuildingPresentation", 10)
+	local presentationRemote = remotes:WaitForChild(
+		CityBuildingPresentationProtocol.RemoteName,
+		10
+	)
 	assert(
 		presentationRemote and presentationRemote:IsA("RemoteEvent"),
-		"找不到 CityBuildingPresentation"
+		"找不到 " .. CityBuildingPresentationProtocol.RemoteName
 	)
 
 	table.insert(connections, presentationRemote.OnClientEvent:Connect(function(command)

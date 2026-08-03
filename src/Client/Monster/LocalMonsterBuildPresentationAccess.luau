@@ -2,35 +2,16 @@
 	职责：在客户端按稳定身份查找怪兽 Plot、定位点和 Runtime 权威模型。
 	输入：OwnerUserId、SpawnPointId、ZoneId、SlotId 和等待时长。
 	输出：Plot、定位 Part、培养罐或怪兽 Model；找不到返回 nil。
-	内部算法：固定 PlayerPlots/Zones/Runtime 路径并验证身份 Attribute。
+	内部算法：委托 LocalPlayerPlotAccess 定位 Plot，再验证 Zones/Runtime 路径和身份 Attribute。
 	不负责：读取配置/模板、隐藏模型、播放动画或修改服务器状态。
 ]]
 
+local LocalPlayerPlotAccess = require(script.Parent.Parent.LocalPlayerPlotAccess)
+
 local LocalMonsterBuildPresentationAccess = {}
 
-local function validOwnerUserId(value): boolean
-	return type(value) == "number"
-		and value == value
-		and value < math.huge
-		and value > -math.huge
-		and value % 1 == 0
-		and value ~= 0
-end
-
 function LocalMonsterBuildPresentationAccess.FindPlot(ownerUserId: number): Model?
-	if not validOwnerUserId(ownerUserId) then
-		return nil
-	end
-	local root = workspace:FindFirstChild("PlayerPlots")
-	if not root or not root:IsA("Folder") then
-		return nil
-	end
-	for _, plot in root:GetChildren() do
-		if plot:IsA("Model") and plot:GetAttribute("OwnerUserId") == ownerUserId then
-			return plot
-		end
-	end
-	return nil
+	return LocalPlayerPlotAccess.Find(ownerUserId)
 end
 
 local function waitFor(resolve: () -> Instance?, timeout: number): Instance?
@@ -50,9 +31,7 @@ function LocalMonsterBuildPresentationAccess.WaitForPlot(
 	ownerUserId: number,
 	timeout: number
 ): Model?
-	return waitFor(function()
-		return LocalMonsterBuildPresentationAccess.FindPlot(ownerUserId)
-	end, timeout) :: Model?
+	return LocalPlayerPlotAccess.Wait(ownerUserId, timeout)
 end
 
 function LocalMonsterBuildPresentationAccess.FindSlot(

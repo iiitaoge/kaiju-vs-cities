@@ -16,6 +16,9 @@ local HouseTargetReservationService = require(
 	script.Parent.Parent.HouseTargetReservationService
 )
 local MoneyService = require(script.Parent.Parent.MoneyService)
+local MonsterAttackCommandCoordinator = require(
+	script.Parent.Parent.MonsterAttackCommandCoordinator
+)
 local MonsterRosterCoordinator = require(script.Parent.Parent.MonsterRosterCoordinator)
 local MonsterExpeditionReportService = require(
 	script.Parent.Parent.MonsterExpeditionReportService
@@ -35,6 +38,7 @@ local PlayerPlotAssignmentService = require(
 local PlayerRuntimeHouseAttackAccess = require(
 	script.Parent.Parent.PlayerRuntimeHouseAttackAccess
 )
+local PlayerSaveStateAdapter = require(script.Parent.Parent.PlayerSaveStateAdapter)
 local RegionEconomyConfigs = require(script.Parent.Parent.RegionEconomyConfigs)
 local RegionUpgradeCityCoordinator = require(
 	script.Parent.Parent.RegionUpgradeCityCoordinator
@@ -45,6 +49,9 @@ local BuildingPresentationConfigs = require(
 )
 local MultiplayerAttackAcceptanceProtocol = require(
 	ReplicatedStorage.Shared.Test.MultiplayerAttackAcceptanceProtocol
+)
+local PlayerSaveSchema = require(
+	ReplicatedStorage.Shared.Persistence.PlayerSaveSchema
 )
 
 local MultiplayerAttackAcceptanceSpec = {}
@@ -308,6 +315,28 @@ function MultiplayerAttackAcceptanceSpec.Run(players: { Player })
 		waitMonsterIdle(player)
 	end
 
+	local function resetPlayerRuntime(player: Player)
+		waitFor(function()
+			local permission = PlayerMonsterRuntimeCoordinator.CanBuild(
+				player,
+				SPAWN_POINT_ID
+			)
+			return permission.Reason ~= "MonsterRuntimeNotLoaded"
+		end, REQUEST_TIMEOUT, player.Name .. " 初始怪兽运行时加载")
+
+		PlayerMonsterRuntimeCoordinator.Unload(player)
+		PlayerCityRuntimeCoordinator.Unload(player)
+		PlayerSaveStateAdapter.Apply(player, PlayerSaveSchema.Default(), os.time())
+
+		local cityLoad = PlayerCityRuntimeCoordinator.Load(player)
+		expect(cityLoad.Succeeded, player.Name .. " 默认城市重载失败：" .. tostring(cityLoad.Reason))
+		local monsterLoad = PlayerMonsterRuntimeCoordinator.Load(player)
+		expect(
+			monsterLoad.Succeeded,
+			player.Name .. " 默认怪兽运行时重载失败：" .. tostring(monsterLoad.Reason)
+		)
+	end
+
 	local report = {
 		Players = {
 			AttackerA = attackerA.UserId,
@@ -327,6 +356,9 @@ function MultiplayerAttackAcceptanceSpec.Run(players: { Player })
 			waitFor(function()
 				return PlayerPlotAssignmentService.GetPlot(player) ~= nil
 			end, REQUEST_TIMEOUT, player.Name .. " Plot 分配")
+		end
+		for _, player in ordered do
+			resetPlayerRuntime(player)
 		end
 
 		prepareAttacker(attackerA)
@@ -420,6 +452,10 @@ function MultiplayerAttackAcceptanceSpec.Run(players: { Player })
 		RegionUpgradeCityCoordinator.Upgrade(defender, HOUSE_ZONE_ID)
 		expect(ZoneStateService.GetLevel(defender, HOUSE_ZONE_ID) == 2, "正式区域升级没有进入等级 2")
 		waitPresentation("RegionUpgrade", 1)
+		expect(
+			MonsterAttackCommandCoordinator.Cancel(attackerA, SPAWN_POINT_ID),
+			"升级验收完成后无法取消仍在执行的攻击"
+		)
 		waitHouseState("Alive")
 		waitPresentation("HouseRebuilding", 1)
 		waitMonsterIdle(attackerA)

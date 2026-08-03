@@ -5,7 +5,11 @@
 	内部算法：按 Kind 验证公共字段和各命令专有字段；不读取 Instance 或配置。
 ]]
 
+local ValueValidation = require(script.Parent.Parent.ValueValidation)
+
 local CityBuildingPresentationProtocol = {}
+
+CityBuildingPresentationProtocol.RemoteName = "CityBuildingPresentation"
 
 export type RegionUpgradeCommand = {
 	Kind: "RegionUpgrade",
@@ -36,10 +40,6 @@ local function isInteger(value): boolean
 		and value % 1 == 0
 end
 
-local function isNonEmptyString(value): boolean
-	return type(value) == "string" and value ~= ""
-end
-
 function CityBuildingPresentationProtocol.Validate(command): (boolean, string?)
 	if type(command) ~= "table" then
 		return false, "InvalidCommand"
@@ -47,10 +47,10 @@ function CityBuildingPresentationProtocol.Validate(command): (boolean, string?)
 	if not isInteger(command.OwnerUserId) or command.OwnerUserId == 0 then
 		return false, "InvalidOwnerUserId"
 	end
-	if not isNonEmptyString(command.RegionId) then
+	if not ValueValidation.IsNonEmptyString(command.RegionId) then
 		return false, "InvalidRegionId"
 	end
-	if not isNonEmptyString(command.PresentationId) then
+	if not ValueValidation.IsNonEmptyString(command.PresentationId) then
 		return false, "InvalidPresentationId"
 	end
 
@@ -67,7 +67,7 @@ function CityBuildingPresentationProtocol.Validate(command): (boolean, string?)
 			return false, "InvalidHouseIds"
 		end
 		for _, houseId in command.HouseIds do
-			if not isNonEmptyString(houseId) then
+			if not ValueValidation.IsNonEmptyString(houseId) then
 				return false, "InvalidHouseId"
 			end
 		end
@@ -75,7 +75,7 @@ function CityBuildingPresentationProtocol.Validate(command): (boolean, string?)
 	end
 
 	if command.Kind == "HouseDestroyed" or command.Kind == "HouseRebuilding" then
-		if not isNonEmptyString(command.HouseId) then
+		if not ValueValidation.IsNonEmptyString(command.HouseId) then
 			return false, "InvalidHouseId"
 		end
 		if not isInteger(command.Level) or command.Level < 1 then

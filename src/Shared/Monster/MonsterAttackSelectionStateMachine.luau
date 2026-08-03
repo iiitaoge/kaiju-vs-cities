@@ -8,6 +8,8 @@
 	不负责：获取 Player、查询 Remote、校验领地、监听输入、切换相机或执行攻击。
 ]]
 
+local ValueValidation = require(script.Parent.Parent.ValueValidation)
+
 local MonsterAttackSelectionStateMachine = {}
 
 export type Mode = "Closed" | "LoadingTargets" | "Browsing" | "Submitting" | "Unavailable"
@@ -107,16 +109,6 @@ end
 
 local function currentTargetPlayerId(current: State): number?
 	return current.TargetPlayerIds[current.CurrentIndex]
-end
-
-local function isFiniteVector3(value): boolean
-	return typeof(value) == "Vector3"
-		and value.X == value.X
-		and value.Y == value.Y
-		and value.Z == value.Z
-		and math.abs(value.X) < math.huge
-		and math.abs(value.Y) < math.huge
-		and math.abs(value.Z) < math.huge
 end
 
 function MonsterAttackSelectionStateMachine.New(): State
@@ -285,7 +277,7 @@ function MonsterAttackSelectionStateMachine.Apply(current: State, event): Transi
 		if not targetPlayerId then
 			return rejected(current, "TargetUnavailable")
 		end
-		if not isFiniteVector3(event.EntryPoint) then
+		if not ValueValidation.IsFiniteVector3(event.EntryPoint) then
 			return rejected(current, "InvalidEntryPoint")
 		end
 		return result(

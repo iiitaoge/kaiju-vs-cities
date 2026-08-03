@@ -101,4 +101,19 @@ function MonsterCatalog.GetMaxLevel(progressionId: string): number?
 	return maxLevelByProgression[progressionId]
 end
 
+-- 输入：升级前后的 MonsterKey。
+-- 输出：两者模板路径是否变化；任一身份未知时返回 nil。
+-- 内部算法：只比较目录中已验证的 TemplatePath，不读取 Instance。
+function MonsterCatalog.HasTemplateChanged(
+	previousMonsterKey: string,
+	newMonsterKey: string
+): boolean?
+	local previousDefinition = definitions[previousMonsterKey]
+	local newDefinition = definitions[newMonsterKey]
+	if not previousDefinition or not newDefinition then
+		return nil
+	end
+	return previousDefinition.TemplatePath ~= newDefinition.TemplatePath
+end
+
 return MonsterCatalog

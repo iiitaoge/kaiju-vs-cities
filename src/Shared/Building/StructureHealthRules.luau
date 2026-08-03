@@ -5,6 +5,8 @@
 	不负责：玩家、房屋身份、Instance、奖励、生命周期或存档。
 ]]
 
+local ValueValidation = require(script.Parent.Parent.ValueValidation)
+
 local StructureHealthRules = {}
 
 export type DamageResult = {
@@ -17,17 +19,10 @@ export type DamageResult = {
 	Depleted: boolean,
 }
 
-local function isFinite(value): boolean
-	return type(value) == "number"
-		and value == value
-		and value > -math.huge
-		and value < math.huge
-end
-
 local function validHealth(currentHealth, maxHealth): boolean
-	return isFinite(maxHealth)
+	return ValueValidation.IsFiniteNumber(maxHealth)
 		and maxHealth > 0
-		and isFinite(currentHealth)
+		and ValueValidation.IsFiniteNumber(currentHealth)
 		and currentHealth >= 0
 		and currentHealth <= maxHealth
 end
@@ -48,7 +43,7 @@ function StructureHealthRules.ApplyDamage(
 			Depleted = currentHealth == 0,
 		}
 	end
-	if not isFinite(damage) or damage <= 0 then
+	if not ValueValidation.IsFiniteNumber(damage) or damage <= 0 then
 		return {
 			Accepted = false,
 			Reason = "InvalidDamage",
@@ -90,7 +85,7 @@ function StructureHealthRules.MigrateByRatio(
 	newMaxHealth: number
 ): number?
 	if not validHealth(currentHealth, previousMaxHealth)
-		or not isFinite(newMaxHealth)
+		or not ValueValidation.IsFiniteNumber(newMaxHealth)
 		or newMaxHealth <= 0 then
 		return nil
 	end
@@ -98,7 +93,9 @@ function StructureHealthRules.MigrateByRatio(
 end
 
 function StructureHealthRules.Full(maxHealth: number): number?
-	return if isFinite(maxHealth) and maxHealth > 0 then maxHealth else nil
+	return if ValueValidation.IsFiniteNumber(maxHealth) and maxHealth > 0
+		then maxHealth
+		else nil
 end
 
 -- 输入：配置基础生命和玩家区域生命倍率。
@@ -107,15 +104,17 @@ function StructureHealthRules.ScaleMaxHealth(
 	baseMaxHealth: number,
 	healthMultiplier: number
 ): number?
-	if not isFinite(baseMaxHealth)
+	if not ValueValidation.IsFiniteNumber(baseMaxHealth)
 		or baseMaxHealth <= 0
-		or not isFinite(healthMultiplier)
+		or not ValueValidation.IsFiniteNumber(healthMultiplier)
 		or healthMultiplier <= 0
 	then
 		return nil
 	end
 	local scaled = baseMaxHealth * healthMultiplier
-	return if isFinite(scaled) and scaled > 0 then scaled else nil
+	return if ValueValidation.IsFiniteNumber(scaled) and scaled > 0
+		then scaled
+		else nil
 end
 
 return table.freeze(StructureHealthRules)

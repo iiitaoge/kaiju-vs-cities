@@ -6,7 +6,11 @@
 	不负责：读取配置、Instance、播放动画或等待表现。
 ]]
 
+local ValueValidation = require(script.Parent.Parent.ValueValidation)
+
 local MonsterBuildPresentationProtocol = {}
+
+MonsterBuildPresentationProtocol.RemoteName = "MonsterBuildPresentation"
 
 export type IncubatorBuildCommand = {
 	Kind: "IncubatorBuild",
@@ -34,10 +38,6 @@ export type MonsterUpgradeCommand = {
 
 export type Command = IncubatorBuildCommand | MonsterBuildCommand | MonsterUpgradeCommand
 
-local function isNonEmptyString(value): boolean
-	return type(value) == "string" and value ~= ""
-end
-
 local function isNonZeroInteger(value): boolean
 	return type(value) == "number"
 		and value == value
@@ -54,10 +54,10 @@ function MonsterBuildPresentationProtocol.Validate(command): (boolean, string?)
 	if not isNonZeroInteger(command.OwnerUserId) then
 		return false, "InvalidOwnerUserId"
 	end
-	if not isNonEmptyString(command.SpawnPointId) then
+	if not ValueValidation.IsNonEmptyString(command.SpawnPointId) then
 		return false, "InvalidSpawnPointId"
 	end
-	if not isNonEmptyString(command.PresentationId) then
+	if not ValueValidation.IsNonEmptyString(command.PresentationId) then
 		return false, "InvalidPresentationId"
 	end
 
@@ -65,16 +65,16 @@ function MonsterBuildPresentationProtocol.Validate(command): (boolean, string?)
 		return true, nil
 	end
 	if command.Kind == "MonsterBuild" then
-		if not isNonEmptyString(command.MonsterKey) then
+		if not ValueValidation.IsNonEmptyString(command.MonsterKey) then
 			return false, "InvalidMonsterKey"
 		end
 		return true, nil
 	end
 	if command.Kind == "MonsterUpgrade" then
-		if not isNonEmptyString(command.PreviousMonsterKey) then
+		if not ValueValidation.IsNonEmptyString(command.PreviousMonsterKey) then
 			return false, "InvalidPreviousMonsterKey"
 		end
-		if not isNonEmptyString(command.MonsterKey) then
+		if not ValueValidation.IsNonEmptyString(command.MonsterKey) then
 			return false, "InvalidMonsterKey"
 		end
 		if command.PreviousMonsterKey == command.MonsterKey then

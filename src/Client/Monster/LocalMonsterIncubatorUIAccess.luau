@@ -8,7 +8,10 @@
 local LocalMonsterIncubatorUIAccess = {}
 
 export type References = {
+	Glass: BasePart,
+	Attachment: Attachment,
 	Gui: BillboardGui,
+	Panel: Frame,
 	Title: TextLabel,
 	StartButton: TextButton,
 	StartValue: TextLabel,
@@ -41,13 +44,16 @@ function LocalMonsterIncubatorUIAccess.Resolve(incubator: Model): (References?, 
 	local moneyValue = moneyValueFrame and childOfClass(moneyValueFrame, "Val", "TextLabel")
 	local robux = panel and childOfClass(panel, "Robux", "Frame")
 
-	if not gui or not title or not startButton or not startValue
+	if not glass or not attachment or not gui or not panel or not title or not startButton or not startValue
 		or not moneyButton or not moneyValue or not robux
 	then
 		return nil, "InvalidMonsterUIHierarchy"
 	end
 	return {
+		Glass = glass,
+		Attachment = attachment,
 		Gui = gui,
+		Panel = panel,
 		Title = title,
 		StartButton = startButton,
 		StartValue = startValue,

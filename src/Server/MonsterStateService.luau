@@ -48,8 +48,12 @@ end
 
 function MonsterStateService.SetCapacity(player: Player, capacity: number): number
 	assert(
-		type(capacity) == "number" and capacity >= 1 and capacity % 1 == 0,
-		"capacity 必须是正整数"
+		type(capacity) == "number"
+			and capacity == capacity
+			and capacity < math.huge
+			and capacity >= 0
+			and capacity % 1 == 0,
+		"capacity 必须是有限非负整数"
 	)
 	getSection(player):SetAttribute("Capacity", capacity)
 	return capacity

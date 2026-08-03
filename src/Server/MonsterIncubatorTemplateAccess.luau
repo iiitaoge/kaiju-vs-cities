@@ -6,33 +6,10 @@
 	不负责：读取配置、查找 Plot、Clone、定位、动画或怪兽生成。
 ]]
 
+local AnchoredPartRules = require(script.Parent.AnchoredPartRules)
+local UniqueNamedChildAccess = require(script.Parent.UniqueNamedChildAccess)
+
 local MonsterIncubatorTemplateAccess = {}
-
-local function findUniqueChild(parent: Instance, name: string): (Instance?, string?)
-	local found = nil
-	for _, child in parent:GetChildren() do
-		if child.Name == name then
-			if found then
-				return nil, "Duplicate" .. name
-			end
-			found = child
-		end
-	end
-	return found, nil
-end
-
-local function allPartsAnchored(model: Model): boolean
-	local foundPart = false
-	for _, descendant in model:GetDescendants() do
-		if descendant:IsA("BasePart") then
-			foundPart = true
-			if not descendant.Anchored then
-				return false
-			end
-		end
-	end
-	return foundPart
-end
 
 function MonsterIncubatorTemplateAccess.Resolve(
 	templateRoot: Folder,
@@ -45,8 +22,11 @@ function MonsterIncubatorTemplateAccess.Resolve(
 		return nil, "InvalidIncubatorTemplateId"
 	end
 
-	local template, duplicateReason = findUniqueChild(templateRoot, templateId)
-	if duplicateReason then
+	local template, templateDuplicated = UniqueNamedChildAccess.Find(
+		templateRoot,
+		templateId
+	)
+	if templateDuplicated then
 		return nil, "DuplicateIncubatorTemplate"
 	end
 	if not template or not template:IsA("Model") then
@@ -56,13 +36,21 @@ function MonsterIncubatorTemplateAccess.Resolve(
 		return nil, "IncubatorTemplateNotArchivable"
 	end
 
-	local base, baseReason = findUniqueChild(template, "Base")
-	local liquid, liquidReason = findUniqueChild(template, "Liquid")
-	local glass, glassReason = findUniqueChild(template, "Glass")
-	local target, targetReason = findUniqueChild(template, "Target")
-	local childReason = baseReason or liquidReason or glassReason or targetReason
-	if childReason then
-		return nil, childReason
+	local base, baseDuplicated = UniqueNamedChildAccess.Find(template, "Base")
+	if baseDuplicated then
+		return nil, "DuplicateBase"
+	end
+	local liquid, liquidDuplicated = UniqueNamedChildAccess.Find(template, "Liquid")
+	if liquidDuplicated then
+		return nil, "DuplicateLiquid"
+	end
+	local glass, glassDuplicated = UniqueNamedChildAccess.Find(template, "Glass")
+	if glassDuplicated then
+		return nil, "DuplicateGlass"
+	end
+	local target, targetDuplicated = UniqueNamedChildAccess.Find(template, "Target")
+	if targetDuplicated then
+		return nil, "DuplicateTarget"
 	end
 	if not base or not base:IsA("Model") then
 		return nil, "InvalidIncubatorTemplateBase"
@@ -76,7 +64,7 @@ function MonsterIncubatorTemplateAccess.Resolve(
 	if not target or not target:IsA("BasePart") then
 		return nil, "InvalidIncubatorTemplateTarget"
 	end
-	if not allPartsAnchored(template) then
+	if not AnchoredPartRules.HasOnlyAnchoredParts(template) then
 		return nil, "IncubatorTemplateMustBeAnchored"
 	end
 

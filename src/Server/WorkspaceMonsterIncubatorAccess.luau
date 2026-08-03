@@ -6,6 +6,9 @@
 	不负责：模板、世界定位、Clone、动画、怪兽状态或购买事务。
 ]]
 
+local AnchoredPartRules = require(script.Parent.AnchoredPartRules)
+local UniqueNamedChildAccess = require(script.Parent.UniqueNamedChildAccess)
+
 local WorkspaceMonsterIncubatorAccess = {}
 
 export type Incubator = {
@@ -17,38 +20,6 @@ export type Incubator = {
 }
 
 local ROOT_NAME = "MonsterIncubators"
-
-local function findUniqueChild(parent: Instance, name: string): (Instance?, string?)
-	local found = nil
-	for _, child in parent:GetChildren() do
-		if child.Name == name then
-			if found then
-				return nil, "Duplicate" .. name
-			end
-			found = child
-		end
-	end
-	return found, nil
-end
-
-local function allPartsAnchored(object: Instance): boolean
-	local foundPart = false
-	if object:IsA("BasePart") then
-		foundPart = true
-		if not object.Anchored then
-			return false
-		end
-	end
-	for _, descendant in object:GetDescendants() do
-		if descendant:IsA("BasePart") then
-			foundPart = true
-			if not descendant.Anchored then
-				return false
-			end
-		end
-	end
-	return foundPart
-end
 
 local function getRuntime(plot: Model): Folder?
 	local runtime = plot:FindFirstChild("Runtime")
@@ -101,8 +72,8 @@ function WorkspaceMonsterIncubatorAccess.Resolve(
 	if not root then
 		return nil, "MissingMonsterIncubatorRuntime"
 	end
-	local model, modelReason = findUniqueChild(root, spawnPointId)
-	if modelReason then
+	local model, modelDuplicated = UniqueNamedChildAccess.Find(root, spawnPointId)
+	if modelDuplicated then
 		return nil, "DuplicateMonsterIncubator"
 	end
 	if not model or not model:IsA("Model") then
@@ -118,13 +89,21 @@ function WorkspaceMonsterIncubatorAccess.Resolve(
 		return nil, "MonsterIncubatorOwnerMismatch"
 	end
 
-	local base, baseReason = findUniqueChild(model, "Base")
-	local liquid, liquidReason = findUniqueChild(model, "Liquid")
-	local glass, glassReason = findUniqueChild(model, "Glass")
-	local target, targetReason = findUniqueChild(model, "Target")
-	local duplicateReason = baseReason or liquidReason or glassReason or targetReason
-	if duplicateReason then
-		return nil, duplicateReason
+	local base, baseDuplicated = UniqueNamedChildAccess.Find(model, "Base")
+	if baseDuplicated then
+		return nil, "DuplicateBase"
+	end
+	local liquid, liquidDuplicated = UniqueNamedChildAccess.Find(model, "Liquid")
+	if liquidDuplicated then
+		return nil, "DuplicateLiquid"
+	end
+	local glass, glassDuplicated = UniqueNamedChildAccess.Find(model, "Glass")
+	if glassDuplicated then
+		return nil, "DuplicateGlass"
+	end
+	local target, targetDuplicated = UniqueNamedChildAccess.Find(model, "Target")
+	if targetDuplicated then
+		return nil, "DuplicateTarget"
 	end
 	if not base or not base:IsA("Model") then
 		return nil, "InvalidIncubatorBase"
@@ -138,7 +117,7 @@ function WorkspaceMonsterIncubatorAccess.Resolve(
 	if not target or not target:IsA("BasePart") then
 		return nil, "InvalidIncubatorTarget"
 	end
-	if not allPartsAnchored(model) then
+	if not AnchoredPartRules.HasOnlyAnchoredParts(model) then
 		return nil, "MonsterIncubatorMustBeAnchored"
 	end
 
@@ -160,8 +139,11 @@ function WorkspaceMonsterIncubatorAccess.Remove(
 	if not root then
 		return false, "MissingMonsterIncubatorRuntime"
 	end
-	local current, duplicateReason = findUniqueChild(root, spawnPointId)
-	if duplicateReason then
+	local current, currentDuplicated = UniqueNamedChildAccess.Find(
+		root,
+		spawnPointId
+	)
+	if currentDuplicated then
 		return false, "DuplicateMonsterIncubator"
 	end
 	if not current or not current:IsA("Model") then

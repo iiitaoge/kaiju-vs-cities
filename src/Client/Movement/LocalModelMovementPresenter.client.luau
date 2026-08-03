@@ -1,6 +1,8 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 
+local ValueValidation = require(ReplicatedStorage.Shared.ValueValidation)
+
 local visualRemote = ReplicatedStorage
 	:WaitForChild("Remotes")
 	:WaitForChild("ModelMovementVisual")
@@ -41,12 +43,6 @@ local visualsRoot = Instance.new("Folder")
 visualsRoot.Name = "_LocalModelMovementVisuals"
 visualsRoot.Parent = workspace
 
-local function isFiniteNumber(value): boolean
-	return type(value) == "number"
-		and value == value
-		and math.abs(value) < math.huge
-end
-
 local function validateCommand(value): VisualCommand?
 	if type(value) ~= "table" then
 		return nil
@@ -54,17 +50,17 @@ local function validateCommand(value): VisualCommand?
 	if typeof(value.Model) ~= "Instance" or not value.Model:IsA("Model") then
 		return nil
 	end
-	if not isFiniteNumber(value.RequestId) or value.RequestId < 1 then
+	if not ValueValidation.IsFiniteNumber(value.RequestId) or value.RequestId < 1 then
 		return nil
 	end
 	if typeof(value.StartCFrame) ~= "CFrame"
 		or typeof(value.TargetCFrame) ~= "CFrame" then
 		return nil
 	end
-	if not isFiniteNumber(value.StartedAt) then
+	if not ValueValidation.IsFiniteNumber(value.StartedAt) then
 		return nil
 	end
-	if not isFiniteNumber(value.Duration) or value.Duration <= 0 then
+	if not ValueValidation.IsFiniteNumber(value.Duration) or value.Duration <= 0 then
 		return nil
 	end
 	if typeof(value.EasingStyle) ~= "EnumItem"

@@ -6,6 +6,8 @@
 	不负责：不查询玩家、不读取状态、不修改 Model。
 ]]
 
+local ValueValidation = require(script.Parent.Parent.ValueValidation)
+
 local RuntimeBuildingIdentity = {}
 
 export type Identity = {
@@ -24,10 +26,6 @@ local function isInteger(value): boolean
 		and value % 1 == 0
 end
 
-local function isNonEmptyString(value): boolean
-	return type(value) == "string" and value ~= ""
-end
-
 function RuntimeBuildingIdentity.Read(model: Model): (Identity?, string?)
 	if typeof(model) ~= "Instance" or not model:IsA("Model") then
 		return nil, "BuildingNotModel"
@@ -41,13 +39,13 @@ function RuntimeBuildingIdentity.Read(model: Model): (Identity?, string?)
 	if not isInteger(ownerUserId) or ownerUserId == 0 then
 		return nil, "InvalidBuildingOwnerUserId"
 	end
-	if not isNonEmptyString(houseId) then
+	if not ValueValidation.IsNonEmptyString(houseId) then
 		return nil, "InvalidBuildingHouseId"
 	end
-	if not isNonEmptyString(zoneId) then
+	if not ValueValidation.IsNonEmptyString(zoneId) then
 		return nil, "InvalidBuildingZoneId"
 	end
-	if not isNonEmptyString(slotId) then
+	if not ValueValidation.IsNonEmptyString(slotId) then
 		return nil, "InvalidBuildingSlotId"
 	end
 	if not isInteger(level) or level < 1 then

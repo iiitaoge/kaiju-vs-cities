@@ -9,54 +9,25 @@
 	- 对应的 Plot、Slot BasePart 或建筑 Model；找不到时返回 nil。
 
 	内部算法：
-	- 只遍历 Workspace/PlayerPlots，并验证 OwnerUserId Attribute 和正式数据树路径。
+	- 委托 LocalPlayerPlotAccess 定位 Plot，再验证 Slot 和运行时建筑路径。
 
 	不负责：
 	- 不读取玩家状态、不解析模板、不修改 Instance。
 ]]
 
+local LocalPlayerPlotAccess = require(script.Parent.Parent.LocalPlayerPlotAccess)
+
 local LocalPlayerCityRuntimeAccess = {}
 
-local function isOwnerUserId(value): boolean
-	return type(value) == "number"
-		and value == value
-		and value < math.huge
-		and value > -math.huge
-		and value % 1 == 0
-		and value ~= 0
-end
-
 function LocalPlayerCityRuntimeAccess.FindPlot(ownerUserId: number): Model?
-	if not isOwnerUserId(ownerUserId) then
-		return nil
-	end
-
-	local root = workspace:FindFirstChild("PlayerPlots")
-	if not root or not root:IsA("Folder") then
-		return nil
-	end
-	for _, child in root:GetChildren() do
-		if child:IsA("Model") and child:GetAttribute("OwnerUserId") == ownerUserId then
-			return child
-		end
-	end
-	return nil
+	return LocalPlayerPlotAccess.Find(ownerUserId)
 end
 
 function LocalPlayerCityRuntimeAccess.WaitForPlot(
 	ownerUserId: number,
 	timeout: number
 ): Model?
-	assert(type(timeout) == "number" and timeout >= 0, "timeout 必须是非负数")
-	local deadline = os.clock() + timeout
-	repeat
-		local plot = LocalPlayerCityRuntimeAccess.FindPlot(ownerUserId)
-		if plot then
-			return plot
-		end
-		task.wait()
-	until os.clock() >= deadline
-	return LocalPlayerCityRuntimeAccess.FindPlot(ownerUserId)
+	return LocalPlayerPlotAccess.Wait(ownerUserId, timeout)
 end
 
 function LocalPlayerCityRuntimeAccess.FindSlot(
