@@ -24,16 +24,28 @@
 ]]
 
 return {
-	Region1Button1 = {
-		InitialState = "Ready",
-		ActionId = "R1Upgrade",
-		Scope = "Global",
+	["R1-Primary-Button"] = {
+		InitialState = "Locked",
+		ActionId = "R1Primary",
+		Scope = "PlayerPlot",
+		ZoneId = "R1",
+		MaxActivationDistance = 12,
 	},
 
-	Region1Button2 = {
-		InitialState = "Ready",
-		ActionId = "R1Bonus",
-		Scope = "Global",
+	["R2-Primary-Button"] = {
+		InitialState = "Locked",
+		ActionId = "R2Primary",
+		Scope = "PlayerPlot",
+		ZoneId = "R2",
+		MaxActivationDistance = 12,
+	},
+
+	["R3-Primary-Button"] = {
+		InitialState = "Locked",
+		ActionId = "R3Primary",
+		Scope = "PlayerPlot",
+		ZoneId = "R3",
+		MaxActivationDistance = 12,
 	},
 
 	["M1-S1-Button"] = {

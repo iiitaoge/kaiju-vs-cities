@@ -1,5 +1,6 @@
 local CityBuildingPresentationPublisher = require(script.Parent.CityBuildingPresentationPublisher)
 local ContentContractValidator = require(script.Parent.ContentContractValidator)
+local IncomePlotContractValidator = require(script.Parent.IncomePlotContractValidator)
 local MoneyService = require(script.Parent.MoneyService)
 local MonsterSpawnPointStateService = require(script.Parent.MonsterSpawnPointStateService)
 local PlayerCityRuntimeCoordinator = require(script.Parent.PlayerCityRuntimeCoordinator)
@@ -11,6 +12,7 @@ local RegionStateService = require(script.Parent.RegionStateService)
 local ZoneStateService = require(script.Parent.ZoneStateService)
 
 ContentContractValidator.AssertValid()
+IncomePlotContractValidator.AssertAll()
 -- 必须先注册持久化生命周期，使 PlayerAdded 同步进入 Loading，PlayerRemoving 先截取快照。
 PlayerPersistenceCoordinator.Start()
 PlayerStateService.Start()

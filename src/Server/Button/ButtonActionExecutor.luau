@@ -16,41 +16,20 @@
 	- 本模块不直接写状态；通过业务模块完成。
 
 	支持的 Kind：
-	- UnlockRegion：需要 RegionId。
-	- UpgradeRegion：需要 RegionId。
-	- SetIncomeMultiplier：需要 RegionId、Value。
+	- IncomeZonePrimary：需要 RegionId。
 	- MonsterSpawnPointPrimary：需要 SpawnPointId。
 ]]
 
-local HouseIncomeService = require(script.Parent.Parent.HouseIncomeService)
+local IncomeZoneActionQuery = require(script.Parent.Parent.IncomeZoneActionQuery)
+local IncomeZonePrimaryCoordinator = require(script.Parent.Parent.IncomeZonePrimaryCoordinator)
 local MonsterSpawnPointActionQuery = require(script.Parent.Parent.MonsterSpawnPointActionQuery)
 local MonsterSpawnPointPurchaseCoordinator = require(
 	script.Parent.Parent.MonsterSpawnPointPurchaseCoordinator
 )
-local RegionStateService = require(script.Parent.Parent.RegionStateService)
-local RegionUpgradeCityCoordinator = require(script.Parent.Parent.RegionUpgradeCityCoordinator)
-local RegionUpgradeService = require(script.Parent.Parent.RegionUpgradeService)
-
 local handlers = {
-	UnlockRegion = function(player, action)
-		return RegionUpgradeService.Unlock(player, action.RegionId)
-	end,
-
-	UpgradeRegion = function(player, action)
-		return RegionUpgradeCityCoordinator.Upgrade(player, action.RegionId)
-	end,
-
-	SetIncomeMultiplier = function(player, action)
-		local settlement = HouseIncomeService.SettleRegionHouses(
-			player,
-			action.RegionId,
-			os.time()
-		)
-		if not settlement.Accepted then
-			return nil, "Locked"
-		end
-
-		RegionStateService.SetIncomeMultiplier(player, action.RegionId, action.Value)
+	IncomeZonePrimary = function(player, action)
+		local outcome = IncomeZonePrimaryCoordinator.Execute(player, action.RegionId)
+		return nil, outcome.NextButtonState
 	end,
 
 	MonsterSpawnPointPrimary = function(player, action)
@@ -63,6 +42,10 @@ local handlers = {
 }
 
 local stateHandlers = {
+	IncomeZonePrimary = function(player, action)
+		return IncomeZoneActionQuery.GetPrimaryButtonState(player, action.RegionId)
+	end,
+
 	MonsterSpawnPointPrimary = function(player, action)
 		return MonsterSpawnPointActionQuery.GetPrimaryButtonState(player, action.SpawnPointId)
 	end,
