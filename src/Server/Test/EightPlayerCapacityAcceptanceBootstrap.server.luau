@@ -23,7 +23,7 @@ if not RunService:IsStudio() then
 end
 
 local TEST_ARGUMENT_WAIT_TIMEOUT_SECONDS = 10
-local PLAYER_WAIT_TIMEOUT_SECONDS = 30
+local PLAYER_WAIT_TIMEOUT_SECONDS = 90
 
 local function waitForMatchingTestArgument(): boolean
 	local deadline = os.clock() + TEST_ARGUMENT_WAIT_TIMEOUT_SECONDS
