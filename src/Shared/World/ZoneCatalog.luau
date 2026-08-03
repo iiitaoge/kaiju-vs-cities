@@ -77,6 +77,21 @@ local definitions: { [string]: ZoneDefinition } = {
 			["R2-H8"] = { SlotId = "R2-H8", Kind = "IncomeBuilding" },
 		},
 	},
+	R3 = {
+		ZoneId = "R3",
+		Kind = "Income",
+		InitialUnlocked = false,
+		Slots = {
+			["R3-H1"] = { SlotId = "R3-H1", Kind = "IncomeBuilding" },
+			["R3-H2"] = { SlotId = "R3-H2", Kind = "IncomeBuilding" },
+			["R3-H3"] = { SlotId = "R3-H3", Kind = "IncomeBuilding" },
+			["R3-H4"] = { SlotId = "R3-H4", Kind = "IncomeBuilding" },
+			["R3-H5"] = { SlotId = "R3-H5", Kind = "IncomeBuilding" },
+			["R3-H6"] = { SlotId = "R3-H6", Kind = "IncomeBuilding" },
+			["R3-H7"] = { SlotId = "R3-H7", Kind = "IncomeBuilding" },
+			["R3-H8"] = { SlotId = "R3-H8", Kind = "IncomeBuilding" },
+		},
+	},
 }
 
 local sortedDefinitions: { ZoneDefinition } = {}

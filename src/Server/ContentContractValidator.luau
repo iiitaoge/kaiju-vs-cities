@@ -11,6 +11,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RegionEconomyConfigs = require(script.Parent.RegionEconomyConfigs)
 local RegionUpgradeConfigs = require(script.Parent.RegionUpgradeConfigs)
 local HouseCatalog = require(ReplicatedStorage.Shared.Building.HouseCatalog)
+local StructureDurabilityConfigs = require(
+	ReplicatedStorage.Shared.Building.StructureDurabilityConfigs
+)
 local MonsterCatalog = require(ReplicatedStorage.Shared.Monster.MonsterCatalog)
 local MonsterSpawnPointCatalog = require(
 	ReplicatedStorage.Shared.Monster.MonsterSpawnPointCatalog
@@ -18,6 +21,17 @@ local MonsterSpawnPointCatalog = require(
 local ZoneCatalog = require(ReplicatedStorage.Shared.World.ZoneCatalog)
 
 local ContentContractValidator = {}
+
+local function resolvePath(path: string): Instance?
+	local current: Instance = game
+	for segment in string.gmatch(path, "[^/]+") do
+		current = current:FindFirstChild(segment)
+		if not current then
+			return nil
+		end
+	end
+	return current
+end
 
 local function add(errors, condition: boolean, message: string)
 	if not condition then
@@ -57,6 +71,45 @@ function ContentContractValidator.Validate()
 		local slot = zone and zone.Slots[house.HouseId]
 		add(errors, zone ~= nil and zone.Kind == "Income", house.HouseId .. " 未指向 Income Zone")
 		add(errors, slot ~= nil and slot.Kind == "IncomeBuilding", house.HouseId .. " 缺少 IncomeBuilding Slot")
+
+		local upgrade = RegionUpgradeConfigs[house.RegionId]
+		if upgrade then
+			for level in upgrade.Levels do
+				local template = resolvePath(string.format(
+					"%s/%s/%s/level%d",
+					house.ModelRoot,
+					house.GroupName,
+					house.VariantName,
+					level
+				))
+				add(
+					errors,
+					template ~= nil and template:IsA("Model"),
+					string.format("%s 缺少等级 %d 模板", house.HouseId, level)
+				)
+				add(
+					errors,
+					StructureDurabilityConfigs.GetMaxHealth(house.RegionId, level) ~= nil,
+					string.format("%s 缺少等级 %d 耐久", house.RegionId, level)
+				)
+			end
+		end
+	end
+
+	for _, zone in ZoneCatalog.GetAll() do
+		if zone.Kind ~= "Income" then
+			continue
+		end
+		for slotId, slot in zone.Slots do
+			if slot.Kind == "IncomeBuilding" then
+				local house = HouseCatalog.Get(slotId)
+				add(
+					errors,
+					house ~= nil and house.RegionId == zone.ZoneId,
+					slotId .. " 没有同 Zone 房屋配置"
+				)
+			end
+		end
 	end
 
 	for _, spawnPoint in MonsterSpawnPointCatalog.GetAll() do

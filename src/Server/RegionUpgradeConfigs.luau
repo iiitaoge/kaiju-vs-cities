@@ -61,4 +61,21 @@ return {
 			},
 		},
 	},
+
+	R3 = {
+		Levels = {
+			[1] = {
+				HouseAction = "Build",
+				PresentationId = "Standard",
+			},
+
+			[2] = {
+				PresentationId = "Standard",
+			},
+
+			[3] = {
+				PresentationId = "Standard",
+			},
+		},
+	},
 }

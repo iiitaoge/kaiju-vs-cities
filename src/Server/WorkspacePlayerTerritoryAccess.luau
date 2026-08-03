@@ -2,6 +2,10 @@ local PlayerTerritoryAccess = require(script.Parent.PlayerTerritoryAccess)
 
 local WorkspacePlayerTerritoryAccess = {}
 
+local function isContainer(instance: Instance?): boolean
+	return instance ~= nil and (instance:IsA("Folder") or instance:IsA("Model"))
+end
+
 export type ZoneDefinition = {
 	ZoneId: string,
 }
@@ -13,7 +17,7 @@ export type CreateOptions = {
 }
 
 -- 输入依赖回调；输出只读取 Workspace 的已解锁 Zone 范围适配器。
--- 场景路径：Plot/Zones/<ZoneId>/Bounds/<BoundsId: BasePart>。
+-- 场景路径：Plot/Zones/<ZoneId>/Bounds/<BoundsId: BasePart>；Bounds 可为 Folder 或 Model。
 function WorkspacePlayerTerritoryAccess.Create(options: CreateOptions): PlayerTerritoryAccess.Access
 	assert(type(options) == "table", "options 必须是 table")
 	assert(type(options.GetPlot) == "function", "GetPlot 必须是 function")
@@ -38,7 +42,7 @@ function WorkspacePlayerTerritoryAccess.Create(options: CreateOptions): PlayerTe
 				end
 				local zone = zones:FindFirstChild(definition.ZoneId)
 				local bounds = if zone then zone:FindFirstChild("Bounds") else nil
-				if not bounds or not bounds:IsA("Folder") then
+				if not isContainer(bounds) then
 					continue
 				end
 				for _, child in bounds:GetChildren() do

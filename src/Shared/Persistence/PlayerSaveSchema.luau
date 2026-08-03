@@ -9,7 +9,7 @@
 local PlayerSaveSchema = {}
 
 PlayerSaveSchema.CurrentVersion = 1
-PlayerSaveSchema.ContentRevision = 1
+PlayerSaveSchema.ContentRevision = 2
 
 local function isFinite(value): boolean
 	return type(value) == "number"

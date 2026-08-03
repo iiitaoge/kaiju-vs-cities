@@ -19,7 +19,11 @@ export type CreateOptions = {
 	IsZoneUnlocked: (Player, string) -> boolean,
 }
 
--- 场景路径：Plot/Zones/<ZoneId>/Slots/<SlotId: BasePart>。
+local function isContainer(instance: Instance?): boolean
+	return instance ~= nil and (instance:IsA("Folder") or instance:IsA("Model"))
+end
+
+-- 场景路径：Plot/Zones/<ZoneId>/Slots/<SlotId: BasePart>；Slots 可为 Folder 或 Model。
 -- 适配器只做稳定身份和 Instance 关联，不执行任何 SlotKind 业务。
 function WorkspaceZoneSlotAccess.Create(options: CreateOptions): ZoneSlotAccess.Access
 	assert(type(options) == "table", "options 必须是 table")
@@ -48,7 +52,7 @@ function WorkspaceZoneSlotAccess.Create(options: CreateOptions): ZoneSlotAccess.
 				end
 				local zone = zones:FindFirstChild(definition.ZoneId)
 				local slots = if zone then zone:FindFirstChild("Slots") else nil
-				if not slots or not slots:IsA("Folder") then
+				if not isContainer(slots) then
 					continue
 				end
 				for id, slotDefinition in pairs(definition.Slots) do

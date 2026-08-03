@@ -29,6 +29,7 @@
 	测试映射：
 	- R1 模仿住宅区。
 	- R2 模仿市中心。
+	- R3 使用第三组城市模板的首版占位数值。
 ]]
 
 export type RegionEconomyConfig = {
@@ -59,6 +60,16 @@ local configs: { [string]: RegionEconomyConfig } = {
 		IncomeGrowth = 1.6,
 		IncomeIntervalSeconds = 1,
 		UpgradeBaseCost = 40000,
+		CostGrowth = 1.6,
+	},
+
+	R3 = {
+		UnlockCost = 50000,
+		PurchaseCost = 100000,
+		BaseIncome = 1500,
+		IncomeGrowth = 1.6,
+		IncomeIntervalSeconds = 1,
+		UpgradeBaseCost = 500000,
 		CostGrowth = 1.6,
 	},
 }

@@ -18,6 +18,11 @@ local maxHealthByRegion = {
 		[2] = 320,
 		[3] = 480,
 	},
+	R3 = {
+		[1] = 400,
+		[2] = 640,
+		[3] = 960,
+	},
 }
 
 for _, levels in maxHealthByRegion do

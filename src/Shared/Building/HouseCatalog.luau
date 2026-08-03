@@ -6,10 +6,8 @@ export type HouseDefinition = {
 	HouseId: string,
 	RegionId: string,
 	ModelRoot: string,
-	PointRoot: string,
 	GroupName: string,
 	VariantName: string,
-	PointName: string,
 }
 
 local definitionsByHouseId: { [string]: HouseDefinition } = {}
@@ -27,10 +25,8 @@ for regionId, region in pairs(IncomeZoneConfigs) do
 				HouseId = house.HouseId,
 				RegionId = regionId,
 				ModelRoot = region.ModelRoot,
-				PointRoot = region.PointRoot,
 				GroupName = groupName,
 				VariantName = house.VariantName,
-				PointName = house.PointName,
 			}
 		end
 	end
