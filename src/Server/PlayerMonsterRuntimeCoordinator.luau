@@ -1,7 +1,7 @@
 --[[
 	职责：
-	- 把玩家已建造的怪兽出生点状态恢复为服务器权威怪兽。
-	- 执行“建造出生点即新增怪兽”和“升级出生点替换怪兽”的完整服务器链路。
+	- 把玩家已建造的怪兽出生点状态恢复为服务器权威罐体和怪兽。
+	- 执行“先建造罐体再建造怪兽”和“拆除旧怪兽表现再建造新怪兽”的完整服务器链路。
 
 	输入：
 	- Load / Unload：已经分配 Plot 的 Player。
@@ -9,20 +9,25 @@
 	- Upgrade：Player、SpawnPointId、目标等级。
 
 	输出：
-	- 怪兽生成在 Plot/Runtime/Monsters。
+	- 罐体生成在 Plot/Runtime/MonsterIncubators，怪兽生成在 Plot/Runtime/Monsters。
 	- 返回 Succeeded、稳定 Reason，以及对应怪兽记录。
 
 	内部算法：
 	- 读取出生点配置、保存状态和已解锁 MonsterSpawnPoint Slot。
-	- 解析 MonsterKey 对应模板，再协调怪兽名册完成创建或替换。
+	- 先协调罐体建造/恢复，再解析 MonsterKey 模板并由怪兽名册创建或替换；
+	  首次建造等待罐体表现完成后才创建怪兽，升级只对怪兽播放拆除加建造表现。
 	- Build 由名册容量规则拒绝超限；Load 恢复既有资产，不因容量后来降低而删除怪兽。
 
-	不负责：建造价格、容量升级价格、攻击 UI、存档读写或表现动画。
+	不负责：建造价格、容量升级价格、攻击 UI 或存档读写。
 ]]
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local MonsterBuildPresentationPublisher = require(
+	script.Parent.MonsterBuildPresentationPublisher
+)
+local MonsterIncubatorBuildCoordinator = require(script.Parent.MonsterIncubatorBuildCoordinator)
 local MonsterRosterCoordinator = require(script.Parent.MonsterRosterCoordinator)
 local MonsterSpawnPointStateService = require(script.Parent.MonsterSpawnPointStateService)
 local MonsterTemplateResolver = require(script.Parent.MonsterTemplateResolver)
@@ -31,8 +36,15 @@ local PlayerPlotAssignmentService = require(script.Parent.PlayerPlotAssignmentSe
 local PlayerDataReadyService = require(script.Parent.PlayerDataReadyService)
 local PlotMonsterRuntimeAccess = require(script.Parent.PlotMonsterRuntimeAccess)
 local SpawnPointMonsterBinding = require(script.Parent.SpawnPointMonsterBinding)
+local WorkspaceMonsterIncubatorAccess = require(script.Parent.WorkspaceMonsterIncubatorAccess)
 local WorkspacePlayerWorldAccess = require(script.Parent.WorkspacePlayerWorldAccess)
 local ZoneStateService = require(script.Parent.ZoneStateService)
+local BuildingPresentationConfigs = require(
+	ReplicatedStorage.Shared.Building.BuildingPresentationConfigs
+)
+local MonsterIncubatorConfigs = require(
+	ReplicatedStorage.Shared.Monster.MonsterIncubatorConfigs
+)
 local MonsterSpawnPointCatalog = require(
 	ReplicatedStorage.Shared.Monster.MonsterSpawnPointCatalog
 )
@@ -57,6 +69,7 @@ type PlanItem = {
 }
 
 type RuntimeActionPlan = {
+	Plot: Model,
 	SpawnPointId: string,
 	TargetLevel: number,
 	MonsterKey: string,
@@ -64,6 +77,15 @@ type RuntimeActionPlan = {
 	MaxHealth: number,
 	Point: BasePart,
 	RuntimeRoot: Folder,
+	PresentationId: string,
+	RiseDuration: number,
+	DemolishDuration: number,
+	PreviousMonsterKey: string?,
+}
+
+type CreatedLoadItem = {
+	Plan: PlanItem,
+	Incubator: Model,
 }
 
 local SLOT_KIND = "MonsterSpawnPoint"
@@ -132,7 +154,19 @@ local function resolveDefinition(spawnPointId: string, level: number)
 	return monsterKey, template, monsterDefinition, nil
 end
 
-local function createLoadPlan(player: Player): ({ PlanItem }?, string?)
+local function resolvePresentation(spawnPointId: string)
+	local config = MonsterIncubatorConfigs[spawnPointId]
+	if not config then
+		return nil, nil, "IncubatorConfigUnavailable"
+	end
+	local presentation = BuildingPresentationConfigs[config.PresentationId]
+	if not presentation then
+		return nil, nil, "MonsterBuildPresentationUnavailable"
+	end
+	return config.PresentationId, presentation, nil
+end
+
+local function createLoadPlan(player: Player, plot: Model): ({ PlanItem }?, string?)
 	local points, pointsReason = getUnlockedPoints(player)
 	if not points then
 		return nil, pointsReason
@@ -166,6 +200,15 @@ local function createLoadPlan(player: Player): ({ PlanItem }?, string?)
 		if state.MonsterKey ~= monsterKey then
 			return nil, "MonsterSpawnPointStateMismatch:" .. state.SpawnPointId
 		end
+		local incubatorCheck = MonsterIncubatorBuildCoordinator.Validate(
+			plot,
+			state.SpawnPointId
+		)
+		if not incubatorCheck.Succeeded then
+			return nil, (incubatorCheck.Reason or "MonsterIncubatorUnavailable")
+				.. ":"
+				.. state.SpawnPointId
+		end
 
 		table.insert(plan, {
 			SpawnPointId = state.SpawnPointId,
@@ -179,7 +222,8 @@ local function createLoadPlan(player: Player): ({ PlanItem }?, string?)
 end
 
 local function prepareBuild(player: Player, spawnPointId: string): (RuntimeActionPlan?, string?)
-	if not loadedPlots[player] then
+	local plot = loadedPlots[player]
+	if not plot then
 		return nil, "MonsterRuntimeNotLoaded"
 	end
 	if not MonsterSpawnPointCatalog.Get(spawnPointId) then
@@ -208,11 +252,20 @@ local function prepareBuild(player: Player, spawnPointId: string): (RuntimeActio
 	if not monsterKey or not template or not monsterDefinition then
 		return nil, resolveReason or "MonsterResolveFailed"
 	end
-	local runtimeRoot = PlotMonsterRuntimeAccess.Get(loadedPlots[player])
+	local incubatorCheck = MonsterIncubatorBuildCoordinator.Validate(plot, spawnPointId)
+	if not incubatorCheck.Succeeded then
+		return nil, incubatorCheck.Reason or "MonsterIncubatorUnavailable"
+	end
+	local runtimeRoot = PlotMonsterRuntimeAccess.Get(plot)
 	if not runtimeRoot then
 		return nil, "MonsterRuntimeUnavailable"
 	end
+	local presentationId, presentation, presentationReason = resolvePresentation(spawnPointId)
+	if not presentationId or not presentation then
+		return nil, presentationReason or "MonsterBuildPresentationUnavailable"
+	end
 	return {
+		Plot = plot,
 		SpawnPointId = spawnPointId,
 		TargetLevel = INITIAL_LEVEL,
 		MonsterKey = monsterKey,
@@ -220,6 +273,10 @@ local function prepareBuild(player: Player, spawnPointId: string): (RuntimeActio
 		MaxHealth = monsterDefinition.MaxHealth,
 		Point = point,
 		RuntimeRoot = runtimeRoot,
+		PresentationId = presentationId,
+		RiseDuration = presentation.Rise.TotalDuration,
+		DemolishDuration = presentation.Demolish.TotalDuration,
+		PreviousMonsterKey = nil,
 	}, nil
 end
 
@@ -228,7 +285,8 @@ local function prepareUpgrade(
 	spawnPointId: string,
 	targetLevel: number
 ): (RuntimeActionPlan?, string?)
-	if not loadedPlots[player] then
+	local plot = loadedPlots[player]
+	if not plot then
 		return nil, "MonsterRuntimeNotLoaded"
 	end
 	if not MonsterSpawnPointCatalog.Get(spawnPointId) then
@@ -249,6 +307,13 @@ local function prepareUpgrade(
 	if not record then
 		return nil, "UnknownSpawnPoint"
 	end
+	local incubator, incubatorReason = WorkspaceMonsterIncubatorAccess.Resolve(
+		plot,
+		spawnPointId
+	)
+	if not incubator then
+		return nil, incubatorReason or "MonsterIncubatorUnavailable"
+	end
 	local permission = MonsterStateRules.CheckUpgrade(record.State)
 	if not permission.Allowed then
 		return nil, permission.Reason
@@ -264,11 +329,16 @@ local function prepareUpgrade(
 	if not monsterKey or not template or not monsterDefinition then
 		return nil, resolveReason or "MonsterResolveFailed"
 	end
-	local runtimeRoot = PlotMonsterRuntimeAccess.Get(loadedPlots[player])
+	local runtimeRoot = PlotMonsterRuntimeAccess.Get(plot)
 	if not runtimeRoot then
 		return nil, "MonsterRuntimeUnavailable"
 	end
+	local presentationId, presentation, presentationReason = resolvePresentation(spawnPointId)
+	if not presentationId or not presentation then
+		return nil, presentationReason or "MonsterBuildPresentationUnavailable"
+	end
 	return {
+		Plot = plot,
 		SpawnPointId = spawnPointId,
 		TargetLevel = targetLevel,
 		MonsterKey = monsterKey,
@@ -276,6 +346,10 @@ local function prepareUpgrade(
 		MaxHealth = monsterDefinition.MaxHealth,
 		Point = point,
 		RuntimeRoot = runtimeRoot,
+		PresentationId = presentationId,
+		RiseDuration = presentation.Rise.TotalDuration,
+		DemolishDuration = presentation.Demolish.TotalDuration,
+		PreviousMonsterKey = record.MonsterKey,
 	}, nil
 end
 
@@ -300,14 +374,48 @@ function PlayerMonsterRuntimeCoordinator.Load(player: Player): Result
 	if not runtimeRoot then
 		return result(false, runtimeReason or "MonsterRuntimeUnavailable", nil, 0)
 	end
-	local plan, planReason = createLoadPlan(player)
+	local plan, planReason = createLoadPlan(player, plot)
 	if not plan then
 		return result(false, planReason or "MonsterLoadPlanFailed", nil, 0)
 	end
 
-	local createdItems = {}
+	local createdItems: { CreatedLoadItem } = {}
 	local points = {}
+	local function rollbackCreatedItems()
+		for index = #createdItems, 1, -1 do
+			local createdItem = createdItems[index]
+			MonsterRosterCoordinator.RemoveForSpawnPoint(
+				player,
+				createdItem.Plan.SpawnPointId,
+				createdItem.Plan.Point
+			)
+			local removed = MonsterIncubatorBuildCoordinator.Remove(
+				plot,
+				createdItem.Plan.SpawnPointId,
+				createdItem.Incubator
+			)
+			if not removed.Succeeded then
+				warn("回滚读档罐体失败：", removed.Reason)
+			end
+		end
+	end
 	for _, item in plan do
+		local restoredIncubator = MonsterIncubatorBuildCoordinator.Restore(
+			player,
+			plot,
+			item.SpawnPointId
+		)
+		if not restoredIncubator.Succeeded or not restoredIncubator.Incubator then
+			rollbackCreatedItems()
+			return result(
+				false,
+				(restoredIncubator.Reason or "MonsterIncubatorRestoreFailed")
+					.. ":"
+					.. item.SpawnPointId,
+				nil,
+				0
+			)
+		end
 		local created = MonsterRosterCoordinator.RestoreForSpawnPoint(
 			player,
 			item.SpawnPointId,
@@ -318,17 +426,21 @@ function PlayerMonsterRuntimeCoordinator.Load(player: Player): Result
 			runtimeRoot
 		)
 		if not created.Succeeded then
-			for index = #createdItems, 1, -1 do
-				local rollbackItem = createdItems[index]
-				MonsterRosterCoordinator.RemoveForSpawnPoint(
-					player,
-					rollbackItem.SpawnPointId,
-					rollbackItem.Point
-				)
+			local removed = MonsterIncubatorBuildCoordinator.Remove(
+				plot,
+				item.SpawnPointId,
+				restoredIncubator.Incubator
+			)
+			if not removed.Succeeded then
+				warn("怪兽读档失败后删除当前罐体失败：", removed.Reason)
 			end
+			rollbackCreatedItems()
 			return result(false, (created.Reason or "MonsterCreateFailed") .. ":" .. item.SpawnPointId, nil, 0)
 		end
-		table.insert(createdItems, item)
+		table.insert(createdItems, {
+			Plan = item,
+			Incubator = restoredIncubator.Incubator,
+		})
 		points[item.SpawnPointId] = item.Point
 	end
 
@@ -344,6 +456,15 @@ function PlayerMonsterRuntimeCoordinator.Build(player: Player, spawnPointId: str
 	if not plan then
 		return result(false, planReason or "MonsterBuildUnavailable", MonsterRosterCoordinator.Get(player, spawnPointId), nil)
 	end
+	local builtIncubator = MonsterIncubatorBuildCoordinator.Build(
+		player,
+		plan.Plot,
+		spawnPointId
+	)
+	if not builtIncubator.Succeeded or not builtIncubator.Incubator then
+		return result(false, builtIncubator.Reason or "MonsterIncubatorBuildFailed", nil, nil)
+	end
+
 	local created = MonsterRosterCoordinator.CreateForSpawnPoint(
 		player,
 		spawnPointId,
@@ -354,7 +475,50 @@ function PlayerMonsterRuntimeCoordinator.Build(player: Player, spawnPointId: str
 		plan.RuntimeRoot
 	)
 	if not created.Succeeded then
+		local removed = MonsterIncubatorBuildCoordinator.Remove(
+			plan.Plot,
+			spawnPointId,
+			builtIncubator.Incubator
+		)
+		if not removed.Succeeded then
+			warn("怪兽创建失败后删除罐体失败：", removed.Reason)
+		end
 		return result(false, created.Reason, created.Record, nil)
+	end
+	local presented = MonsterBuildPresentationPublisher.PublishAndWait({
+		Kind = "MonsterBuild",
+		OwnerUserId = player.UserId,
+		SpawnPointId = spawnPointId,
+		PresentationId = plan.PresentationId,
+		MonsterKey = plan.MonsterKey,
+	}, plan.RiseDuration, function()
+		return player.Parent ~= Players
+			or plan.Plot.Parent == nil
+			or plan.Plot:GetAttribute("OwnerUserId") ~= player.UserId
+	end)
+	if not presented.Succeeded then
+		local removedMonster = MonsterRosterCoordinator.RemoveForSpawnPoint(
+			player,
+			spawnPointId,
+			plan.Point
+		)
+		if not removedMonster.Succeeded then
+			warn("怪兽建造表现失败后删除怪兽失败：", removedMonster.Reason)
+		end
+		local removedIncubator = MonsterIncubatorBuildCoordinator.Remove(
+			plan.Plot,
+			spawnPointId,
+			builtIncubator.Incubator
+		)
+		if not removedIncubator.Succeeded then
+			warn("怪兽建造表现失败后删除罐体失败：", removedIncubator.Reason)
+		end
+		return result(
+			false,
+			presented.Reason or "MonsterBuildPresentationFailed",
+			nil,
+			nil
+		)
 	end
 
 	MonsterSpawnPointStateService.MarkBuilt(player, spawnPointId, plan.TargetLevel, plan.MonsterKey)
@@ -401,6 +565,23 @@ function PlayerMonsterRuntimeCoordinator.Upgrade(
 		return result(false, upgraded.Reason, upgraded.Record, nil)
 	end
 	MonsterSpawnPointStateService.MarkBuilt(player, spawnPointId, targetLevel, plan.MonsterKey)
+	local presented = MonsterBuildPresentationPublisher.PublishAndWait({
+		Kind = "MonsterUpgrade",
+		OwnerUserId = player.UserId,
+		SpawnPointId = spawnPointId,
+		PresentationId = plan.PresentationId,
+		PreviousMonsterKey = assert(plan.PreviousMonsterKey),
+		MonsterKey = plan.MonsterKey,
+	}, plan.DemolishDuration + plan.RiseDuration, nil)
+	if not presented.Succeeded then
+		-- 模型替换和保存身份已经提交；表现失败不能把成功升级误报为购买失败并退款。
+		warn(string.format(
+			"怪兽升级已提交，但拆除/建造表现失败：%s/%s (%s)",
+			player.Name,
+			spawnPointId,
+			presented.Reason or "Unknown"
+		))
+	end
 	return result(true, nil, upgraded.Record, nil)
 end
 
@@ -434,6 +615,10 @@ local function unload(player: Player, clearMonsterState: boolean): number
 	local runtimeRoot = plot and PlotMonsterRuntimeAccess.Get(plot)
 	if runtimeRoot then
 		runtimeRoot:Destroy()
+	end
+	local incubatorRoot = plot and WorkspaceMonsterIncubatorAccess.GetRoot(plot)
+	if incubatorRoot then
+		incubatorRoot:Destroy()
 	end
 	return removedCount
 end

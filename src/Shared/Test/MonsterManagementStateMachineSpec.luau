@@ -15,7 +15,7 @@ local function snapshot(upgradeAllowed: boolean, affordable: boolean, attackAllo
 		SpawnPointId = "M1-S1",
 		Built = true,
 		Level = 1,
-		MonsterKey = "P1",
+		MonsterKey = "Godzilla-L001",
 		MonsterState = "IdleAtSpawn",
 		Balance = if affordable then 1000 else 0,
 		Upgrade = {
@@ -72,7 +72,7 @@ function MonsterManagementStateMachineSpec.Run(): boolean
 
 	local upgradedSnapshot = snapshot(false, false, true)
 	upgradedSnapshot.Level = 2
-	upgradedSnapshot.MonsterKey = "P4"
+	upgradedSnapshot.MonsterKey = "Godzilla-L002"
 	upgradedSnapshot.Upgrade.Reason = "MaxLevel"
 	local upgraded = MonsterManagementStateMachine.Apply(upgrading.State, {
 		Kind = "UpgradeResolved",

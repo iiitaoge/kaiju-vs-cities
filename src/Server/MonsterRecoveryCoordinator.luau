@@ -7,6 +7,7 @@ local MonsterRecoveryCoordinator = {}
 export type BeginOptions = {
 	RecoveryDuration: number,
 	ResolveTemplate: (string) -> Model?,
+	PrepareRespawn: ((Player, string) -> { Succeeded: boolean, Reason: string? })?,
 	OnRespawned: ((Player, string, Model) -> ())?,
 }
 
@@ -42,6 +43,10 @@ function MonsterRecoveryCoordinator.Begin(
 		"RecoveryDuration 必须大于等于 0"
 	)
 	assert(type(options.ResolveTemplate) == "function", "ResolveTemplate 必须是 function")
+	assert(
+		options.PrepareRespawn == nil or type(options.PrepareRespawn) == "function",
+		"PrepareRespawn 必须是 function 或 nil"
+	)
 
 	local current = MonsterRosterCoordinator.Get(player, spawnPointId)
 	if not current then
@@ -82,6 +87,24 @@ function MonsterRecoveryCoordinator.Begin(
 		local latest = MonsterRosterCoordinator.Get(player, spawnPointId)
 		if not latest or latest.State ~= "Recovering" then
 			return
+		end
+		if options.PrepareRespawn then
+			local prepared, prepareResult = pcall(
+				options.PrepareRespawn,
+				player,
+				spawnPointId
+			)
+			if not prepared then
+				warn("怪兽复活准备失败：", prepareResult)
+				return
+			end
+			if type(prepareResult) ~= "table" or not prepareResult.Succeeded then
+				local reason = if type(prepareResult) == "table"
+					then prepareResult.Reason
+					else "InvalidPrepareRespawnResult"
+				warn("怪兽复活准备失败：", reason)
+				return
+			end
 		end
 
 		local template = options.ResolveTemplate(latest.MonsterKey)

@@ -3,12 +3,24 @@
 	价格只作为服务器购买事务和未来 UI 的输入，不执行扣款。
 ]]
 
+local MonsterLevelProgressionRules = require(script.Parent.MonsterLevelProgressionRules)
+local MonsterProgressionConfigs = require(script.Parent.MonsterProgressionConfigs)
+local MonsterSpawnPointCatalog = require(script.Parent.MonsterSpawnPointCatalog)
+
+local progression = MonsterProgressionConfigs.Godzilla
+local upgradeCosts = {}
+for targetLevel = 2, assert(MonsterSpawnPointCatalog.GetMaxLevel("M1-S1")) do
+	upgradeCosts[targetLevel] = MonsterLevelProgressionRules.ScaleInteger(
+		progression.UpgradeBaseCost,
+		progression.UpgradeCostGrowth,
+		targetLevel - 1
+	)
+end
+
 local configs = {
 	["M1-S1"] = {
-		BuildCost = 250,
-		UpgradeCostByTargetLevel = {
-			[2] = 1000,
-		},
+		BuildCost = progression.BuildCost,
+		UpgradeCostByTargetLevel = upgradeCosts,
 	},
 }
 

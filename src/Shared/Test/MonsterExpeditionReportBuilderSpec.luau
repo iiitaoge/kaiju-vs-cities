@@ -16,7 +16,7 @@ function MonsterExpeditionReportBuilderSpec.Run(): boolean
 		AttackerUserId = 1,
 		DefenderUserId = 2,
 		AttackerSpawnPointId = "M1-S1",
-		MonsterKey = "P1",
+		MonsterKey = "Godzilla-L001",
 		EntryPoint = Vector3.new(10, 0, 20),
 		StartedAt = 100,
 	}

@@ -4,7 +4,7 @@
 	输入：攻击者、自己的 SpawnPointId、TargetPlayerId 和最终落点。
 	输出：命令是否被接受、Reason、CommandId 和供客户端跟随的怪兽 Model。
 	内部算法：按 ID 重新解析在线目标，按当前 MonsterKey 解析全部配置，调用命令协调器；
-	命令被接受后异步执行移动、建筑攻击、守方怪兽反击、死亡恢复和直接回出生点。
+	命令被接受后异步执行开罐、移动、建筑攻击、守方怪兽反击、死亡恢复和反向封罐。
 
 	不负责：目标浏览、客户端落点预校验、GUI、防御塔场景发现或存档。
 ]]
@@ -16,10 +16,12 @@ local GodzillaService = require(script.Parent.GodzillaService)
 local MonsterAttackCommandCoordinator = require(script.Parent.MonsterAttackCommandCoordinator)
 local MonsterExpeditionCoordinator = require(script.Parent.MonsterExpeditionCoordinator)
 local MonsterExpeditionReportService = require(script.Parent.MonsterExpeditionReportService)
+local MonsterIncubatorCoordinator = require(script.Parent.MonsterIncubatorCoordinator)
 local MonsterRecoveryCoordinator = require(script.Parent.MonsterRecoveryCoordinator)
 local MonsterReturnCoordinator = require(script.Parent.MonsterReturnCoordinator)
 local MonsterRosterCoordinator = require(script.Parent.MonsterRosterCoordinator)
 local MonsterTemplateResolver = require(script.Parent.MonsterTemplateResolver)
+local PlayerPlotAssignmentService = require(script.Parent.PlayerPlotAssignmentService)
 local PlayerRuntimeHouseAttackAccess = require(script.Parent.PlayerRuntimeHouseAttackAccess)
 local PlayerRuntimeDefenseTowerAccess = require(script.Parent.PlayerRuntimeDefenseTowerAccess)
 local WorkspacePlayerWorldAccess = require(script.Parent.WorkspacePlayerWorldAccess)
@@ -82,7 +84,7 @@ local function setCombatantMoving(model: Model, isMoving: boolean)
 	end
 end
 
-local function beginRecovery(player: Player, spawnPointId: string)
+local function beginRecovery(player: Player, spawnPointId: string, plotOverride: Model?)
 	local record = MonsterRosterCoordinator.Get(player, spawnPointId)
 	if not record then
 		return
@@ -93,8 +95,20 @@ local function beginRecovery(player: Player, spawnPointId: string)
 		return
 	end
 
+	local recoveryPlot = plotOverride or PlayerPlotAssignmentService.GetPlot(player)
 	local recovery = MonsterRecoveryCoordinator.Begin(player, spawnPointId, {
 		RecoveryDuration = configs.Expedition.RecoveryDuration,
+		PrepareRespawn = function()
+			if not recoveryPlot then
+				return { Succeeded = true, Reason = nil }
+			end
+			return MonsterIncubatorCoordinator.Restore(
+				recoveryPlot,
+				spawnPointId,
+				nil,
+				nil
+			)
+		end,
 		ResolveTemplate = function(monsterKey)
 			local template = MonsterTemplateResolver.Resolve(monsterKey)
 			return template
@@ -110,16 +124,33 @@ local function beginRecovery(player: Player, spawnPointId: string)
 	end
 end
 
-local function beginDirectReturn(player: Player, spawnPointId: string)
+local function beginIncubatorReturn(
+	player: Player,
+	spawnPointId: string,
+	plotOverride: Model?
+)
+	local returnPlot = plotOverride or PlayerPlotAssignmentService.GetPlot(player)
 	return MonsterReturnCoordinator.Begin(player, spawnPointId, {
 		ExecuteReturn = function(model, spawnCFrame)
-			model:PivotTo(spawnCFrame)
-			return { Succeeded = true, Reason = nil }
+			if not returnPlot then
+				model:PivotTo(spawnCFrame)
+				return { Succeeded = true, Reason = nil }
+			end
+			return MonsterIncubatorCoordinator.Restore(
+				returnPlot,
+				spawnPointId,
+				model,
+				spawnCFrame
+			)
 		end,
 	})
 end
 
-local function ensureReturnAfterFailure(player: Player, spawnPointId: string)
+local function ensureReturnAfterFailure(
+	player: Player,
+	spawnPointId: string,
+	plotOverride: Model?
+)
 	local record = MonsterRosterCoordinator.Get(player, spawnPointId)
 	if not record
 		or record.State == "IdleAtSpawn"
@@ -128,7 +159,7 @@ local function ensureReturnAfterFailure(player: Player, spawnPointId: string)
 		or record.State == "Recovering" then
 		return
 	end
-	local returnResult = beginDirectReturn(player, spawnPointId)
+	local returnResult = beginIncubatorReturn(player, spawnPointId, plotOverride)
 	if not returnResult.Succeeded then
 		warn(string.format(
 			"攻击异常后回城失败：%s/%s (%s)",
@@ -137,6 +168,20 @@ local function ensureReturnAfterFailure(player: Player, spawnPointId: string)
 			returnResult.Reason or "Unknown"
 		))
 	end
+end
+
+local function preExpeditionFailure(reason: string, cancelled: boolean)
+	return {
+		Succeeded = false,
+		EndReason = if cancelled then "Cancelled" else "Failed",
+		Reason = reason,
+		DestroyedHouseIds = {},
+		RewardGranted = 0,
+		DefeatedDefenderMonsterIds = {},
+		AttackerDefeated = false,
+		TowerHitCount = 0,
+		TowerDamageTaken = 0,
+	}
 end
 
 -- TargetPlayerId 只用于寻址；目标在线状态、领地和落点仍由下层命令协调器重新验证。
@@ -175,6 +220,24 @@ function PlayerMonsterAttackApplication.Execute(
 		}
 	end
 	local monsterKey = record.MonsterKey
+	local plot, plotReason = PlayerPlotAssignmentService.GetPlot(attacker)
+	if not plot then
+		return {
+			Succeeded = false,
+			Reason = plotReason or "PlayerHasNoPlot",
+			CommandId = nil,
+			Monster = record.Model,
+		}
+	end
+	local incubatorCheck = MonsterIncubatorCoordinator.Validate(plot, spawnPointId)
+	if not incubatorCheck.Succeeded then
+		return {
+			Succeeded = false,
+			Reason = incubatorCheck.Reason or "IncubatorUnavailable",
+			CommandId = nil,
+			Monster = record.Model,
+		}
+	end
 
 	return MonsterAttackCommandCoordinator.Execute(
 		attacker,
@@ -184,6 +247,36 @@ function PlayerMonsterAttackApplication.Execute(
 		{
 			TerritoryAccess = WorkspacePlayerWorldAccess.Territory,
 			StartExpedition = function(commandContext, isCancelled)
+				local latest = MonsterRosterCoordinator.Get(
+					commandContext.Attacker,
+					commandContext.AttackerSpawnPointId
+				)
+				if not latest or not latest.Model then
+					return preExpeditionFailure("MonsterUnavailable", false)
+				end
+				local released = MonsterIncubatorCoordinator.Release(
+					plot,
+					commandContext.AttackerSpawnPointId,
+					latest.Model,
+					isCancelled
+				)
+				if not released.Succeeded then
+					return preExpeditionFailure(
+						released.Reason or "IncubatorReleaseFailed",
+						released.Reason == "Cancelled"
+					)
+				end
+				local moving = MonsterRosterCoordinator.Transition(
+					commandContext.Attacker,
+					commandContext.AttackerSpawnPointId,
+					"MovingToTarget"
+				)
+				if not moving.Succeeded then
+					return preExpeditionFailure(
+						moving.Reason or "MonsterPhaseTransitionFailed",
+						false
+					)
+				end
 				return MonsterExpeditionCoordinator.Execute(
 					commandContext.Attacker,
 					commandContext.Defender,
@@ -205,10 +298,18 @@ function PlayerMonsterAttackApplication.Execute(
 						SetCombatantMoving = setCombatantMoving,
 						IsCancelled = isCancelled,
 						OnDefeated = function(defeatedPlayer, defeatedSpawnPointId, _source)
-							beginRecovery(defeatedPlayer, defeatedSpawnPointId)
+							beginRecovery(
+								defeatedPlayer,
+								defeatedSpawnPointId,
+								if defeatedPlayer == commandContext.Attacker then plot else nil
+							)
 						end,
 						OnReturnRequired = function(returnPlayer, returnSpawnPointId, _endReason)
-							return beginDirectReturn(returnPlayer, returnSpawnPointId)
+							return beginIncubatorReturn(
+								returnPlayer,
+								returnSpawnPointId,
+								if returnPlayer == commandContext.Attacker then plot else nil
+							)
 						end,
 					}
 				)
@@ -228,10 +329,23 @@ function PlayerMonsterAttackApplication.Execute(
 					StartedAt = commandContext.StartedAt,
 				}, callSucceeded, result, workspace:GetServerTimeNow())
 				MonsterExpeditionReportService.Store(commandContext.Attacker, report)
+				if commandContext.Attacker.Parent ~= Players then
+					local restored = MonsterIncubatorCoordinator.Restore(
+						plot,
+						commandContext.AttackerSpawnPointId,
+						nil,
+						nil
+					)
+					if not restored.Succeeded then
+						warn("玩家离开后罐体复位失败：", restored.Reason)
+					end
+					return
+				end
 				-- 正常路径已经是 Returning/Idle；异常或回城启动失败时再补一次兜底。
 				ensureReturnAfterFailure(
 					commandContext.Attacker,
-					commandContext.AttackerSpawnPointId
+					commandContext.AttackerSpawnPointId,
+					plot
 				)
 			end,
 		}

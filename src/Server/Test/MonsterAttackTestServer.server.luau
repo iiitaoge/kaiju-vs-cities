@@ -75,7 +75,7 @@ end
 
 -- 输入：客户端调用者；无额外参数。
 -- 输出：可序列化的 Succeeded、Reason、Created。
--- 副作用：首次调用时在 Runtime/Monsters 克隆并稳定放置 P4。
+-- 副作用：首次调用时在 Runtime/Monsters 克隆并稳定放置配置怪兽。
 spawnMonster.OnServerInvoke = function(player)
 	local result = MonsterAttackTestRuntime.Spawn(
 		player,

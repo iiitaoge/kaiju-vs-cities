@@ -2,6 +2,7 @@ local MonsterStateRules = {}
 
 export type MonsterState =
 	"IdleAtSpawn"
+	| "Releasing"
 	| "MovingToTarget"
 	| "AttackingStructure"
 	| "Defending"
@@ -17,8 +18,13 @@ export type PermissionResult = {
 
 local transitions: { [string]: { [string]: boolean } } = {
 	IdleAtSpawn = {
-		MovingToTarget = true,
+		Releasing = true,
 		Defending = true,
+	},
+	Releasing = {
+		MovingToTarget = true,
+		Returning = true,
+		Defeated = true,
 	},
 	MovingToTarget = {
 		AttackingStructure = true,

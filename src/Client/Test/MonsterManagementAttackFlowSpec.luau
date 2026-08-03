@@ -52,7 +52,7 @@ function MonsterManagementAttackFlowSpec.Run(localPlayer: Player, targetPlayer: 
 		SpawnPointId = spawnPointId,
 		Built = true,
 		Level = 1,
-		MonsterKey = "P1",
+		MonsterKey = "Godzilla-L001",
 		MonsterState = "IdleAtSpawn",
 		Balance = 0,
 		Upgrade = actionStatus(false, "MaxLevel"),

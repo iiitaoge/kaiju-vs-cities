@@ -144,7 +144,7 @@ function MonsterAttackCommandCoordinator.Execute(
 	local transition = MonsterRosterCoordinator.Transition(
 		attacker,
 		attackerSpawnPointId,
-		"MovingToTarget"
+		"Releasing"
 	)
 	if not transition.Succeeded then
 		return { Succeeded = false, Reason = transition.Reason, CommandId = nil, Monster = monster.Model }

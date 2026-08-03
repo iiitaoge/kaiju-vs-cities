@@ -2,12 +2,12 @@ return {
 	-- 正式玩家 Plot 怪兽链已启用；旧的单场景测试链默认关闭，避免依赖 Workspace/MonsterAttackTest。
 	Enabled = false,
 	HouseIdPrefix = "TEST-",
-	MonsterKey = "P4",
+	MonsterKey = "Godzilla-L001",
 
 	Paths = {
 		HouseTemplate = "ReplicatedStorage/TestFixtures/MonsterAttackTest/HouseTemplates/TestHouse",
 		HousePoints = "Workspace/MonsterAttackTest/HousePoints",
-		MonsterTemplate = "ReplicatedStorage/Godzilla/P4",
+		MonsterTemplate = "ReplicatedStorage/Godzilla/level1/P1",
 		MonsterSpawnPoint = "Workspace/MonsterAttackTest/MonsterSpawnPoint",
 		CameraTarget = "Workspace/MonsterAttackTest/CameraTarget",
 		Runtime = "Workspace/MonsterAttackTest/Runtime",

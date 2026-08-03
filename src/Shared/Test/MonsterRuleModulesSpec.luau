@@ -5,6 +5,7 @@ local MonsterCapacityRules = require(ReplicatedStorage.Shared.Monster.MonsterCap
 local MonsterCombatGeometry = require(ReplicatedStorage.Shared.Monster.MonsterCombatGeometry)
 local MonsterAttackProtocol = require(ReplicatedStorage.Shared.Monster.MonsterAttackProtocol)
 local MonsterAttackConfigs = require(ReplicatedStorage.Shared.Monster.MonsterAttackConfigs)
+local MonsterCatalog = require(ReplicatedStorage.Shared.Monster.MonsterCatalog)
 local MonsterExpeditionConfigs = require(ReplicatedStorage.Shared.Monster.MonsterExpeditionConfigs)
 local MonsterHealthRules = require(ReplicatedStorage.Shared.Monster.MonsterHealthRules)
 local MonsterStateRules = require(ReplicatedStorage.Shared.Monster.MonsterStateRules)
@@ -37,7 +38,8 @@ function MonsterRuleModulesSpec.Run(): boolean
 		MonsterAttackProtocol.TargetQueryRemoteName ~= MonsterAttackProtocol.CommandRemoteName,
 		"目标查询和攻击命令必须使用独立 Remote"
 	)
-	for _, monsterKey in { "P1", "P4" } do
+	for _, definition in MonsterCatalog.GetAll() do
+		local monsterKey = definition.MonsterKey
 		local attack = MonsterAttackConfigs[monsterKey]
 		local expedition = MonsterExpeditionConfigs[monsterKey]
 		expect(attack ~= nil and attack.StructureDamage > 0, monsterKey .. " 建筑伤害无效")
@@ -60,8 +62,16 @@ function MonsterRuleModulesSpec.Run(): boolean
 	)
 
 	expect(
-		MonsterStateRules.CheckTransition("IdleAtSpawn", "MovingToTarget").Allowed,
-		"空闲怪兽应能出征"
+		MonsterStateRules.CheckTransition("IdleAtSpawn", "Releasing").Allowed,
+		"空闲怪兽应先进入释放"
+	)
+	expect(
+		MonsterStateRules.CheckTransition("Releasing", "MovingToTarget").Allowed,
+		"释放完成后应能出征"
+	)
+	expect(
+		MonsterStateRules.CheckTransition("Releasing", "Returning").Allowed,
+		"释放取消后应能回罐"
 	)
 	expect(
 		not MonsterStateRules.CheckUpgrade("FightingMonster").Allowed,

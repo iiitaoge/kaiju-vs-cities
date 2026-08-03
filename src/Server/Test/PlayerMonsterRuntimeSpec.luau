@@ -13,6 +13,9 @@ local PlotButtonAccess = require(script.Parent.Parent.Button.PlotButtonAccess)
 local MonsterSpawnPointEconomyConfigs = require(
 	ReplicatedStorage.Shared.Monster.MonsterSpawnPointEconomyConfigs
 )
+local MonsterSpawnPointCatalog = require(
+	ReplicatedStorage.Shared.Monster.MonsterSpawnPointCatalog
+)
 
 local PlayerMonsterRuntimeSpec = {}
 
@@ -27,6 +30,7 @@ function PlayerMonsterRuntimeSpec.Run(player: Player): boolean
 	local economy = MonsterSpawnPointEconomyConfigs["M1-S1"]
 	local buildCost = economy.BuildCost
 	local upgradeCost = economy.UpgradeCostByTargetLevel[2]
+	local levelTwoMonsterKey = MonsterSpawnPointCatalog.GetMonsterKey("M1-S1", 2)
 
 	local initialBalance = MoneyService.Get(player)
 	if initialBalance > 0 then
@@ -77,7 +81,7 @@ function PlayerMonsterRuntimeSpec.Run(player: Player): boolean
 	local noUpgradeMoney = MonsterSpawnPointPurchaseCoordinator.Upgrade(player, "M1-S1")
 	expect(not noUpgradeMoney.Succeeded, "余额不足时不应允许升级")
 	expect(noUpgradeMoney.Reason == "InsufficientMoney", "升级余额拒绝原因错误")
-	expect(built.Record.Model.Parent == plot.Runtime.Monsters, "升级拒绝后 P1 不应消失")
+	expect(built.Record.Model.Parent == plot.Runtime.Monsters, "升级拒绝后原怪兽不应消失")
 
 	MoneyService.Add(player, upgradeCost)
 	expect(
@@ -90,18 +94,18 @@ function PlayerMonsterRuntimeSpec.Run(player: Player): boolean
 		upgraded.Action == "Upgrade" and upgraded.Cost == upgradeCost and upgraded.Balance == 0,
 		"升级扣款错误"
 	)
-	expect(upgraded.Record ~= nil and upgraded.Record.MonsterKey == "P4", "升级后不是 P4")
-	expect(upgraded.NextButtonState == "Locked", "最高级出生点按钮应为 Locked")
+	expect(upgraded.Record ~= nil and upgraded.Record.MonsterKey == levelTwoMonsterKey, "升级后实际等级身份错误")
+	expect(upgraded.NextButtonState == "Insufficient", "升级后余额不足应为 Insufficient")
 	local finalActions = assert(MonsterSpawnPointActionQuery.Get(player, "M1-S1"))
 	expect(finalActions.Attack.Allowed, "升级后空闲怪兽应该允许进入攻击 UI")
 
-	-- 已拥有的出生点不受后来降低容量影响；显式重载必须从出生点保存状态恢复 P4。
+	-- 已拥有的出生点不受后来降低容量影响；显式重载必须从出生点保存状态恢复实际等级身份。
 	expect(MonsterRosterCoordinator.SetCapacity(player, 0).Succeeded, "无法降低已有怪兽容量")
 	PlayerMonsterRuntimeCoordinator.Unload(player)
 	local loaded = PlayerMonsterRuntimeCoordinator.Load(player)
 	expect(loaded.Succeeded and loaded.LoadedCount == 1, "重载失败：" .. tostring(loaded.Reason))
 	local restored = MonsterRosterCoordinator.Get(player, "M1-S1")
-	expect(restored ~= nil and restored.MonsterKey == "P4", "重载没有恢复 P4")
+	expect(restored ~= nil and restored.MonsterKey == levelTwoMonsterKey, "重载没有恢复实际等级身份")
 	expect(restored.Model ~= nil and restored.Model.Parent == plot.Runtime.Monsters, "重载模型父级错误")
 	return true
 end

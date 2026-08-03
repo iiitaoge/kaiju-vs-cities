@@ -3,26 +3,65 @@
 	不负责：出生点、玩家状态、模型生成或升级判断。
 ]]
 
+local MonsterLevelProgressionRules = require(script.Parent.MonsterLevelProgressionRules)
+local MonsterProgressionConfigs = require(script.Parent.MonsterProgressionConfigs)
+
 local MonsterCatalog = {}
 
 export type Definition = {
 	MonsterKey: string,
+	ProgressionId: string,
+	DisplayName: string,
+	Level: number,
+	FormIndex: number,
+	VisualLevel: number,
 	TemplatePath: string,
 	MaxHealth: number,
 }
 
-local definitions: { [string]: Definition } = {
-	P1 = {
-		MonsterKey = "P1",
-		TemplatePath = "ReplicatedStorage/Godzilla/P1",
-		MaxHealth = 100,
-	},
-	P4 = {
-		MonsterKey = "P4",
-		TemplatePath = "ReplicatedStorage/Godzilla/P4",
-		MaxHealth = 100,
-	},
-}
+local definitions: { [string]: Definition } = {}
+local monsterKeyByProgressionAndLevel: { [string]: { [number]: string } } = {}
+local maxLevelByProgression: { [string]: number } = {}
+
+for progressionId, config in pairs(MonsterProgressionConfigs) do
+	local maxLevel = MonsterLevelProgressionRules.GetMaxLevel(
+		config.LevelsPerAppearance,
+		config.VisualLevelCount,
+		config.FormCount
+	)
+	local keysByLevel = {}
+	for level = 1, maxLevel do
+		local appearance = assert(MonsterLevelProgressionRules.ResolveAppearance(
+			level,
+			config.LevelsPerAppearance,
+			config.VisualLevelCount,
+			config.FormCount
+		))
+		local monsterKey = MonsterLevelProgressionRules.MakeMonsterKey(config.MonsterKeyPrefix, level)
+		definitions[monsterKey] = {
+			MonsterKey = monsterKey,
+			ProgressionId = progressionId,
+			DisplayName = config.DisplayName,
+			Level = level,
+			FormIndex = appearance.FormIndex,
+			VisualLevel = appearance.VisualLevel,
+			TemplatePath = string.format(
+				"%s/level%d/P%d",
+				config.TemplateRoot,
+				appearance.VisualLevel,
+				appearance.FormIndex
+			),
+			MaxHealth = MonsterLevelProgressionRules.ScaleInteger(
+				config.MaxHealthBase,
+				config.MaxHealthGrowth,
+				level
+			),
+		}
+		keysByLevel[level] = monsterKey
+	end
+	monsterKeyByProgressionAndLevel[progressionId] = table.freeze(keysByLevel)
+	maxLevelByProgression[progressionId] = maxLevel
+end
 
 local sortedDefinitions = {}
 for monsterKey, definition in pairs(definitions) do
@@ -51,6 +90,15 @@ end
 
 function MonsterCatalog.GetAll(): { Definition }
 	return table.clone(sortedDefinitions)
+end
+
+function MonsterCatalog.GetMonsterKey(progressionId: string, level: number): string?
+	local keysByLevel = monsterKeyByProgressionAndLevel[progressionId]
+	return if keysByLevel then keysByLevel[level] else nil
+end
+
+function MonsterCatalog.GetMaxLevel(progressionId: string): number?
+	return maxLevelByProgression[progressionId]
 end
 
 return MonsterCatalog
