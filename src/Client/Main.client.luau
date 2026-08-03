@@ -8,6 +8,9 @@ local LocalPlayerBuildingInteractionCoordinator = require(
 local MonsterBuildPresentationController = require(
 	script.Parent.Monster.MonsterBuildPresentationController
 )
+local MonsterIncubatorUIController = require(
+	script.Parent.Monster.MonsterIncubatorUIController
+)
 local StudioSaveResetController = require(script.Parent.StudioSaveResetController)
 
 -- 输入：服务器意外返回的旧式客户端 Action。
@@ -20,5 +23,6 @@ end
 StudioSaveResetController.Start()
 CityBuildingPresentationController.Start()
 MonsterBuildPresentationController.Start()
+MonsterIncubatorUIController.Start()
 LocalPlayerBuildingInteractionCoordinator.Start()
 ButtonController.Start(rejectLegacyClientAction)
