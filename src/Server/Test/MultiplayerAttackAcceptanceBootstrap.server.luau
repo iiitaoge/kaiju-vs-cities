@@ -9,7 +9,6 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local StudioTestService = game:GetService("StudioTestService")
 
 local MultiplayerAttackAcceptanceSpec = require(
 	script.Parent.MultiplayerAttackAcceptanceSpec
@@ -22,6 +21,7 @@ if not RunService:IsStudio() then
 	return
 end
 
+local StudioTestService = game:GetService("StudioTestService")
 local TEST_ARGUMENT_WAIT_TIMEOUT_SECONDS = 10
 local PLAYER_WAIT_TIMEOUT_SECONDS = 30
 

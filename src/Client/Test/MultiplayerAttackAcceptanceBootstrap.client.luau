@@ -8,7 +8,6 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local StudioTestService = game:GetService("StudioTestService")
 
 local MultiplayerAttackAcceptanceClient = require(
 	script.Parent.MultiplayerAttackAcceptanceClient
@@ -17,8 +16,12 @@ local MultiplayerAttackAcceptanceProtocol = require(
 	ReplicatedStorage.Shared.Test.MultiplayerAttackAcceptanceProtocol
 )
 
-if not RunService:IsStudio()
-	or StudioTestService:GetTestArgs() ~= MultiplayerAttackAcceptanceProtocol.TestArgument then
+if not RunService:IsStudio() then
+	return
+end
+
+local StudioTestService = game:GetService("StudioTestService")
+if StudioTestService:GetTestArgs() ~= MultiplayerAttackAcceptanceProtocol.TestArgument then
 	return
 end
 

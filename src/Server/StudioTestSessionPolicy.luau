@@ -8,7 +8,6 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local StudioTestService = game:GetService("StudioTestService")
 
 local EightPlayerCapacityAcceptanceProtocol = require(
 	ReplicatedStorage.Shared.Test.EightPlayerCapacityAcceptanceProtocol
@@ -32,6 +31,7 @@ function StudioTestSessionPolicy.ShouldDisablePersistence(): boolean
 	if not RunService:IsStudio() then
 		return false
 	end
+	local StudioTestService = game:GetService("StudioTestService")
 	local succeeded, argument = pcall(StudioTestService.GetTestArgs, StudioTestService)
 	return succeeded
 		and StudioTestSessionPolicy.IsPersistenceDisabledForArgument(argument)
