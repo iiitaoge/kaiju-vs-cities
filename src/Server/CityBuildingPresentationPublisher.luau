@@ -22,6 +22,7 @@ export type RegionUpgradeCommand = {
 	PreviousLevel: number,
 	NewLevel: number,
 	PresentationId: string,
+	BuildSpeedMultiplier: number,
 	HouseIds: { string },
 }
 
@@ -32,6 +33,7 @@ export type HouseLifecycleCommand = {
 	HouseId: string,
 	Level: number,
 	PresentationId: string,
+	BuildSpeedMultiplier: number,
 }
 
 export type Command = RegionUpgradeCommand | HouseLifecycleCommand

@@ -6,9 +6,8 @@
 
 	内部算法：
 	1. 调用 RegionUpgradeService 提交升级事务。
-	2. 成功后只刷新该玩家 Plot 中目标 Zone 的权威建筑。
-	3. 从运行时索引提取该 Zone 的 HouseIds，向所有客户端发布表现命令。
-	4. 等待配置声明的表现时长，使发起玩家的按钮在动画期间保持忙碌。
+	2. 只有房屋首次出现或模型等级变化时才刷新 Zone 并广播表现。
+	3. 模型已经封顶时只更新等级、HP 和世界 UI 数值，不重复拆建模型。
 
 	不负责：不计算升级价格、不 Clone 客户端表现、不解析场景 Slot。
 ]]
@@ -18,16 +17,52 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local BuildingPresentationConfigs = require(
 	ReplicatedStorage.Shared.Building.BuildingPresentationConfigs
 )
+local BuildPresentationVisibility = require(
+	ReplicatedStorage.Shared.Building.BuildPresentationVisibility
+)
+local BuildPresentationTiming = require(
+	ReplicatedStorage.Shared.Building.BuildPresentationTiming
+)
 local HouseCatalog = require(ReplicatedStorage.Shared.Building.HouseCatalog)
 local CityBuildingPresentationPublisher = require(script.Parent.CityBuildingPresentationPublisher)
 local HouseHealthStateService = require(script.Parent.HouseHealthStateService)
+local HouseWorldUIPresentationService = require(script.Parent.HouseWorldUIPresentationService)
 local PlayerCityRuntimeCoordinator = require(script.Parent.PlayerCityRuntimeCoordinator)
+local PlayerRebirthBonusQuery = require(script.Parent.PlayerRebirthBonusQuery)
+local PlayerZoneSceneVisibilityService = require(script.Parent.PlayerZoneSceneVisibilityService)
 local PlayerStructureDurabilityResolver = require(
 	script.Parent.PlayerStructureDurabilityResolver
 )
 local RegionUpgradeService = require(script.Parent.RegionUpgradeService)
+local IncomeBuildingProgressionRules = require(
+	ReplicatedStorage.Shared.Building.IncomeBuildingProgressionRules
+)
 
 local RegionUpgradeCityCoordinator = {}
+
+local function hasPresentationChange(regionId: string, previousLevel: number, newLevel: number): boolean
+	for _, definition in HouseCatalog.GetAll() do
+		if definition.RegionId ~= regionId then
+			continue
+		end
+		local previousModelLevel = IncomeBuildingProgressionRules.ResolveModelLevel(
+			previousLevel,
+			definition.BuildAtRegionLevel,
+			definition.RegionLevelsPerModelLevel,
+			definition.MaxModelLevel
+		)
+		local newModelLevel = IncomeBuildingProgressionRules.ResolveModelLevel(
+			newLevel,
+			definition.BuildAtRegionLevel,
+			definition.RegionLevelsPerModelLevel,
+			definition.MaxModelLevel
+		)
+		if previousModelLevel ~= newModelLevel then
+			return true
+		end
+	end
+	return false
+end
 
 local function listRegionHouseIds(player: Player, regionId: string): { string }
 	local houseIds = {}
@@ -38,6 +73,37 @@ local function listRegionHouseIds(player: Player, regionId: string): { string }
 	end
 	table.sort(houseIds)
 	return houseIds
+end
+
+local function refreshNumericState(
+	player: Player,
+	regionId: string,
+	newLevel: number,
+	maxHealth: number
+)
+	for houseId, model in PlayerCityRuntimeCoordinator.ListBuildings(player) do
+		if model:GetAttribute("BuildingZoneId") ~= regionId then
+			continue
+		end
+		model:SetAttribute("BuildingLevel", newLevel)
+		local health = HouseHealthStateService.Ensure(player, houseId, newLevel, maxHealth)
+		model:SetAttribute("BuildingCurrentHealth", health.CurrentHealth)
+		model:SetAttribute("BuildingMaxHealth", health.MaxHealth)
+		model:SetAttribute("BuildingHealthGeneration", health.Generation)
+		local refreshed, refreshReason = HouseWorldUIPresentationService.Refresh(
+			player,
+			houseId,
+			model
+		)
+		if not refreshed then
+			warn(string.format(
+				"区域数值升级后刷新房屋 UI 失败：%s/%s (%s)",
+				player.Name,
+				houseId,
+				refreshReason or "Unknown"
+			))
+		end
+	end
 end
 
 function RegionUpgradeCityCoordinator.Upgrade(player: Player, regionId: string)
@@ -70,6 +136,12 @@ function RegionUpgradeCityCoordinator.Upgrade(player: Player, regionId: string)
 		)
 	)
 	local maxHealth = durability.MaxHealth
+	local buildSpeedMultiplier = PlayerRebirthBonusQuery.Get(player).BuildSpeedMultiplier
+	local presentationChanged = hasPresentationChange(
+		regionId,
+		upgrade.PreviousLevel,
+		newLevel
+	)
 
 	-- 在替换运行时 Model 前迁移已有会话血量，保证受伤建筑升级时保持原比例。
 	for _, definition in HouseCatalog.GetAll() do
@@ -84,7 +156,22 @@ function RegionUpgradeCityCoordinator.Upgrade(player: Player, regionId: string)
 		end
 	end
 
-	local refresh = PlayerCityRuntimeCoordinator.RefreshZone(player, regionId)
+	local visibility = PlayerZoneSceneVisibilityService.ApplyAll(player)
+	if not visibility.Succeeded then
+		warn(string.format(
+			"区域升级后刷新解锁按钮链失败：%s/%s (%s)",
+			player.Name,
+			regionId,
+			visibility.Reason or "Unknown"
+		))
+	end
+
+	if not presentationChanged then
+		refreshNumericState(player, regionId, newLevel, maxHealth)
+		return nil, upgrade.NextButtonState
+	end
+
+	local refresh = PlayerCityRuntimeCoordinator.RefreshZone(player, regionId, true)
 	if not refresh.Succeeded then
 		warn(string.format(
 			"区域升级已提交，但服务器建筑刷新失败：%s/%s (%s)",
@@ -111,21 +198,45 @@ function RegionUpgradeCityCoordinator.Upgrade(player: Player, regionId: string)
 	end
 
 	local houseIds = listRegionHouseIds(player, regionId)
-	CityBuildingPresentationPublisher.Publish({
+	local presentationModels = {}
+	for _, houseId in houseIds do
+		local model = PlayerCityRuntimeCoordinator.ResolveBuilding(player, houseId)
+		if model then
+			table.insert(presentationModels, model)
+		end
+	end
+	local published, publishError = pcall(CityBuildingPresentationPublisher.Publish, {
 		Kind = "RegionUpgrade",
 		OwnerUserId = player.UserId,
 		RegionId = regionId,
 		PreviousLevel = upgrade.PreviousLevel,
 		NewLevel = newLevel,
 		PresentationId = presentationId,
+		BuildSpeedMultiplier = buildSpeedMultiplier,
 		HouseIds = houseIds,
 	})
+	if not published then
+		for _, model in presentationModels do
+			BuildPresentationVisibility.Restore(model)
+		end
+		warn("区域建筑表现广播失败：" .. tostring(publishError))
+		return nil, upgrade.NextButtonState
+	end
 
-	local totalDuration = presentation.Rise.TotalDuration
+	local totalDuration = BuildPresentationTiming.ScaleDuration(
+		presentation.Rise.TotalDuration,
+		buildSpeedMultiplier
+	)
 	if upgrade.PreviousLevel > 0 then
-		totalDuration += presentation.Demolish.TotalDuration
+		totalDuration += BuildPresentationTiming.ScaleDuration(
+			presentation.Demolish.TotalDuration,
+			buildSpeedMultiplier
+		)
 	end
 	task.wait(totalDuration)
+	for _, model in presentationModels do
+		BuildPresentationVisibility.Restore(model)
+	end
 	return nil, upgrade.NextButtonState
 end
 

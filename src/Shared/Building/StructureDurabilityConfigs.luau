@@ -1,5 +1,5 @@
 --[[
-	职责：保存产钱建筑各 Zone 等级对应的最大生命值。
+	职责：保存 R1～R6 产钱建筑的 30 级基础生命曲线。
 	输入：GetMaxHealth 接收 RegionId 和正整数等级。
 	输出：配置存在时返回最大生命值，否则返回 nil。
 	不负责：当前血量、伤害、房屋状态、运行时模型或存档。
@@ -7,54 +7,34 @@
 
 local StructureDurabilityConfigs = {}
 
-local maxHealthByRegion = {
-	R1 = {
-		[1] = 100,
-		[2] = 160,
-		[3] = 240,
-	},
-	R2 = {
-		[1] = 200,
-		[2] = 320,
-		[3] = 480,
-	},
-	R3 = {
-		[1] = 400,
-		[2] = 640,
-		[3] = 960,
-	},
-	R4 = {
-		[1] = 800,
-		[2] = 1200,
-		[3] = 1800,
-		[4] = 2700,
-		[5] = 4000,
-		[6] = 6000,
-		[7] = 9000,
-		[8] = 13500,
-	},
-	R5 = {
-		[1] = 1000,
-		[2] = 1500,
-		[3] = 2250,
-		[4] = 3375,
-		[5] = 5000,
-		[6] = 7500,
-	},
+local MAX_LEVEL = 30
+local configs = {
+	R1 = { BaseMaxHealth = 200, LevelGrowth = 1.08 },
+	R2 = { BaseMaxHealth = 800, LevelGrowth = 1.08 },
+	R3 = { BaseMaxHealth = 3_000, LevelGrowth = 1.08 },
+	R4 = { BaseMaxHealth = 10_000, LevelGrowth = 1.08 },
+	R5 = { BaseMaxHealth = 30_000, LevelGrowth = 1.08 },
+	R6 = { BaseMaxHealth = 90_000, LevelGrowth = 1.08 },
 }
 
-for _, levels in maxHealthByRegion do
-	for level, maxHealth in levels do
-		assert(type(level) == "number" and level >= 1 and level % 1 == 0, "建筑耐久等级无效")
-		assert(type(maxHealth) == "number" and maxHealth > 0, "建筑最大生命值无效")
-	end
-	table.freeze(levels)
+for regionId, config in configs do
+	assert(type(config.BaseMaxHealth) == "number" and config.BaseMaxHealth > 0, regionId .. " 基础生命无效")
+	assert(type(config.LevelGrowth) == "number" and config.LevelGrowth > 1, regionId .. " 生命成长无效")
+	table.freeze(config)
 end
-table.freeze(maxHealthByRegion)
+table.freeze(configs)
 
 function StructureDurabilityConfigs.GetMaxHealth(regionId: string, level: number): number?
-	local levels = maxHealthByRegion[regionId]
-	return if levels then levels[level] else nil
+	local config = configs[regionId]
+	if not config
+		or type(level) ~= "number"
+		or level < 1
+		or level > MAX_LEVEL
+		or level % 1 ~= 0
+	then
+		return nil
+	end
+	return math.floor(config.BaseMaxHealth * config.LevelGrowth ^ (level - 1) + 0.5)
 end
 
 return table.freeze(StructureDurabilityConfigs)

@@ -27,6 +27,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local GameAnalyticsGateway = require(script.Parent.Analytics.GameAnalyticsGateway)
 local EconomyMath = require(script.Parent.EconomyMath)
 local HouseIncomeService = require(script.Parent.HouseIncomeService)
 local HouseStateService = require(script.Parent.HouseStateService)
@@ -105,6 +106,14 @@ function RegionUpgradeService.Unlock(player: Player, regionId: string)
 	end
 
 	RegionStateService.SetUnlocked(player, regionId, true)
+	GameAnalyticsGateway.LogDesign(player, "Gameplay:Region:Unlock:" .. regionId)
+	GameAnalyticsGateway.LogResource(
+		player,
+		"Sink",
+		economyConfig.UnlockCost,
+		"Region",
+		"Unlock-" .. regionId
+	)
 	return nil, "Locked"
 end
 
@@ -140,6 +149,19 @@ function RegionUpgradeService.Upgrade(player: Player, regionId: string)
 
 	RegionStateService.SetLevel(player, regionId, nextLevel)
 	buildEligibleRegionHouses(player, regionId, nextLevel, now)
+	local action = if currentLevel == 0 then "Build" else "Upgrade"
+	GameAnalyticsGateway.LogDesign(
+		player,
+		string.format("Gameplay:Region:%s:%s", action, regionId),
+		nextLevel
+	)
+	GameAnalyticsGateway.LogResource(
+		player,
+		"Sink",
+		cost,
+		"Region",
+		string.format("%s-%s-L%d", action, regionId, nextLevel)
+	)
 
 	local nextButtonState = if levels[nextLevel + 1] then "Ready" else "Special"
 	return upgradeResult(

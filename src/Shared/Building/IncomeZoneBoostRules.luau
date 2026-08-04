@@ -1,8 +1,8 @@
 --[[
-	职责：计算产钱区域一次性 Boost 的权限、目标倍率和按钮状态。
-	输入：区域状态、余额和调用方传入的纯配置数值。
-	输出：Allowed、Reason、目标倍率、自动收入状态和 ButtonState。
-	内部算法：只验证输入并计算结果；不读取玩家、Instance、配置模块或运行时状态。
+	职责：计算同一 Boost 按钮下一笔顺序事务的权限、成本和目标状态。
+	输入：区域状态、余额，以及 Income → Health → AutoIncome 三笔配置事务。
+	输出：下一事务 Kind、目标倍率/自动状态、是否最终完成和 ButtonState。
+	不负责：读取玩家、扣款、写状态、迁移生命或领取收入。
 ]]
 
 local IncomeZoneBoostRules = {}
@@ -28,16 +28,17 @@ function IncomeZoneBoostRules.Evaluate(input)
 		or not isFiniteNonNegative(input.CurrentIncomeMultiplier)
 		or not isFinitePositive(input.CurrentHealthMultiplier)
 		or type(input.CurrentAutoIncome) ~= "boolean"
-		or not isFiniteNonNegative(input.Cost)
-		or not isFinitePositive(input.IncomeFactor)
-		or not isFinitePositive(input.HealthFactor)
-		or type(input.EnableAutoIncome) ~= "boolean"
+		or type(input.Transactions) ~= "table"
+		or #input.Transactions ~= 3
 	then
 		return {
 			Allowed = false,
 			Affordable = false,
 			Reason = "InvalidInput",
 			Cost = 0,
+			TransactionKind = nil,
+			Completed = false,
+			CompletesBoost = false,
 			TargetIncomeMultiplier = 1,
 			TargetHealthMultiplier = 1,
 			TargetAutoIncome = false,
@@ -45,42 +46,94 @@ function IncomeZoneBoostRules.Evaluate(input)
 		}
 	end
 
-	local targetIncomeMultiplier = input.CurrentIncomeMultiplier * input.IncomeFactor
-	local targetHealthMultiplier = input.CurrentHealthMultiplier * input.HealthFactor
-	if input.BoostPurchased then
+	local expectedKinds = { "Income", "Health", "AutoIncome" }
+	for index, transaction in ipairs(input.Transactions) do
+		if type(transaction) ~= "table"
+			or transaction.Kind ~= expectedKinds[index]
+			or not isFiniteNonNegative(transaction.Cost)
+			or (transaction.Kind ~= "AutoIncome" and not isFinitePositive(transaction.Factor))
+			or (transaction.Kind == "AutoIncome" and type(transaction.Enabled) ~= "boolean")
+		then
+			return {
+				Allowed = false,
+				Affordable = false,
+				Reason = "InvalidInput",
+				Cost = 0,
+				TransactionKind = nil,
+				Completed = false,
+				CompletesBoost = false,
+				TargetIncomeMultiplier = input.CurrentIncomeMultiplier,
+				TargetHealthMultiplier = input.CurrentHealthMultiplier,
+				TargetAutoIncome = input.CurrentAutoIncome,
+				ButtonState = "Locked",
+			}
+		end
+	end
+
+	local nextIndex = nil
+	if input.CurrentIncomeMultiplier < input.Transactions[1].Factor then
+		nextIndex = 1
+	elseif input.CurrentHealthMultiplier < input.Transactions[2].Factor then
+		nextIndex = 2
+	elseif input.CurrentAutoIncome ~= input.Transactions[3].Enabled then
+		nextIndex = 3
+	end
+
+	if not nextIndex then
 		return {
 			Allowed = false,
 			Affordable = true,
 			Reason = "AlreadyBoosted",
-			Cost = input.Cost,
+			Cost = 0,
+			TransactionKind = nil,
+			Completed = true,
+			CompletesBoost = true,
 			TargetIncomeMultiplier = input.CurrentIncomeMultiplier,
 			TargetHealthMultiplier = input.CurrentHealthMultiplier,
 			TargetAutoIncome = input.CurrentAutoIncome,
 			ButtonState = "Special",
 		}
 	end
+
+	local transaction = input.Transactions[nextIndex]
+	local targetIncomeMultiplier = input.CurrentIncomeMultiplier
+	local targetHealthMultiplier = input.CurrentHealthMultiplier
+	local targetAutoIncome = input.CurrentAutoIncome
+	if transaction.Kind == "Income" then
+		targetIncomeMultiplier *= transaction.Factor
+	elseif transaction.Kind == "Health" then
+		targetHealthMultiplier *= transaction.Factor
+	else
+		targetAutoIncome = transaction.Enabled
+	end
 	if not input.Unlocked or input.Level < 1 then
 		return {
 			Allowed = false,
 			Affordable = false,
 			Reason = "RegionNotBuilt",
-			Cost = input.Cost,
+			Cost = transaction.Cost,
+			TransactionKind = transaction.Kind,
+			Completed = false,
+			CompletesBoost = nextIndex == #input.Transactions,
 			TargetIncomeMultiplier = targetIncomeMultiplier,
 			TargetHealthMultiplier = targetHealthMultiplier,
-			TargetAutoIncome = input.EnableAutoIncome,
+			TargetAutoIncome = targetAutoIncome,
 			ButtonState = "Locked",
 		}
 	end
 
-	local affordable = input.Balance >= input.Cost
+	local affordable = input.Balance >= transaction.Cost
 	return {
 		Allowed = true,
 		Affordable = affordable,
 		Reason = if affordable then nil else "InsufficientMoney",
-		Cost = input.Cost,
+		Cost = transaction.Cost,
+		TransactionKind = transaction.Kind,
+		Completed = false,
+		CompletesBoost = nextIndex == #input.Transactions,
 		TargetIncomeMultiplier = targetIncomeMultiplier,
 		TargetHealthMultiplier = targetHealthMultiplier,
-		TargetAutoIncome = input.EnableAutoIncome,
+		TargetAutoIncome = targetAutoIncome,
 		ButtonState = if affordable then "Ready" else "Insufficient",
 	}
 end

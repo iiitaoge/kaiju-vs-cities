@@ -107,7 +107,7 @@ function EconomyMath.GetUpgradeCost(config: RegionEconomyConfig, currentLevel: n
 		return config.PurchaseCost
 	end
 
-	return config.UpgradeBaseCost * config.CostGrowth ^ (currentLevel - 1)
+	return math.floor(config.UpgradeBaseCost * config.CostGrowth ^ (currentLevel - 1) + 0.5)
 end
 
 return EconomyMath

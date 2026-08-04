@@ -8,6 +8,7 @@
 local PlayerRegionTransactionLock = {}
 
 local locks: { [Player]: { [string]: boolean } } = setmetatable({}, { __mode = "k" })
+local exclusiveLocks: { [Player]: boolean } = setmetatable({}, { __mode = "k" })
 
 function PlayerRegionTransactionLock.TryAcquire(
 	player: Player,
@@ -15,6 +16,9 @@ function PlayerRegionTransactionLock.TryAcquire(
 ): (() -> ())?
 	assert(typeof(player) == "Instance" and player:IsA("Player"), "player 必须是 Player")
 	assert(type(regionId) == "string" and regionId ~= "", "regionId 必须是非空字符串")
+	if exclusiveLocks[player] then
+		return nil
+	end
 	local playerLocks = locks[player]
 	if not playerLocks then
 		playerLocks = {}
@@ -35,6 +39,29 @@ function PlayerRegionTransactionLock.TryAcquire(
 		if next(playerLocks) == nil then
 			locks[player] = nil
 		end
+	end
+end
+
+function PlayerRegionTransactionLock.IsAnyLocked(player: Player): boolean
+	assert(typeof(player) == "Instance" and player:IsA("Player"), "player 必须是 Player")
+	local playerLocks = locks[player]
+	return exclusiveLocks[player] == true
+		or (playerLocks ~= nil and next(playerLocks) ~= nil)
+end
+
+function PlayerRegionTransactionLock.TryAcquireExclusive(player: Player): (() -> ())?
+	assert(typeof(player) == "Instance" and player:IsA("Player"), "player 必须是 Player")
+	if PlayerRegionTransactionLock.IsAnyLocked(player) then
+		return nil
+	end
+	exclusiveLocks[player] = true
+	local released = false
+	return function()
+		if released then
+			return
+		end
+		released = true
+		exclusiveLocks[player] = nil
 	end
 end
 

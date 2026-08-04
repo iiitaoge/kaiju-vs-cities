@@ -8,6 +8,9 @@
 
 local Players = game:GetService("Players")
 
+local GameAnalyticsEconomyAggregator = require(
+	script.Parent.Analytics.GameAnalyticsEconomyAggregator
+)
 local HouseIncomeService = require(script.Parent.HouseIncomeService)
 local IncomeAutoCollectionConfigs = require(script.Parent.IncomeAutoCollectionConfigs)
 local PlayerDataReadyService = require(script.Parent.PlayerDataReadyService)
@@ -48,6 +51,12 @@ local function run(player: Player)
 								regionId,
 								tostring(outcome)
 							))
+						elseif outcome.Accepted and outcome.Collected > 0 then
+							GameAnalyticsEconomyAggregator.RecordAutoIncome(
+								player,
+								regionId,
+								outcome.Collected
+							)
 						end
 					end
 				end

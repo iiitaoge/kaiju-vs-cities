@@ -34,6 +34,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local EconomyMath = require(script.Parent.EconomyMath)
 local HouseStateService = require(script.Parent.HouseStateService)
 local MoneyService = require(script.Parent.MoneyService)
+local PlayerRebirthBonusQuery = require(script.Parent.PlayerRebirthBonusQuery)
 local RegionEconomyConfigs = require(script.Parent.RegionEconomyConfigs)
 local RegionStateService = require(script.Parent.RegionStateService)
 local HouseCatalog = require(ReplicatedStorage.Shared.Building.HouseCatalog)
@@ -138,6 +139,7 @@ function HouseIncomeService.GetHouseRate(player: Player, houseId: string): RateR
 		config,
 		regionState.Level,
 		regionState.IncomeMultiplier
+			* PlayerRebirthBonusQuery.Get(player).IncomeMultiplier
 	)
 
 	return {
@@ -280,7 +282,7 @@ function HouseIncomeService.CollectHouse(
 
 	local collected = HouseStateService.TakeStoredMoney(player, houseId)
 	local balance = if collected > 0
-		then MoneyService.Add(player, collected)
+		then MoneyService.Earn(player, collected)
 		else MoneyService.Get(player)
 	return {
 		Accepted = true,
@@ -319,7 +321,7 @@ function HouseIncomeService.CollectRegion(
 		end
 	end
 	local balance = if collected > 0
-		then MoneyService.Add(player, collected)
+		then MoneyService.Earn(player, collected)
 		else MoneyService.Get(player)
 	return {
 		Accepted = true,

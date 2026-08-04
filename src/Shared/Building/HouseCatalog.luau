@@ -26,7 +26,7 @@ for regionId, region in pairs(IncomeZoneConfigs) do
 
 			local buildAtRegionLevel = house.BuildAtRegionLevel or 1
 			local regionLevelsPerModelLevel = house.RegionLevelsPerModelLevel or 1
-			local maxModelLevel = house.MaxModelLevel
+			local maxModelLevel = house.MaxModelLevel or region.DefaultMaxModelLevel
 			assert(
 				type(buildAtRegionLevel) == "number"
 					and buildAtRegionLevel >= 1

@@ -24,76 +24,21 @@
 	- 其他按钮 Action 不会被收入系统推断成 UpgradeRegion。
 ]]
 
-return {
-	R1 = {
-		Levels = {
-			[1] = {
-				PresentationId = "Standard",
-			},
+local MAX_REGION_LEVEL = 30
 
-			[2] = {
-				PresentationId = "Standard",
-			},
+local function region()
+	local levels = {}
+	for level = 1, MAX_REGION_LEVEL do
+		levels[level] = table.freeze({ PresentationId = "Standard" })
+	end
+	return table.freeze({ Levels = table.freeze(levels) })
+end
 
-			[3] = {
-				PresentationId = "Standard",
-			},
-		},
-	},
-
-	R2 = {
-		Levels = {
-			[1] = {
-				PresentationId = "Standard",
-			},
-
-			[2] = {
-				PresentationId = "Standard",
-			},
-
-			[3] = {
-				PresentationId = "Standard",
-			},
-		},
-	},
-
-	R3 = {
-		Levels = {
-			[1] = {
-				PresentationId = "Standard",
-			},
-
-			[2] = {
-				PresentationId = "Standard",
-			},
-
-			[3] = {
-				PresentationId = "Standard",
-			},
-		},
-	},
-
-	R4 = {
-		Levels = {
-			[1] = { PresentationId = "Standard" },
-			[2] = { PresentationId = "Standard" },
-			[3] = { PresentationId = "Standard" },
-			[4] = { PresentationId = "Standard" },
-			[5] = { PresentationId = "Standard" },
-			[6] = { PresentationId = "Standard" },
-			[7] = { PresentationId = "Standard" },
-			[8] = { PresentationId = "Standard" },
-		},
-	},
-
-	R5 = {
-		Levels = {
-			[1] = { PresentationId = "Standard" },
-			[2] = { PresentationId = "Standard" },
-			[3] = { PresentationId = "Standard" },
-			[4] = { PresentationId = "Standard" },
-			[5] = { PresentationId = "Standard" },
-			[6] = { PresentationId = "Standard" },
-		},
-	},
-}
+return table.freeze({
+	R1 = region(),
+	R2 = region(),
+	R3 = region(),
+	R4 = region(),
+	R5 = region(),
+	R6 = region(),
+})

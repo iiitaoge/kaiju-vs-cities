@@ -2,7 +2,7 @@
 	职责：验证 Plot 产钱区域的一次性 Boost 服务端完整链路。
 	输入：一名已完成数据加载且已分配 Plot 的在线 Player。
 	输出：Boost 后倍率、生命迁移和两秒自动收入依赖的区域领取结果。
-	内部算法：保存快照 → 建造默认已解锁的 R1 → 制造 25% 损伤 → 购买 Boost → 核对倍率/生命/收入 → 恢复。
+	内部算法：保存快照 → 建造 R1 → 制造 25% 损伤 → 依次购买收入/生命/自动领取 → 核对并恢复。
 	不负责：触碰实体按钮、等待自动循环、测试客户端颜色或修改 DataStore。
 ]]
 
@@ -58,30 +58,40 @@ function Spec.Run(player: Player)
 		local build = IncomeZonePrimaryCoordinator.Execute(player, REGION_ID)
 		assert(build.Succeeded and build.Action == "Build", "R1 免费建造失败")
 
-		local health = HouseHealthStateService.ResetFull(player, houseId, 1, 100)
+		local health = HouseHealthStateService.ResetFull(player, houseId, 1, 200)
 		local damaged = HouseHealthStateService.ApplyDamage(
 			player,
 			houseId,
 			health.Generation,
-			25
+			50
 		)
-		assert(damaged.Accepted and damaged.CurrentHealth == 75, "测试损伤创建失败")
+		assert(damaged.Accepted and damaged.CurrentHealth == 150, "测试损伤创建失败")
 
-		MoneyService.Set(player, boostConfig.Cost)
-		local boosted = IncomeZoneBoostCoordinator.Execute(player, REGION_ID)
-		assert(boosted.Succeeded, "R1 Boost 失败：" .. tostring(boosted.Reason))
-		local region = RegionStateService.Get(player, REGION_ID)
-		assert(region.IncomeMultiplier == 2, "Boost 后收入倍率应为 2")
-		assert(region.HealthMultiplier == 2, "Boost 后生命倍率应为 2")
-		assert(region.BoostPurchased, "BoostPurchased 应为 true")
-		assert(region.AutoIncome, "AutoIncome 应为 true")
+		MoneyService.Set(player, boostConfig.Transactions[1].Cost)
+		local incomeBoost = IncomeZoneBoostCoordinator.Execute(player, REGION_ID)
+		assert(incomeBoost.Succeeded, "R1 收入 Boost 失败：" .. tostring(incomeBoost.Reason))
+		local afterIncome = RegionStateService.Get(player, REGION_ID)
+		assert(afterIncome.IncomeMultiplier == 2, "第一笔应把收入倍率升到 2")
+		assert(afterIncome.HealthMultiplier == 1 and not afterIncome.AutoIncome, "第一笔提交了额外效果")
+
+		MoneyService.Set(player, boostConfig.Transactions[2].Cost)
+		local healthBoost = IncomeZoneBoostCoordinator.Execute(player, REGION_ID)
+		assert(healthBoost.Succeeded, "R1 生命 Boost 失败：" .. tostring(healthBoost.Reason))
+		local afterHealth = RegionStateService.Get(player, REGION_ID)
+		assert(afterHealth.HealthMultiplier == 2 and not afterHealth.AutoIncome, "第二笔生命事务错误")
 
 		local migrated = assert(HouseHealthStateService.Get(player, houseId))
-		expectNear(migrated.MaxHealth, 200, "Boost 最大生命")
-		expectNear(migrated.CurrentHealth, 150, "Boost 当前生命应保持 75%")
+		expectNear(migrated.MaxHealth, 400, "Boost 最大生命")
+		expectNear(migrated.CurrentHealth, 300, "Boost 当前生命应保持 75%")
 		local model = assert(PlayerCityRuntimeCoordinator.ResolveBuilding(player, houseId))
-		expectNear(model:GetAttribute("BuildingMaxHealth"), 200, "Model 最大生命镜像")
-		expectNear(model:GetAttribute("BuildingCurrentHealth"), 150, "Model 当前生命镜像")
+		expectNear(model:GetAttribute("BuildingMaxHealth"), 400, "Model 最大生命镜像")
+		expectNear(model:GetAttribute("BuildingCurrentHealth"), 300, "Model 当前生命镜像")
+
+		MoneyService.Set(player, boostConfig.Transactions[3].Cost)
+		local autoBoost = IncomeZoneBoostCoordinator.Execute(player, REGION_ID)
+		assert(autoBoost.Succeeded, "R1 自动领取 Boost 失败：" .. tostring(autoBoost.Reason))
+		local region = RegionStateService.Get(player, REGION_ID)
+		assert(region.BoostPurchased and region.AutoIncome, "第三笔没有完成 Boost")
 
 		local lastIncomeAt = assert(HouseStateService.Get(player, houseId).LastIncomeAt)
 		local collection = HouseIncomeService.CollectRegion(player, REGION_ID, lastIncomeAt + 2)

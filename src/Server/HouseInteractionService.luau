@@ -28,9 +28,11 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local GameAnalyticsGateway = require(script.Parent.Analytics.GameAnalyticsGateway)
 local HouseIncomeService = require(script.Parent.HouseIncomeService)
 local HouseInteractionConfigs = require(script.Parent.HouseInteractionConfigs)
 local HouseStateService = require(script.Parent.HouseStateService)
+local HouseWorldUIPresentationService = require(script.Parent.HouseWorldUIPresentationService)
 local PlayerCityRuntimeCoordinator = require(script.Parent.PlayerCityRuntimeCoordinator)
 local HouseCatalog = require(ReplicatedStorage.Shared.Building.HouseCatalog)
 local RuntimeBuildingBounds = require(ReplicatedStorage.Shared.Building.RuntimeBuildingBounds)
@@ -190,6 +192,17 @@ function HouseInteractionService.Enter(player: Player, houseId: string): Result
 
 	playerState.LastRewardAt = now
 	local collection = HouseIncomeService.CollectHouse(player, houseId, os.time())
+	local model = PlayerCityRuntimeCoordinator.ResolveBuilding(player, houseId)
+	if model then
+		local refreshed, refreshReason = HouseWorldUIPresentationService.Refresh(
+			player,
+			houseId,
+			model
+		)
+		if not refreshed then
+			warn(string.format("领取后刷新房屋 UI 状态失败：%s/%s (%s)", player.Name, houseId, refreshReason or "Unknown"))
+		end
+	end
 	if not collection.Accepted then
 		return makeResult(
 			"Enter",
@@ -200,6 +213,18 @@ function HouseInteractionService.Enter(player: Player, houseId: string): Result
 			collection.Balance
 		)
 	end
+	GameAnalyticsGateway.LogDesign(
+		player,
+		"Gameplay:Income:Collect:" .. houseId,
+		collection.Collected
+	)
+	GameAnalyticsGateway.LogResource(
+		player,
+		"Source",
+		collection.Collected,
+		"Income",
+		"Manual-" .. houseId
+	)
 
 	return makeResult(
 		"Enter",

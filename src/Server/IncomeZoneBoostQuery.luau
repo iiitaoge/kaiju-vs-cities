@@ -32,10 +32,7 @@ function IncomeZoneBoostQuery.Get(player: Player, regionId: string)
 		CurrentIncomeMultiplier = region.IncomeMultiplier,
 		CurrentHealthMultiplier = region.HealthMultiplier,
 		CurrentAutoIncome = region.AutoIncome,
-		Cost = config.Cost,
-		IncomeFactor = config.IncomeFactor,
-		HealthFactor = config.HealthFactor,
-		EnableAutoIncome = config.EnableAutoIncome,
+		Transactions = config.Transactions,
 	})
 	return {
 		RegionId = regionId,
@@ -47,6 +44,8 @@ function IncomeZoneBoostQuery.Get(player: Player, regionId: string)
 		BoostPurchased = region.BoostPurchased,
 		AutoIncome = region.AutoIncome,
 		Permission = permission,
+		NextTransactionKind = permission.TransactionKind,
+		BoostCompleted = permission.Completed,
 		BoostButtonState = permission.ButtonState,
 	}
 end

@@ -7,7 +7,7 @@
 	- Build / CompleteRebuild / RollbackDestroy 可选 now。
 	- Destroy 可选 respawnAt。
 	- BeginRebuild 接收本次计划对应的 expectedRespawnAt。
-	- AbortRebuild 接收下一次 respawnAt。
+	- AbortRebuild 接收下一次 respawnAt；RescheduleRebuild 接收预期旧时间和新时间。
 	- CreditStoredMoney 接收已由收入模块算好的 amount 和 settledAt。
 
 	输出：
@@ -167,6 +167,39 @@ function HouseStateService.AbortRebuild(
 	end
 
 	state:SetAttribute("LastIncomeAt", nil)
+	state:SetAttribute("RespawnAt", respawnAt)
+	return snapshot(state), true
+end
+
+-- 输入：当前 Destroyed 房屋、调用方持有的旧 RespawnAt 和新的重建时间。
+-- 输出：只在房屋仍属于同一份重建计划时更新时间，并返回 changed。
+-- 内部算法：不改变生命周期；用 expectedRespawnAt 防止旧占用监视器覆盖新计划。
+function HouseStateService.RescheduleRebuild(
+	player: Player,
+	houseId: string,
+	expectedRespawnAt: number,
+	respawnAt: number
+)
+	assert(
+		type(expectedRespawnAt) == "number"
+			and expectedRespawnAt == expectedRespawnAt
+			and expectedRespawnAt < math.huge,
+		"expectedRespawnAt 必须是有限数"
+	)
+	assert(
+		type(respawnAt) == "number"
+			and respawnAt == respawnAt
+			and respawnAt < math.huge
+			and respawnAt >= 0,
+		"respawnAt 必须是有限非负数"
+	)
+
+	local state = getState(player, houseId)
+	if state:GetAttribute("LifeState") ~= "Destroyed"
+		or state:GetAttribute("RespawnAt") ~= expectedRespawnAt then
+		return snapshot(state), false
+	end
+
 	state:SetAttribute("RespawnAt", respawnAt)
 	return snapshot(state), true
 end

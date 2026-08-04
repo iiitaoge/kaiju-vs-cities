@@ -23,6 +23,9 @@ local BuildingPresentationConfigs = require(
 	ReplicatedStorage.Shared.Building.BuildingPresentationConfigs
 )
 local BuildingPlacement = require(ReplicatedStorage.Shared.Building.BuildingPlacement)
+local BuildPresentationTiming = require(
+	ReplicatedStorage.Shared.Building.BuildPresentationTiming
+)
 local HouseCatalog = require(ReplicatedStorage.Shared.Building.HouseCatalog)
 local IncomeBuildingProgressionRules = require(
 	ReplicatedStorage.Shared.Building.IncomeBuildingProgressionRules
@@ -162,6 +165,14 @@ local function presentRegionUpgrade(command)
 		warn("找不到建筑表现配置：" .. command.PresentationId)
 		return
 	end
+	local demolishMotion = BuildPresentationTiming.ScaleMotion(
+		config.Demolish,
+		command.BuildSpeedMultiplier
+	)
+	local riseMotion = BuildPresentationTiming.ScaleMotion(
+		config.Rise,
+		command.BuildSpeedMultiplier
+	)
 
 	local snapshots = {}
 	local succeeded, message = xpcall(function()
@@ -179,7 +190,7 @@ local function presentRegionUpgrade(command)
 						item.OldTemplate,
 						item.OldTargetPivot,
 						item.GroundY,
-						config.Demolish
+						demolishMotion
 					)
 				end
 			end)
@@ -193,7 +204,7 @@ local function presentRegionUpgrade(command)
 				item.NewTemplate,
 				item.NewTargetPivot,
 				item.GroundY,
-				config.Rise
+				riseMotion
 			)
 		end)
 		if #riseErrors > 0 then

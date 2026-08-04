@@ -18,6 +18,7 @@ export type RegionUpgradeCommand = {
 	PreviousLevel: number,
 	NewLevel: number,
 	PresentationId: string,
+	BuildSpeedMultiplier: number,
 	HouseIds: { string },
 }
 
@@ -28,6 +29,7 @@ export type HouseLifecycleCommand = {
 	HouseId: string,
 	Level: number,
 	PresentationId: string,
+	BuildSpeedMultiplier: number,
 }
 
 export type Command = RegionUpgradeCommand | HouseLifecycleCommand
@@ -52,6 +54,11 @@ function CityBuildingPresentationProtocol.Validate(command): (boolean, string?)
 	end
 	if not ValueValidation.IsNonEmptyString(command.PresentationId) then
 		return false, "InvalidPresentationId"
+	end
+	if not ValueValidation.IsFiniteNumber(command.BuildSpeedMultiplier)
+		or command.BuildSpeedMultiplier <= 0
+	then
+		return false, "InvalidBuildSpeedMultiplier"
 	end
 
 	if command.Kind == "RegionUpgrade" then
@@ -87,4 +94,4 @@ function CityBuildingPresentationProtocol.Validate(command): (boolean, string?)
 	return false, "InvalidKind"
 end
 
-return CityBuildingPresentationProtocol
+return table.freeze(CityBuildingPresentationProtocol)

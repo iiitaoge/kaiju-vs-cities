@@ -1,15 +1,17 @@
 --[[
-	职责：提交一次产钱区域 Boost 购买事务。
+	职责：提交一次产钱区域 Boost 的下一笔顺序事务。
 	输入：Player、RegionId。
 	输出：Succeeded、Reason、最新 Snapshot 和 NextButtonState。
-	内部算法：区域加锁 → 旧倍率结算 → 扣款 → 写倍率/自动收入 → 迁移生命 → 领取存量收入。
+	内部算法：区域加锁 → 旧收入结算 → 扣款 → 只提交 Income/Health/AutoIncome 当前一项。
 	不负责：实体按钮、价格配置、收入公式、客户端动画或 DataStore。
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local GameAnalyticsGateway = require(script.Parent.Analytics.GameAnalyticsGateway)
 local HouseHealthStateService = require(script.Parent.HouseHealthStateService)
 local HouseIncomeService = require(script.Parent.HouseIncomeService)
+local HouseWorldUIPresentationService = require(script.Parent.HouseWorldUIPresentationService)
 local IncomeZoneBoostQuery = require(script.Parent.IncomeZoneBoostQuery)
 local MoneyService = require(script.Parent.MoneyService)
 local PlayerCityRuntimeCoordinator = require(script.Parent.PlayerCityRuntimeCoordinator)
@@ -90,44 +92,92 @@ local function executeUnlocked(player: Player, regionId: string)
 		return result(false, spend.Reason or "InsufficientMoney", IncomeZoneBoostQuery.Get(player, regionId))
 	end
 
-	RegionStateService.SetIncomeMultiplier(
-		player,
-		regionId,
-		permission.TargetIncomeMultiplier
-	)
-	RegionStateService.SetHealthMultiplier(
-		player,
-		regionId,
-		permission.TargetHealthMultiplier
-	)
-	RegionStateService.SetAutoIncome(player, regionId, permission.TargetAutoIncome)
-	RegionStateService.SetBoostPurchased(player, regionId, true)
-
-	local migrated, migrateReason = migrateRegionHealth(player, regionId, before.Level)
-	if not migrated then
-		warn(string.format(
-			"区域 Boost 已提交但生命迁移失败：%s/%s (%s)",
-			player.Name,
+	local transactionKind = assert(permission.TransactionKind, "可购买 Boost 必须有事务 Kind")
+	if transactionKind == "Income" then
+		RegionStateService.SetIncomeMultiplier(
+			player,
 			regionId,
-			migrateReason or "Unknown"
-		))
+			permission.TargetIncomeMultiplier
+		)
+	elseif transactionKind == "Health" then
+		RegionStateService.SetHealthMultiplier(
+			player,
+			regionId,
+			permission.TargetHealthMultiplier
+		)
+		local migrated, migrateReason = migrateRegionHealth(player, regionId, before.Level)
+		if not migrated then
+			warn(string.format(
+				"区域生命 Boost 已提交但生命迁移失败：%s/%s (%s)",
+				player.Name,
+				regionId,
+				migrateReason or "Unknown"
+			))
+		end
+	elseif transactionKind == "AutoIncome" then
+		RegionStateService.SetAutoIncome(player, regionId, permission.TargetAutoIncome)
+		local collection = HouseIncomeService.CollectRegion(player, regionId, now)
+		if not collection.Accepted then
+			warn(string.format(
+				"区域自动领取已提交但存量收入领取失败：%s/%s (%s)",
+				player.Name,
+				regionId,
+				collection.Reason or "Unknown"
+			))
+		elseif collection.Collected > 0 then
+			GameAnalyticsGateway.LogResource(
+				player,
+				"Source",
+				collection.Collected,
+				"Income",
+				"Boost-AutoIncome-" .. regionId
+			)
+		end
+	else
+		error("未知 Boost 事务：" .. tostring(transactionKind))
 	end
-	local collection = HouseIncomeService.CollectRegion(player, regionId, now)
-	if not collection.Accepted then
-		warn(string.format(
-			"区域 Boost 已提交但存量收入领取失败：%s/%s (%s)",
-			player.Name,
-			regionId,
-			collection.Reason or "Unknown"
-		))
+	RegionStateService.SetBoostPurchased(player, regionId, permission.CompletesBoost)
+	for _, definition in HouseCatalog.GetAll() do
+		if definition.RegionId == regionId then
+			local model = PlayerCityRuntimeCoordinator.ResolveBuilding(player, definition.HouseId)
+			if model then
+				local refreshed, refreshReason = HouseWorldUIPresentationService.Refresh(
+					player,
+					definition.HouseId,
+					model
+				)
+				if not refreshed then
+					warn(string.format(
+						"Boost 后刷新房屋 UI 状态失败：%s/%s (%s)",
+						player.Name,
+						definition.HouseId,
+						refreshReason or "Unknown"
+					))
+				end
+			end
+		end
 	end
 
 	local after = IncomeZoneBoostQuery.Get(player, regionId)
 	local committed = after ~= nil
-		and after.BoostPurchased
 		and after.IncomeMultiplier == permission.TargetIncomeMultiplier
 		and after.HealthMultiplier == permission.TargetHealthMultiplier
 		and after.AutoIncome == permission.TargetAutoIncome
+		and after.BoostPurchased == permission.CompletesBoost
+	if committed then
+		GameAnalyticsGateway.LogDesign(
+			player,
+			string.format("Gameplay:Boost:%s:%s", transactionKind, regionId),
+			permission.Cost
+		)
+		GameAnalyticsGateway.LogResource(
+			player,
+			"Sink",
+			permission.Cost,
+			"Boost",
+			string.format("%s-%s", transactionKind, regionId)
+		)
+	end
 	return result(
 		committed,
 		if committed then nil else "BoostNotCommitted",

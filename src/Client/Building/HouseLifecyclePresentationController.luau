@@ -9,6 +9,9 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local BuildingPlacement = require(ReplicatedStorage.Shared.Building.BuildingPlacement)
+local BuildPresentationTiming = require(
+	ReplicatedStorage.Shared.Building.BuildPresentationTiming
+)
 local BuildingPresentationConfigs = require(
 	ReplicatedStorage.Shared.Building.BuildingPresentationConfigs
 )
@@ -114,12 +117,23 @@ function HouseLifecyclePresentationController.Present(command)
 		warn("找不到房屋生命周期表现配置：" .. tostring(command.PresentationId))
 		return
 	end
+	local scaledConfig = {
+		ResolveTimeout = config.ResolveTimeout,
+		Demolish = BuildPresentationTiming.ScaleMotion(
+			config.Demolish,
+			command.BuildSpeedMultiplier
+		),
+		Rise = BuildPresentationTiming.ScaleMotion(
+			config.Rise,
+			command.BuildSpeedMultiplier
+		),
+	}
 
 	local succeeded, message = xpcall(function()
 		if command.Kind == "HouseDestroyed" then
-			presentDestroyed(command, config)
+			presentDestroyed(command, scaledConfig)
 		else
-			presentRebuilding(command, config)
+			presentRebuilding(command, scaledConfig)
 		end
 	end, debug.traceback)
 	if not succeeded then

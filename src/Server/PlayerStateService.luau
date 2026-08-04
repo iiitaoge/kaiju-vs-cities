@@ -18,6 +18,7 @@
 	- ServerStorage/RuntimePlayerStates/<UserId>
 		- PlayerReference (ObjectValue)
 		- Economy (Folder)
+		- Progression (Folder + Rebirth Attributes)
 		- Zones (Folder)
 			- <ZoneId> (Folder + Attributes)
 		- Houses (Folder)
@@ -37,7 +38,13 @@ local ServerStorage = game:GetService("ServerStorage")
 
 local PlayerStateService = {}
 
-export type SectionName = "Economy" | "Zones" | "Houses" | "Monsters" | "MonsterSpawnPoints"
+export type SectionName =
+	"Economy"
+	| "Progression"
+	| "Zones"
+	| "Houses"
+	| "Monsters"
+	| "MonsterSpawnPoints"
 export type EntitySectionName = "Zones" | "Houses" | "Monsters" | "MonsterSpawnPoints"
 
 -- 权威数据属于下方 Instance 树，而不属于当前 ModuleScript 的执行缓存。
@@ -45,6 +52,7 @@ local ROOT_NAME = "RuntimePlayerStates"
 local PLAYER_REFERENCE_NAME = "PlayerReference"
 local VALID_SECTIONS = {
 	Economy = true,
+	Progression = true,
 	Zones = true,
 	Houses = true,
 	Monsters = true,

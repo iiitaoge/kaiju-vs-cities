@@ -9,6 +9,7 @@
 return {
 	R1 = {
 		ModelRoot = "ReplicatedStorage/Buildings/Income/R1",
+		DefaultMaxModelLevel = 3,
 
 		Groups = {
 			Left = {
@@ -29,6 +30,7 @@ return {
 
 	R2 = {
 		ModelRoot = "ReplicatedStorage/Buildings/Income/R2",
+		DefaultMaxModelLevel = 3,
 
 		Groups = {
 			Left = {
@@ -49,6 +51,7 @@ return {
 
 	R3 = {
 		ModelRoot = "ReplicatedStorage/Buildings/Income/R3",
+		DefaultMaxModelLevel = 3,
 
 		Groups = {
 			Left = {
@@ -173,6 +176,108 @@ return {
 				{
 					HouseId = "R5-H5",
 					BuildAtRegionLevel = 1,
+					RegionLevelsPerModelLevel = 2,
+					MaxModelLevel = 3,
+				},
+			},
+		},
+	},
+
+	R6 = {
+		ModelRoot = "ReplicatedStorage/Buildings/Income/R6",
+
+		Groups = {
+			Gus = {
+				{
+					HouseId = "R6-A1",
+					BuildAtRegionLevel = 1,
+					RegionLevelsPerModelLevel = 2,
+					MaxModelLevel = 3,
+				},
+				{
+					HouseId = "R6-A2",
+					BuildAtRegionLevel = 1,
+					RegionLevelsPerModelLevel = 2,
+					MaxModelLevel = 3,
+				},
+			},
+
+			Board = {
+				{
+					HouseId = "R6-H1",
+					BuildAtRegionLevel = 2,
+					RegionLevelsPerModelLevel = 2,
+					MaxModelLevel = 3,
+				},
+				{
+					HouseId = "R6-H2",
+					BuildAtRegionLevel = 3,
+					RegionLevelsPerModelLevel = 2,
+					MaxModelLevel = 3,
+				},
+				{
+					HouseId = "R6-H3",
+					BuildAtRegionLevel = 4,
+					RegionLevelsPerModelLevel = 2,
+					MaxModelLevel = 3,
+				},
+				{
+					HouseId = "R6-H4",
+					BuildAtRegionLevel = 5,
+					RegionLevelsPerModelLevel = 2,
+					MaxModelLevel = 3,
+				},
+				{
+					HouseId = "R6-H5",
+					BuildAtRegionLevel = 6,
+					RegionLevelsPerModelLevel = 2,
+					MaxModelLevel = 3,
+				},
+				{
+					HouseId = "R6-H6",
+					BuildAtRegionLevel = 7,
+					RegionLevelsPerModelLevel = 2,
+					MaxModelLevel = 3,
+				},
+				{
+					HouseId = "R6-H7",
+					BuildAtRegionLevel = 8,
+					RegionLevelsPerModelLevel = 2,
+					MaxModelLevel = 3,
+				},
+				{
+					HouseId = "R6-H8",
+					BuildAtRegionLevel = 9,
+					RegionLevelsPerModelLevel = 2,
+					MaxModelLevel = 3,
+				},
+				{
+					HouseId = "R6-H9",
+					BuildAtRegionLevel = 10,
+					RegionLevelsPerModelLevel = 2,
+					MaxModelLevel = 3,
+				},
+				{
+					HouseId = "R6-H10",
+					BuildAtRegionLevel = 11,
+					RegionLevelsPerModelLevel = 2,
+					MaxModelLevel = 3,
+				},
+				{
+					HouseId = "R6-H11",
+					BuildAtRegionLevel = 12,
+					RegionLevelsPerModelLevel = 2,
+					MaxModelLevel = 3,
+				},
+				{
+					HouseId = "R6-H12",
+					BuildAtRegionLevel = 13,
+					RegionLevelsPerModelLevel = 2,
+					MaxModelLevel = 3,
+				},
+				{
+					HouseId = "R6-H13",
+					BuildAtRegionLevel = 14,
 					RegionLevelsPerModelLevel = 2,
 					MaxModelLevel = 3,
 				},

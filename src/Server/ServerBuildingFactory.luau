@@ -7,16 +7,23 @@
 	- targetPivot：调用方已经计算好的最终模型 Pivot。
 	- parent：该玩家 Plot/Runtime/Buildings Folder。
 	- identity：玩家、房屋、Zone 和 Slot 的稳定身份。
+	- hideForPresentation：为 true 时在 Parent 前保存原透明度并预隐藏。
 
 	输出：
 	- 已经放入 parent 的建筑 Model。
 
 	内部算法：
-	- Clone 模板，先写入身份和静态零件属性，再定位并一次性放入运行时树。
+	- Clone 模板，先写入身份和静态零件属性；可选预隐藏后再定位并一次性放入运行时树。
 
 	不负责：
 	- 不读取玩家状态，不解析模板，不计算建筑位置，不维护运行时索引。
 ]]
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local BuildPresentationVisibility = require(
+	ReplicatedStorage.Shared.Building.BuildPresentationVisibility
+)
 
 local ServerBuildingFactory = {}
 
@@ -36,7 +43,8 @@ function ServerBuildingFactory.Create(
 	template: Model,
 	targetPivot: CFrame,
 	parent: Folder,
-	identity: Identity
+	identity: Identity,
+	hideForPresentation: boolean?
 ): Model
 	assert(typeof(template) == "Instance" and template:IsA("Model"), "template 必须是 Model")
 	assert(typeof(targetPivot) == "CFrame", "targetPivot 必须是 CFrame")
@@ -51,6 +59,10 @@ function ServerBuildingFactory.Create(
 	assertNonEmpty(identity.HouseId, "HouseId")
 	assertNonEmpty(identity.ZoneId, "ZoneId")
 	assertNonEmpty(identity.SlotId, "SlotId")
+	assert(
+		hideForPresentation == nil or type(hideForPresentation) == "boolean",
+		"hideForPresentation 必须是 boolean 或 nil"
+	)
 	assert(
 		type(identity.Level) == "number"
 			and identity.Level < math.huge
@@ -77,6 +89,9 @@ function ServerBuildingFactory.Create(
 	end
 
 	model:PivotTo(targetPivot)
+	if hideForPresentation == true then
+		BuildPresentationVisibility.Hide(model)
+	end
 	model.Parent = parent
 	return model
 end

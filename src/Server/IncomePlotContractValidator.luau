@@ -2,7 +2,7 @@
 	职责：验证所有预放置 Plot 的产钱区域场景是否符合代码合同。
 	输入：ValidatePlot 接收 Plot Model；ValidateAll/AssertAll 读取 Workspace/PlayerPlots。
 	输出：{ Valid, Errors, PlotCount }；AssertAll 在合同不合法时终止启动。
-	内部算法：按 ZoneCatalog 遍历 Income Zone，逐一核对 Zone、Slot、Bounds 和新双按钮/旧主按钮合同。
+	内部算法：按 ZoneCatalog 遍历 Income Zone，逐一核对 Zone、Slot、Bounds、Decoration 和按钮合同。
 	不负责：修改场景、分配 Plot、读取玩家状态或生成运行时建筑。
 ]]
 
@@ -84,9 +84,6 @@ function IncomePlotContractValidator.ValidatePlot(plot: Model): { string }
 
 		local zonePrefix = string.format("%s/Zones/%s", prefix, definition.ZoneId)
 		local zone = zones:FindFirstChild(definition.ZoneId)
-		if not isContainer(zone) and definition.RequiredOnAllPlots == false then
-			continue
-		end
 		add(errors, isContainer(zone), zonePrefix .. " 必须是 Model 或 Folder")
 		if not isContainer(zone) then
 			continue
@@ -95,6 +92,7 @@ function IncomePlotContractValidator.ValidatePlot(plot: Model): { string }
 		local slots = zone:FindFirstChild("Slots")
 		local bounds = zone:FindFirstChild("Bounds")
 		local buttons = zone:FindFirstChild("Buttons")
+		local decoration = zone:FindFirstChild("Decoration")
 		add(errors, isContainer(slots), zonePrefix .. "/Slots 必须是 Model 或 Folder")
 		add(errors, isContainer(bounds), zonePrefix .. "/Bounds 必须是 Model 或 Folder")
 		add(
@@ -103,6 +101,13 @@ function IncomePlotContractValidator.ValidatePlot(plot: Model): { string }
 			zonePrefix .. "/Bounds 至少需要一个直接 BasePart 子项"
 		)
 		add(errors, buttons ~= nil and buttons:IsA("Folder"), zonePrefix .. "/Buttons 必须是 Folder")
+		if decoration then
+			add(
+				errors,
+				isContainer(decoration),
+				zonePrefix .. "/Decoration 必须是 Model 或 Folder"
+			)
+		end
 
 		if isContainer(slots) then
 			for slotId, slotDefinition in definition.Slots do
@@ -119,6 +124,22 @@ function IncomePlotContractValidator.ValidatePlot(plot: Model): { string }
 		end
 
 		if buttons and buttons:IsA("Folder") then
+			local unlockName = definition.ZoneId .. "-Unlock-Button"
+			if buttons:FindFirstChild(unlockName) then
+				add(
+					errors,
+					isContainer(decoration),
+					zonePrefix .. "/Decoration 是 Unlock 按钮的必需场景容器"
+				)
+				validateButton(
+					errors,
+					buttons,
+					zonePrefix,
+					definition.ZoneId,
+					unlockName,
+					true
+				)
+			end
 			local upgradeName = definition.ZoneId .. "-Upgrade-Button"
 			local boostName = definition.ZoneId .. "-Boost-Button"
 			local usesDoubleButtons = buttons:FindFirstChild(upgradeName) ~= nil

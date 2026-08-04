@@ -26,7 +26,6 @@ function LocalBuildingRiseAnimation.Play(
 	local visual = template:Clone()
 	visual.Name = template.Name .. "_Rising"
 	visual:PivotTo(targetPivot)
-	visual.Parent = workspace
 
 	local items = LocalBuildingAnimationPartPreparer.Prepare(
 		visual,
@@ -47,6 +46,8 @@ function LocalBuildingRiseAnimation.Play(
 			surfaceVisual.Transparency = 1
 		end
 	end
+	-- 所有可见属性和初始位置准备完成后再进入 Workspace，避免最终态 Clone 闪现一帧。
+	visual.Parent = workspace
 
 	local startWindow = math.max(0, config.TotalDuration - config.MoveDuration)
 	for index, item in items do

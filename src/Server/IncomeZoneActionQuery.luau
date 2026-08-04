@@ -1,8 +1,8 @@
 --[[
 	职责：为实体按钮和未来 UI 生成产钱区域的权威操作快照。
 	输入：Player、RegionId。
-	输出：区域状态、余额、Unlock/Build/Upgrade 权限，以及当前 PrimaryAction/ButtonState。
-	内部算法：读取当前解锁/等级 → 计算下一动作与价格 → 比较余额。
+	输出：区域状态、余额、Unlock/Build/Upgrade 权限，以及独立的 Unlock/建造按钮状态。
+	内部算法：读取当前解锁/前置/等级 → 计算下一动作与价格 → 比较余额。
 	不负责：扣款、修改状态、生成建筑、播放表现或 Remote。
 ]]
 
@@ -27,6 +27,16 @@ local function status(allowed: boolean, reason: string?, cost: number, balance: 
 	}
 end
 
+local function buttonState(actionStatus): string
+	if actionStatus.Reason == "MaxLevel" then
+		return "Special"
+	end
+	if not actionStatus.Allowed then
+		return "Locked"
+	end
+	return if actionStatus.Affordable then "Ready" else "Insufficient"
+end
+
 function IncomeZoneActionQuery.Get(player: Player, regionId: string)
 	local zone = ZoneCatalog.Get(regionId)
 	local economy = RegionEconomyConfigs[regionId]
@@ -37,6 +47,15 @@ function IncomeZoneActionQuery.Get(player: Player, regionId: string)
 
 	local balance = MoneyService.Get(player)
 	local unlocked = RegionStateService.GetUnlocked(player, regionId)
+	local prerequisiteZoneId = zone.UnlockPrerequisiteZoneId
+	local prerequisiteLevel = zone.UnlockPrerequisiteLevel
+	local prerequisiteUnlocked = prerequisiteZoneId == nil
+		or RegionStateService.GetUnlocked(player, prerequisiteZoneId)
+	local prerequisiteCurrentLevel = if prerequisiteZoneId
+		then RegionStateService.GetLevel(player, prerequisiteZoneId)
+		else 0
+	local prerequisiteMet = prerequisiteUnlocked
+		and (prerequisiteLevel == nil or prerequisiteCurrentLevel >= prerequisiteLevel)
 	local level = RegionStateService.GetLevel(player, regionId)
 	local nextLevel = level + 1
 	local hasNextLevel = upgrade.Levels[nextLevel] ~= nil
@@ -46,8 +65,11 @@ function IncomeZoneActionQuery.Get(player: Player, regionId: string)
 		else 0
 
 	local unlockStatus = status(
-		not unlocked,
-		if unlocked then "AlreadyUnlocked" else nil,
+		not unlocked and prerequisiteMet,
+		if unlocked then "AlreadyUnlocked"
+		elseif not prerequisiteUnlocked then "PrerequisiteZoneLocked"
+		elseif not prerequisiteMet then "PrerequisiteZoneLevelTooLow"
+		else nil,
 		economy.UnlockCost,
 		balance,
 		nil
@@ -73,44 +95,49 @@ function IncomeZoneActionQuery.Get(player: Player, regionId: string)
 		if hasNextLevel then nextLevel else nil
 	)
 
-	local primaryAction
-	local primaryStatus
-	if not unlocked then
-		primaryAction = "Unlock"
-		primaryStatus = unlockStatus
-	elseif level == 0 then
-		primaryAction = "Build"
-		primaryStatus = buildStatus
+	local constructionAction
+	local constructionStatus
+	if level == 0 then
+		constructionAction = "Build"
+		constructionStatus = buildStatus
 	elseif hasNextLevel then
-		primaryAction = "Upgrade"
-		primaryStatus = upgradeStatus
+		constructionAction = "Upgrade"
+		constructionStatus = upgradeStatus
 	else
-		primaryAction = "None"
-		primaryStatus = status(false, "MaxLevel", 0, balance, nil)
+		constructionAction = "None"
+		constructionStatus = status(false, "MaxLevel", 0, balance, nil)
 	end
 
 	return {
 		RegionId = regionId,
 		Unlocked = unlocked,
+		UnlockPrerequisiteZoneId = prerequisiteZoneId,
+		UnlockPrerequisiteLevel = prerequisiteLevel,
+		UnlockPrerequisiteCurrentLevel = prerequisiteCurrentLevel,
+		UnlockPrerequisiteMet = prerequisiteMet,
 		Level = level,
 		Balance = balance,
 		Unlock = unlockStatus,
 		Build = buildStatus,
 		Upgrade = upgradeStatus,
-		PrimaryAction = primaryAction,
-		Primary = primaryStatus,
-		PrimaryButtonState = if primaryStatus.Reason == "MaxLevel"
-			then "Special"
-			elseif not primaryStatus.Allowed
-			then "Locked"
-			elseif not primaryStatus.Affordable then "Insufficient"
-			else "Ready",
+		UnlockButtonState = buttonState(unlockStatus),
+		ConstructionAction = constructionAction,
+		Construction = constructionStatus,
+		ConstructionButtonState = buttonState(constructionStatus),
 	}
 end
 
-function IncomeZoneActionQuery.GetPrimaryButtonState(player: Player, regionId: string): string
+function IncomeZoneActionQuery.GetUnlockButtonState(player: Player, regionId: string): string
 	local snapshot = IncomeZoneActionQuery.Get(player, regionId)
-	return if snapshot then snapshot.PrimaryButtonState else "Locked"
+	return if snapshot then snapshot.UnlockButtonState else "Locked"
+end
+
+function IncomeZoneActionQuery.GetConstructionButtonState(
+	player: Player,
+	regionId: string
+): string
+	local snapshot = IncomeZoneActionQuery.Get(player, regionId)
+	return if snapshot then snapshot.ConstructionButtonState else "Locked"
 end
 
 return IncomeZoneActionQuery

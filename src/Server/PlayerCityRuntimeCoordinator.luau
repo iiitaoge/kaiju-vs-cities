@@ -5,16 +5,16 @@
 
 	输入：
 	- Load：已经进入服务器并分配 Plot 的 Player。
-	- RefreshZone：Player 和需要重新生成的 ZoneId。
-	- RestoreBuilding：Player 和当前处于 Destroyed 的 HouseId。
+	- RefreshZone：Player、需要重新生成的 ZoneId，以及可选的建造表现预隐藏标记。
+	- RestoreBuilding：Player、当前处于 Destroyed 的 HouseId，以及可选的建造表现预隐藏标记。
 	- RemoveBuilding：Player、HouseId，以及可选的预期 Model。
 	- Unload / ResolveBuilding / ListBuildings：Player；查询额外接收 HouseId。
 
 	输出：
 	- 建筑生成在 Plot/Runtime/Buildings/<HouseId>。
 	- Load 返回成功状态、稳定失败原因和加载数量。
-	- RefreshZone 只替换目标 Zone，不重建其他 Zone。
-	- RestoreBuilding 使用 Zone 当前最新等级，只恢复目标单栋建筑。
+	- RefreshZone 只替换目标 Zone，不重建其他 Zone；可让新模型以隐藏态进入运行时树。
+	- RestoreBuilding 使用 Zone 当前最新等级，只恢复目标单栋建筑；可让新模型预隐藏。
 	- RemoveBuilding 只移除目标玩家的一栋当前权威建筑。
 	- ResolveBuilding / ListBuildings 返回服务器当前运行时建筑。
 
@@ -31,7 +31,11 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local HouseStateService = require(script.Parent.HouseStateService)
+local HouseWorldUIPresentationService = require(script.Parent.HouseWorldUIPresentationService)
 local PlayerDataReadyService = require(script.Parent.PlayerDataReadyService)
+local PlayerRuntimeLoadReporter = require(
+	script.Parent.Analytics.PlayerRuntimeLoadReporter
+)
 local PlayerBuildingRuntimeRegistry = require(script.Parent.PlayerBuildingRuntimeRegistry)
 local PlayerPlotAssignmentService = require(script.Parent.PlayerPlotAssignmentService)
 local ServerBuildingFactory = require(script.Parent.ServerBuildingFactory)
@@ -318,10 +322,25 @@ local function clearZoneBuildings(player: Player, folder: Folder, zoneId: string
 	end
 end
 
+local function refreshWorldUI(player: Player, houseId: string, model: Model)
+	local called, refreshed, reason = pcall(
+		HouseWorldUIPresentationService.Refresh,
+		player,
+		houseId,
+		model
+	)
+	if not called then
+		warn(string.format("刷新房屋世界 UI 状态异常：%s/%s (%s)", player.Name, houseId, tostring(refreshed)))
+	elseif not refreshed then
+		warn(string.format("刷新房屋世界 UI 状态失败：%s/%s (%s)", player.Name, houseId, reason or "Unknown"))
+	end
+end
+
 local function createBuildings(
 	player: Player,
 	buildingsRoot: Folder,
-	plan: { BuildPlanItem }
+	plan: { BuildPlanItem },
+	hideForPresentation: boolean
 ): (number, string?)
 	local createdCount = 0
 	for _, item in plan do
@@ -336,7 +355,8 @@ local function createBuildings(
 				ZoneId = item.ZoneId,
 				SlotId = item.SlotId,
 				Level = item.Level,
-			}
+			},
+			hideForPresentation
 		)
 		if not created then
 			warn(string.format("创建服务器建筑失败：%s (%s)", item.HouseId, tostring(modelOrError)))
@@ -348,20 +368,26 @@ local function createBuildings(
 		if previous and previous.Parent then
 			previous:Destroy()
 		end
+		refreshWorldUI(player, item.HouseId, model)
 		createdCount += 1
 	end
 	return createdCount, nil
 end
 
--- 输入：在线 player 和当前 Destroyed 的 houseId。
+-- 输入：在线 player、当前 Destroyed 的 houseId，以及可选的建造表现预隐藏标记。
 -- 输出：按 Zone 当前最新等级创建并登记的一栋服务器权威建筑。
--- 内部算法：校验 Plot/Slot/状态/模板后只 Clone 单栋，不刷新同 Zone 其他建筑。
+-- 内部算法：校验 Plot/Slot/状态/模板后只 Clone 单栋；可在 Parent 前预隐藏，不刷新同 Zone 其他建筑。
 function PlayerCityRuntimeCoordinator.RestoreBuilding(
 	player: Player,
-	houseId: string
+	houseId: string,
+	hideForPresentation: boolean?
 ): RestoreResult
 	assert(typeof(player) == "Instance" and player:IsA("Player"), "player 必须是 Player")
 	assert(type(houseId) == "string" and houseId ~= "", "houseId 必须是非空字符串")
+	assert(
+		hideForPresentation == nil or type(hideForPresentation) == "boolean",
+		"hideForPresentation 必须是 boolean 或 nil"
+	)
 	if player.Parent ~= Players then
 		return { Succeeded = false, Reason = "PlayerUnavailable", Model = nil }
 	end
@@ -393,7 +419,8 @@ function PlayerCityRuntimeCoordinator.RestoreBuilding(
 			ZoneId = plan.ZoneId,
 			SlotId = plan.SlotId,
 			Level = plan.Level,
-		}
+		},
+		hideForPresentation
 	)
 	if not created then
 		warn(string.format("恢复服务器建筑失败：%s (%s)", houseId, tostring(modelOrError)))
@@ -408,6 +435,7 @@ function PlayerCityRuntimeCoordinator.RestoreBuilding(
 		return { Succeeded = false, Reason = "RuntimeBuildingChanged", Model = nil }
 	end
 	loadedPlots[player] = plot
+	refreshWorldUI(player, houseId, model)
 	return { Succeeded = true, Reason = nil, Model = model }
 end
 
@@ -439,7 +467,7 @@ function PlayerCityRuntimeCoordinator.Load(player: Player): LoadResult
 	clearFolder(buildingsRoot)
 	loadedPlots[player] = plot
 
-	local createdCount, createReason = createBuildings(player, buildingsRoot, plan)
+	local createdCount, createReason = createBuildings(player, buildingsRoot, plan, false)
 	if createReason then
 		destroyIndexedBuildings(player)
 		clearFolder(buildingsRoot)
@@ -452,10 +480,15 @@ end
 
 function PlayerCityRuntimeCoordinator.RefreshZone(
 	player: Player,
-	zoneId: string
+	zoneId: string,
+	hideForPresentation: boolean?
 ): LoadResult
 	assert(typeof(player) == "Instance" and player:IsA("Player"), "player 必须是 Player")
 	assert(type(zoneId) == "string" and zoneId ~= "", "zoneId 必须是非空字符串")
+	assert(
+		hideForPresentation == nil or type(hideForPresentation) == "boolean",
+		"hideForPresentation 必须是 boolean 或 nil"
+	)
 	if player.Parent ~= Players then
 		return result(false, "PlayerUnavailable", nil, 0)
 	end
@@ -476,7 +509,12 @@ function PlayerCityRuntimeCoordinator.RefreshZone(
 
 	clearZoneBuildings(player, buildingsRoot, zoneId)
 	loadedPlots[player] = plot
-	local createdCount, createReason = createBuildings(player, buildingsRoot, plan)
+	local createdCount, createReason = createBuildings(
+		player,
+		buildingsRoot,
+		plan,
+		hideForPresentation == true
+	)
 	if createReason then
 		clearZoneBuildings(player, buildingsRoot, zoneId)
 		return result(false, createReason, plot, 0)
@@ -545,7 +583,8 @@ function PlayerCityRuntimeCoordinator.Unload(player: Player): number
 	local runtime = plot and plot:FindFirstChild("Runtime")
 	local buildings = runtime and runtime:FindFirstChild(BUILDINGS_ROOT_NAME)
 	if buildings and buildings:IsA("Folder") then
-		buildings:Destroy()
+		-- 客户端只订阅一次固定 Buildings Folder；重生/显式重载必须保留目录身份。
+		clearFolder(buildings)
 	end
 	return removedCount
 end
@@ -563,6 +602,12 @@ end
 
 local function loadAndWarn(player: Player)
 	local loadResult = PlayerCityRuntimeCoordinator.Load(player)
+	PlayerRuntimeLoadReporter.Report(
+		player,
+		"City",
+		loadResult.Succeeded,
+		loadResult.Reason
+	)
 	if not loadResult.Succeeded then
 		warn(string.format("加载玩家 %s 城市失败：%s", player.Name, loadResult.Reason or "Unknown"))
 	end

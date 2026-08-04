@@ -39,7 +39,6 @@ function LocalModelBuilder.Build(template: Model, targetCFrame: CFrame): Model
 	local visual = template:Clone()
 	visual.Name = template.Name .. "_Building"
 	visual:PivotTo(targetPivot)
-	visual.Parent = workspace
 
 	local parts = getPartsFromLowToHigh(visual)
 	local targetCFrames = {}
@@ -58,6 +57,7 @@ function LocalModelBuilder.Build(template: Model, targetCFrame: CFrame): Model
 		part.Transparency = 1
 		part.CFrame += Vector3.new(0, undergroundY - part.Position.Y, 0)
 	end
+	visual.Parent = workspace
 
 	local startWindow = TOTAL_DURATION - MOVE_DURATION
 

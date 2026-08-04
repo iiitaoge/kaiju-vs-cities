@@ -6,6 +6,12 @@
 	不负责：不 Clone、不销毁、不播放动画。
 ]]
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local BuildPresentationVisibility = require(
+	ReplicatedStorage.Shared.Building.BuildPresentationVisibility
+)
+
 local LocalBuildingVisibility = {}
 
 export type SurfaceVisual = Decal | Texture
@@ -25,7 +31,8 @@ function LocalBuildingVisibility.Hide(model: Model): Snapshot
 			snapshot.Parts[descendant] = descendant.LocalTransparencyModifier
 			descendant.LocalTransparencyModifier = 1
 		elseif descendant:IsA("Decal") or descendant:IsA("Texture") then
-			snapshot.SurfaceVisuals[descendant] = descendant.Transparency
+			snapshot.SurfaceVisuals[descendant] =
+				BuildPresentationVisibility.ResolveTransparency(descendant)
 			descendant.Transparency = 1
 		end
 	end

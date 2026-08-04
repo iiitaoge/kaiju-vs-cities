@@ -1,15 +1,14 @@
 --[[
-	职责：执行产钱区域单一主入口的解锁、建造或升级事务。
-	输入：Player、RegionId；具体动作由最新权威状态决定。
+	职责：执行产钱区域建造/升级按钮的服务器权威事务。
+	输入：Player、RegionId；具体建造动作由最新权威状态决定。
 	输出：Succeeded、Reason、Action、最新 Snapshot、NextButtonState。
 	内部算法：同玩家同区域加锁 → 权威查询 → 扣款/区域事务 → 重查并确认状态提交。
-	不负责：实体按钮、Remote、价格计算、模板解析、存档或 UI。
+	不负责：区域解锁、实体按钮、Remote、价格计算、模板解析、存档或 UI。
 ]]
 
 local IncomeZoneActionQuery = require(script.Parent.IncomeZoneActionQuery)
 local PlayerRegionTransactionLock = require(script.Parent.PlayerRegionTransactionLock)
 local RegionUpgradeCityCoordinator = require(script.Parent.RegionUpgradeCityCoordinator)
-local RegionUpgradeService = require(script.Parent.RegionUpgradeService)
 
 local IncomeZonePrimaryCoordinator = {}
 
@@ -19,7 +18,7 @@ local function result(succeeded: boolean, reason: string?, action: string, snaps
 		Reason = reason,
 		Action = action,
 		Snapshot = snapshot,
-		NextButtonState = if snapshot then snapshot.PrimaryButtonState else "Locked",
+		NextButtonState = if snapshot then snapshot.ConstructionButtonState else "Locked",
 	}
 end
 
@@ -28,8 +27,8 @@ local function executeUnlocked(player: Player, regionId: string)
 	if not before then
 		return result(false, "UnknownIncomeZone", "None", nil)
 	end
-	local action = before.PrimaryAction
-	local permission = before.Primary
+	local action = before.ConstructionAction
+	local permission = before.Construction
 	if not permission.Allowed then
 		return result(false, permission.Reason or "ActionLocked", action, before)
 	end
@@ -37,9 +36,7 @@ local function executeUnlocked(player: Player, regionId: string)
 		return result(false, "InsufficientMoney", action, before)
 	end
 
-	if action == "Unlock" then
-		RegionUpgradeService.Unlock(player, regionId)
-	elseif action == "Build" or action == "Upgrade" then
+	if action == "Build" or action == "Upgrade" then
 		RegionUpgradeCityCoordinator.Upgrade(player, regionId)
 	else
 		return result(false, "ActionLocked", action, before)
@@ -49,9 +46,7 @@ local function executeUnlocked(player: Player, regionId: string)
 	if not after then
 		return result(false, "StateQueryFailed", action, nil)
 	end
-	local committed = if action == "Unlock"
-		then after.Unlocked
-		else after.Level == permission.TargetLevel
+	local committed = after.Level == permission.TargetLevel
 	return result(
 		committed,
 		if committed then nil else "RegionActionNotCommitted",
