@@ -1,7 +1,7 @@
 --[[
 	职责：组合核心、产钱区和怪兽区规则，验证八人 PlayerPlots 场景合同及体验容量。
 	输入：ValidatePlot 接收单个 Plot；ValidateAll/AssertAll 读取 Workspace/PlayerPlots、Players.MaxPlayers 和运行环境。
-	输出：错误列表，或包含 Valid/Errors/PlotCount/RequiredMaxPlayers/MaxPlayers/CapacityValid 的总报告。
+	输出：错误列表，或包含 Valid/Errors/Warnings/PlotCount/RequiredMaxPlayers/MaxPlayers/CapacityValid 的总报告。
 	内部算法：复用唯一直接子级与锚定零件小模块，再组合现有 Income 验证器和怪兽目录配置。
 	不负责：逐后代比较 Plot01 克隆、修改场景、分配玩家、生成 Runtime 或更改体验设置。
 ]]
@@ -37,7 +37,7 @@ local function validateCapacity(): (boolean, string)
 		)
 	end
 	return actual == EXPECTED_PLOT_COUNT, string.format(
-		"线上体验 MaxPlayers 必须为 %d，当前为 %d",
+		"线上运行时 MaxPlayers 报告值应为 %d，当前为 %d；以 Creator Dashboard 的访客人数上限为准",
 		EXPECTED_PLOT_COUNT,
 		actual
 	)
@@ -153,13 +153,18 @@ end
 
 function PlayerPlotContractValidator.ValidateAll()
 	local errors = {}
+	local warnings = {}
 	local capacityValid, capacityError = validateCapacity()
+	if not capacityValid then
+		table.insert(warnings, capacityError)
+	end
 	local root = workspace:FindFirstChild("PlayerPlots")
 	add(errors, root ~= nil and root:IsA("Folder"), "Workspace/PlayerPlots 必须是 Folder")
 	if not root or not root:IsA("Folder") then
 		return {
 			Valid = false,
 			Errors = errors,
+			Warnings = warnings,
 			PlotCount = 0,
 			RequiredMaxPlayers = EXPECTED_PLOT_COUNT,
 			MaxPlayers = Players.MaxPlayers,
@@ -193,10 +198,10 @@ function PlayerPlotContractValidator.ValidateAll()
 			table.insert(errors, message)
 		end
 	end
-	add(errors, capacityValid, capacityError)
 	return {
 		Valid = #errors == 0,
 		Errors = errors,
+		Warnings = warnings,
 		PlotCount = #plots,
 		RequiredMaxPlayers = EXPECTED_PLOT_COUNT,
 		MaxPlayers = Players.MaxPlayers,
@@ -206,6 +211,9 @@ end
 
 function PlayerPlotContractValidator.AssertAll(): boolean
 	local result = PlayerPlotContractValidator.ValidateAll()
+	if #result.Warnings > 0 then
+		warn("玩家 Plot 容量检查警告：\n" .. table.concat(result.Warnings, "\n"))
+	end
 	assert(result.Valid, "玩家 Plot 场景合同无效：\n" .. table.concat(result.Errors, "\n"))
 	return true
 end
