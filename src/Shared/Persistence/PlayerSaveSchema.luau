@@ -11,7 +11,7 @@ local ValueValidation = require(script.Parent.Parent.ValueValidation)
 local PlayerSaveSchema = {}
 
 PlayerSaveSchema.CurrentVersion = 1
-PlayerSaveSchema.ContentRevision = 4
+PlayerSaveSchema.ContentRevision = 6
 
 local function nonNegative(value, fallback: number): number
 	return if ValueValidation.IsFiniteNumber(value) and value >= 0
@@ -98,6 +98,11 @@ function PlayerSaveSchema.Default()
 		ContentRevision = PlayerSaveSchema.ContentRevision,
 		SavedAt = 0,
 		Economy = { Money = 0 },
+		Rebirth = {
+			Count = 0,
+			RunEarnings = 0,
+		},
+		Tutorial = { Version = 0 },
 		Zones = {},
 		Houses = {},
 		Monsters = {
@@ -113,6 +118,8 @@ local function migrateV0(raw)
 		ContentRevision = raw.ContentRevision,
 		SavedAt = raw.SavedAt,
 		Economy = raw.Economy or { Money = raw.Money },
+		Rebirth = raw.Rebirth,
+		Tutorial = raw.Tutorial,
 		Zones = raw.Zones,
 		Houses = raw.Houses,
 		Monsters = raw.Monsters or {
@@ -149,6 +156,8 @@ function PlayerSaveSchema.Normalize(raw)
 	end
 
 	local economy = if type(raw.Economy) == "table" then raw.Economy else {}
+	local rebirth = if type(raw.Rebirth) == "table" then raw.Rebirth else {}
+	local tutorial = if type(raw.Tutorial) == "table" then raw.Tutorial else {}
 	local monsters = if type(raw.Monsters) == "table" then raw.Monsters else {}
 	return {
 		Version = 1,
@@ -156,6 +165,13 @@ function PlayerSaveSchema.Normalize(raw)
 		SavedAt = nonNegativeInteger(raw.SavedAt, 0),
 		Economy = {
 			Money = nonNegative(economy.Money, 0),
+		},
+		Rebirth = {
+			Count = nonNegativeInteger(rebirth.Count, 0),
+			RunEarnings = nonNegative(rebirth.RunEarnings, 0),
+		},
+		Tutorial = {
+			Version = nonNegativeInteger(tutorial.Version, 0),
 		},
 		Zones = normalizeZones(raw.Zones),
 		Houses = normalizeHouses(raw.Houses),

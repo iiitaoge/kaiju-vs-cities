@@ -1,6 +1,15 @@
+local GameAnalyticsEconomyAggregator = require(
+	script.Parent.Analytics.GameAnalyticsEconomyAggregator
+)
+local GameAnalyticsGateway = require(script.Parent.Analytics.GameAnalyticsGateway)
+local PlayerLoadAnalyticsCoordinator = require(
+	script.Parent.Analytics.PlayerLoadAnalyticsCoordinator
+)
+local SecurityAnalyticsAggregator = require(
+	script.Parent.Analytics.SecurityAnalyticsAggregator
+)
 local CityBuildingPresentationPublisher = require(script.Parent.CityBuildingPresentationPublisher)
 local ContentContractValidator = require(script.Parent.ContentContractValidator)
-local IncomePlotContractValidator = require(script.Parent.IncomePlotContractValidator)
 local IncomeAutoCollectionService = require(script.Parent.IncomeAutoCollectionService)
 local MoneyService = require(script.Parent.MoneyService)
 local MonsterBuildPresentationPublisher = require(
@@ -8,27 +17,46 @@ local MonsterBuildPresentationPublisher = require(
 )
 local MonsterSpawnPointStateService = require(script.Parent.MonsterSpawnPointStateService)
 local PlayerCityRuntimeCoordinator = require(script.Parent.PlayerCityRuntimeCoordinator)
+local PlayerCharacterMovementService = require(
+	script.Parent.PlayerCharacterMovementService
+)
 local PlayerPersistenceCoordinator = require(script.Parent.PlayerPersistenceCoordinator)
+local PlayerPlotContractValidator = require(script.Parent.PlayerPlotContractValidator)
 local PlayerMonsterRuntimeCoordinator = require(script.Parent.PlayerMonsterRuntimeCoordinator)
 local PlayerPlotAssignmentService = require(script.Parent.PlayerPlotAssignmentService)
+local PlayerPlotSpawnService = require(script.Parent.PlayerPlotSpawnService)
 local PlayerStateService = require(script.Parent.PlayerStateService)
+local PlayerZoneSceneVisibilityService = require(
+	script.Parent.PlayerZoneSceneVisibilityService
+)
 local RegionStateService = require(script.Parent.RegionStateService)
+local RebirthService = require(script.Parent.RebirthService)
 local StudioSaveResetService = require(script.Parent.StudioSaveResetService)
 local ZoneStateService = require(script.Parent.ZoneStateService)
 
 ContentContractValidator.AssertValid()
-IncomePlotContractValidator.AssertAll()
+PlayerPlotContractValidator.AssertAll()
+-- 聚合器必须先注册 PlayerRemoving，确保 GA SDK 结束玩家 Session 前刷新待发送事件。
+GameAnalyticsEconomyAggregator.Start()
+SecurityAnalyticsAggregator.Start()
+GameAnalyticsGateway.Start()
 -- 必须先注册持久化生命周期，使 PlayerAdded 同步进入 Loading，PlayerRemoving 先截取快照。
 PlayerPersistenceCoordinator.Start()
+-- 必须在持久化注册之后、各运行时加载模块之前观察加载阶段。
+PlayerLoadAnalyticsCoordinator.Start()
 StudioSaveResetService.Start()
 PlayerStateService.Start()
 ZoneStateService.Start()
 MonsterSpawnPointStateService.Start()
 PlayerPlotAssignmentService.Start()
+PlayerPlotSpawnService.Start()
+PlayerCharacterMovementService.Start()
 CityBuildingPresentationPublisher.Start()
 MonsterBuildPresentationPublisher.Start()
 MoneyService.Start()
 RegionStateService.Start()
+RebirthService.Start()
+PlayerZoneSceneVisibilityService.Start()
 PlayerCityRuntimeCoordinator.Start()
 IncomeAutoCollectionService.Start()
 PlayerMonsterRuntimeCoordinator.Start()

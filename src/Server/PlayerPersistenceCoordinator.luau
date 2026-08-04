@@ -1,6 +1,6 @@
 --[[
 	职责：组装玩家存档会话获取、状态恢复、自动保存、离服最终提交、Studio 删档和关服等待。
-	输入：Start 无参数；SavePlayer/DeleteStudioSave 接收在线 player。
+	输入：Start 无参数；SavePlayer/DeleteStudioSave 接收在线 player；CommitReplacement 额外接收完整新存档。
 	输出：通过 PlayerDataReadyService 发布 Ready/Cancelled；保存和 Studio 删档返回结构化结果。
 	内部算法：获取独占租约 → 应用存档 → 快照合并队列 → Revision 条件提交 → 最终提交释放租约。
 	安全规则：加载/版本/应用失败或会话冲突时拒绝玩家进入；失败提交保留同一 CommitId 重试。
@@ -17,6 +17,7 @@ local PlayerDataStoreAccess = require(script.Parent.PlayerDataStoreAccess)
 local PlayerPersistenceConfigs = require(script.Parent.PlayerPersistenceConfigs)
 local PlayerPersistenceDiagnostics = require(script.Parent.PlayerPersistenceDiagnostics)
 local PlayerSaveStateAdapter = require(script.Parent.PlayerSaveStateAdapter)
+local StudioTestSessionPolicy = require(script.Parent.StudioTestSessionPolicy)
 local PlayerSaveSchema = require(ReplicatedStorage.Shared.Persistence.PlayerSaveSchema)
 
 local PlayerPersistenceCoordinator = {}
@@ -25,6 +26,7 @@ type SaveRequest = {
 	Data: any,
 	CommitId: string,
 	ReleaseSession: boolean,
+	ExclusiveReplacement: boolean?,
 }
 
 type SessionRecord = {
@@ -36,11 +38,14 @@ type SessionRecord = {
 	ReleaseRequested: boolean,
 	Running: boolean,
 	RetryScheduled: boolean,
+	ExclusiveOperation: boolean,
+	ExclusiveData: any?,
 }
 
 local sessionsByUserId: { [number]: SessionRecord } = {}
 local started = false
 local closing = false
+local persistenceDisabledForTestSession = false
 local serverIdentity = if game.JobId ~= ""
 	then game.JobId
 	else "Studio-" .. HttpService:GenerateGUID(false)
@@ -194,6 +199,10 @@ runSaveQueue = function(userId: number, record: SessionRecord)
 			record.Running = false
 			return
 		end
+		if pending.ExclusiveReplacement then
+			record.ExclusiveOperation = false
+			record.ExclusiveData = nil
+		end
 		PlayerPersistenceDiagnostics.MarkSaved(userId, record.Revision)
 	end
 	record.Running = false
@@ -223,6 +232,25 @@ local function queuePlayer(player: Player, releaseSession: boolean): (boolean, s
 	if not record then
 		return false, "SaveSessionUnavailable"
 	end
+	if record.ExclusiveOperation then
+		if releaseSession then
+			record.ReleaseRequested = true
+			record.Player = nil
+			if record.Pending and record.Pending.ExclusiveReplacement then
+				record.Pending.ReleaseSession = true
+			elseif record.ExclusiveData and not record.Running then
+				record.Pending = {
+					Data = record.ExclusiveData,
+					CommitId = HttpService:GenerateGUID(false),
+					ReleaseSession = true,
+					ExclusiveReplacement = true,
+				}
+				startSaveQueue(player.UserId, record)
+			end
+			return true, nil
+		end
+		return false, "ExclusiveSaveInProgress"
+	end
 	local data, reason = capture(player)
 	if not data then
 		return false, reason
@@ -251,6 +279,8 @@ local function releaseUnappliedSession(
 		ReleaseRequested = true,
 		Running = false,
 		RetryScheduled = false,
+		ExclusiveOperation = false,
+		ExclusiveData = nil,
 	}
 	sessionsByUserId[player.UserId] = record
 	PlayerPersistenceDiagnostics.MarkDirty(player.UserId)
@@ -293,6 +323,8 @@ local function loadPlayer(player: Player, sessionId: string)
 		ReleaseRequested = false,
 		Running = false,
 		RetryScheduled = false,
+		ExclusiveOperation = false,
+		ExclusiveData = nil,
 	}
 	sessionsByUserId[player.UserId] = record
 	PlayerPersistenceDiagnostics.MarkReady(player.UserId, loaded.Revision)
@@ -301,11 +333,167 @@ end
 
 local function beginLoad(player: Player)
 	PlayerDataReadyService.MarkLoading(player)
+	if persistenceDisabledForTestSession then
+		local applied, applyFailure = pcall(
+			PlayerSaveStateAdapter.Apply,
+			player,
+			PlayerSaveSchema.Default(),
+			os.time()
+		)
+		if not applied then
+			rejectPlayer(player, "StateApplyFailed", tostring(applyFailure))
+			return
+		end
+		PlayerPersistenceDiagnostics.MarkReady(player.UserId, 0)
+		PlayerDataReadyService.MarkReady(
+			player,
+			false,
+			"StudioAcceptanceTestSaveDisabled"
+		)
+		return
+	end
 	task.spawn(loadPlayer, player, createSessionId(player))
 end
 
 function PlayerPersistenceCoordinator.SavePlayer(player: Player): (boolean, string?)
 	return queuePlayer(player, false)
+end
+
+-- 输入：在线且存档 Ready 的 Player，以及已经完整构建的新业务存档。
+-- 输出：Succeeded、Uncertain、Reason、Revision。
+-- 内部算法：只在普通保存队列空闲时取得独占权，使用单一 CommitId 同步重试；
+-- 网络结果仍不确定时把同一提交留在后台队列继续恢复，禁止旧运行时快照覆盖它。
+function PlayerPersistenceCoordinator.CommitReplacement(player: Player, data)
+	assert(typeof(player) == "Instance" and player:IsA("Player"), "player 必须是 Player")
+	if player.Parent ~= Players then
+		return { Succeeded = false, Uncertain = false, Reason = "PlayerUnavailable", Revision = nil }
+	end
+	local readiness = PlayerDataReadyService.Get(player)
+	if readiness.Status ~= "Ready" or not readiness.CanSave then
+		return { Succeeded = false, Uncertain = false, Reason = "PlayerDataNotReady", Revision = nil }
+	end
+	local normalized, normalizeReason = PlayerSaveSchema.Normalize(data)
+	if not normalized then
+		return {
+			Succeeded = false,
+			Uncertain = false,
+			Reason = normalizeReason or "InvalidReplacementData",
+			Revision = nil,
+		}
+	end
+
+	local record = sessionsByUserId[player.UserId]
+	if not record then
+		return { Succeeded = false, Uncertain = false, Reason = "SaveSessionUnavailable", Revision = nil }
+	end
+	if record.ReleaseRequested
+		or record.ExclusiveOperation
+		or record.Running
+		or record.Pending ~= nil
+		or record.Latest ~= nil
+		or record.RetryScheduled then
+		return { Succeeded = false, Uncertain = false, Reason = "SaveSessionBusy", Revision = nil }
+	end
+
+	record.ExclusiveOperation = true
+	record.ExclusiveData = normalized
+	record.Running = true
+	local commitId = HttpService:GenerateGUID(false)
+	PlayerPersistenceDiagnostics.MarkSaving(player.UserId)
+	local saved = retry(function()
+		return PlayerDataStoreAccess.Commit(
+			player.UserId,
+			record.SessionId,
+			record.Revision,
+			commitId,
+			normalized,
+			false
+		)
+	end, PlayerPersistenceConfigs.SaveAttempts)
+
+	if not saved.Succeeded then
+		PlayerPersistenceDiagnostics.MarkFailed(player.UserId, saved.Reason)
+		record.Running = false
+		if saved.Retryable and sessionsByUserId[player.UserId] == record then
+			record.Pending = {
+				Data = normalized,
+				CommitId = commitId,
+				ReleaseSession = record.ReleaseRequested,
+				ExclusiveReplacement = true,
+			}
+			scheduleRetry(player.UserId, record)
+			return {
+				Succeeded = false,
+				Uncertain = true,
+				Reason = saved.Reason or "CommitResultUncertain",
+				Revision = nil,
+			}
+		end
+
+		record.ExclusiveOperation = false
+		record.ExclusiveData = nil
+		handleFatalSaveFailure(
+			player.UserId,
+			record,
+			saved.Reason or "ReplacementCommitFailed",
+			saved.Detail
+		)
+		return {
+			Succeeded = false,
+			Uncertain = false,
+			Reason = saved.Reason or "ReplacementCommitFailed",
+			Revision = nil,
+		}
+	end
+
+	record.Revision = saved.Revision
+	record.Running = false
+	PlayerPersistenceDiagnostics.MarkSaved(player.UserId, record.Revision)
+	if record.ReleaseRequested and sessionsByUserId[player.UserId] == record then
+		record.Pending = {
+			Data = normalized,
+			CommitId = HttpService:GenerateGUID(false),
+			ReleaseSession = true,
+			ExclusiveReplacement = true,
+		}
+		startSaveQueue(player.UserId, record)
+	end
+	return {
+		Succeeded = true,
+		Uncertain = false,
+		Reason = nil,
+		Revision = record.Revision,
+	}
+end
+
+-- 只由替换提交的协调器在运行时重载完成后调用；keepLocked 用于等待踢出恢复的失败路径。
+function PlayerPersistenceCoordinator.FinishReplacement(
+	player: Player,
+	keepLocked: boolean
+): boolean
+	assert(typeof(player) == "Instance" and player:IsA("Player"), "player 必须是 Player")
+	assert(type(keepLocked) == "boolean", "keepLocked 必须是 boolean")
+	local record = sessionsByUserId[player.UserId]
+	if not record or not record.ExclusiveOperation then
+		return false
+	end
+	if keepLocked or (record.Pending and record.Pending.ExclusiveReplacement) then
+		return false
+	end
+
+	local replacementData = record.ExclusiveData
+	record.ExclusiveData = nil
+	record.ExclusiveOperation = false
+	if record.ReleaseRequested and replacementData and not record.Running then
+		record.Pending = {
+			Data = replacementData,
+			CommitId = HttpService:GenerateGUID(false),
+			ReleaseSession = true,
+			ExclusiveReplacement = true,
+		}
+		startSaveQueue(player.UserId, record)
+	end
+	return true
 end
 
 local function scheduleResetKick(player: Player, message: string)
@@ -444,6 +632,10 @@ function PlayerPersistenceCoordinator.Start()
 		return
 	end
 	started = true
+	persistenceDisabledForTestSession = StudioTestSessionPolicy.ShouldDisablePersistence()
+	if persistenceDisabledForTestSession then
+		print("CODEX_STUDIO_ACCEPTANCE_PERSISTENCE_DISABLED")
+	end
 
 	Players.PlayerAdded:Connect(beginLoad)
 	Players.PlayerRemoving:Connect(playerRemoving)
@@ -451,7 +643,9 @@ function PlayerPersistenceCoordinator.Start()
 	for _, player in Players:GetPlayers() do
 		beginLoad(player)
 	end
-	task.spawn(autosaveLoop)
+	if not persistenceDisabledForTestSession then
+		task.spawn(autosaveLoop)
+	end
 end
 
 return PlayerPersistenceCoordinator

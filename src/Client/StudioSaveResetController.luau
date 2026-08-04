@@ -2,13 +2,14 @@
 	职责：在 Studio Play 中创建一键删除当前测试玩家存档的 UI。
 	输入：Start 无参数；玩家点击按钮。
 	输出：按钮展示处理中/成功/失败；成功后服务器退出当前玩家。
-	内部算法：Studio 门禁 → 创建单按钮 ScreenGui → 调用 StudioSaveReset RemoteFunction。
+	内部算法：Studio 门禁 → 按桌面/触屏位置创建单按钮 ScreenGui → 调用 StudioSaveReset RemoteFunction。
 	不负责：选择 UserId、DataStore、保存会话或正式服 UI。
 ]]
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
 local StudioSaveResetProtocol = require(
 	ReplicatedStorage.Shared.Persistence.StudioSaveResetProtocol
@@ -19,12 +20,14 @@ local StudioSaveResetController = {}
 local GUI_NAME = "StudioSaveResetGui"
 local started = false
 
-local function createButton(parent: Instance): TextButton
+local function createButton(parent: Instance, isTouchEnabled: boolean): TextButton
 	local button = Instance.new("TextButton")
 	button.Name = "ResetSaveButton"
-	button.AnchorPoint = Vector2.new(1, 0)
-	-- 避开 Roblox 顶部 CoreGui，保证 Studio 鼠标输入命中测试按钮。
-	button.Position = UDim2.new(1, -20, 0, 80)
+	button.AnchorPoint = if isTouchEnabled then Vector2.new(0.5, 0) else Vector2.new(1, 0)
+	-- 触屏时避开右侧怪兽面板；桌面仍保留右上角测试入口。
+	button.Position = if isTouchEnabled
+		then UDim2.new(0.5, 0, 0, 16)
+		else UDim2.new(1, -20, 0, 80)
 	button.Size = UDim2.fromOffset(210, 48)
 	button.BackgroundColor3 = Color3.fromRGB(185, 45, 45)
 	button.TextColor3 = Color3.new(1, 1, 1)
@@ -60,7 +63,7 @@ function StudioSaveResetController.Start()
 	gui.ResetOnSpawn = false
 	gui.DisplayOrder = 1000
 	gui.Parent = playerGui
-	local button = createButton(gui)
+	local button = createButton(gui, UserInputService.TouchEnabled)
 
 	local remote = ReplicatedStorage
 		:WaitForChild("Remotes")

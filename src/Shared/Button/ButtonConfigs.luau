@@ -49,6 +49,38 @@ return {
 		MaxActivationDistance = 12,
 	},
 
+	["R3-Unlock-Button"] = {
+		InitialState = "Locked",
+		ActionId = "R3Unlock",
+		Scope = "PlayerPlot",
+		ZoneId = "R3",
+		MaxActivationDistance = 12,
+	},
+
+	["R4-Unlock-Button"] = {
+		InitialState = "Locked",
+		ActionId = "R4Unlock",
+		Scope = "PlayerPlot",
+		ZoneId = "R4",
+		MaxActivationDistance = 12,
+	},
+
+	["R5-Unlock-Button"] = {
+		InitialState = "Locked",
+		ActionId = "R5Unlock",
+		Scope = "PlayerPlot",
+		ZoneId = "R5",
+		MaxActivationDistance = 12,
+	},
+
+	["R6-Unlock-Button"] = {
+		InitialState = "Locked",
+		ActionId = "R6Unlock",
+		Scope = "PlayerPlot",
+		ZoneId = "R6",
+		MaxActivationDistance = 12,
+	},
+
 	["R1-Upgrade-Button"] = {
 		InitialState = "Locked",
 		ActionId = "R1Upgrade",
@@ -129,9 +161,46 @@ return {
 		MaxActivationDistance = 12,
 	},
 
+	["R6-Upgrade-Button"] = {
+		InitialState = "Locked",
+		ActionId = "R6Upgrade",
+		Scope = "PlayerPlot",
+		ZoneId = "R6",
+		MaxActivationDistance = 12,
+	},
+
+	["R6-Boost-Button"] = {
+		InitialState = "Locked",
+		ActionId = "R6Boost",
+		Scope = "PlayerPlot",
+		ZoneId = "R6",
+		MaxActivationDistance = 12,
+	},
+
 	["M1-S1-Button"] = {
 		InitialState = "Locked",
-		ActionId = "M1S1Primary",
+		ActionId = "M1S1Build",
+		Scope = "PlayerPlot",
+		ZoneId = "M1",
+		MaxActivationDistance = 12,
+	},
+	["M1-S2-Button"] = {
+		InitialState = "Locked",
+		ActionId = "M1S2Build",
+		Scope = "PlayerPlot",
+		ZoneId = "M1",
+		MaxActivationDistance = 12,
+	},
+	["M1-S3-Button"] = {
+		InitialState = "Locked",
+		ActionId = "M1S3Build",
+		Scope = "PlayerPlot",
+		ZoneId = "M1",
+		MaxActivationDistance = 12,
+	},
+	["M1-S4-Button"] = {
+		InitialState = "Locked",
+		ActionId = "M1S4Build",
 		Scope = "PlayerPlot",
 		ZoneId = "M1",
 		MaxActivationDistance = 12,

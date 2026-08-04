@@ -12,8 +12,10 @@ local HouseStateService = require(script.Parent.HouseStateService)
 local MoneyService = require(script.Parent.MoneyService)
 local MonsterSpawnPointStateService = require(script.Parent.MonsterSpawnPointStateService)
 local MonsterStateService = require(script.Parent.MonsterStateService)
+local RebirthStateService = require(script.Parent.RebirthStateService)
 local RegionStateService = require(script.Parent.RegionStateService)
 local RegionUpgradeConfigs = require(script.Parent.RegionUpgradeConfigs)
+local TutorialProgressStateService = require(script.Parent.TutorialProgressStateService)
 local ZoneStateService = require(script.Parent.ZoneStateService)
 local HouseCatalog = require(ReplicatedStorage.Shared.Building.HouseCatalog)
 local IncomeBuildingProgressionRules = require(
@@ -87,6 +89,12 @@ function PlayerSaveStateAdapter.Apply(player: Player, data, now: number?)
 	local restoredAt = now or os.time()
 
 	MoneyService.Set(player, data.Economy.Money)
+	RebirthStateService.Restore(
+		player,
+		data.Rebirth.Count,
+		data.Rebirth.RunEarnings
+	)
+	TutorialProgressStateService.Restore(player, data.Tutorial.Version)
 	for _, definition in ZoneCatalog.GetAll() do
 		restoreZone(player, definition, data.Zones[definition.ZoneId])
 	end
@@ -154,6 +162,7 @@ end
 
 function PlayerSaveStateAdapter.Capture(player: Player, now: number?)
 	assert(typeof(player) == "Instance" and player:IsA("Player"), "player 必须是 Player")
+	local rebirth = RebirthStateService.Get(player)
 	local zones = {}
 	for _, definition in ZoneCatalog.GetAll() do
 		local zone = ZoneStateService.Get(player, definition.ZoneId)
@@ -198,6 +207,13 @@ function PlayerSaveStateAdapter.Capture(player: Player, now: number?)
 		ContentRevision = PlayerSaveSchema.ContentRevision,
 		SavedAt = now or os.time(),
 		Economy = { Money = MoneyService.Get(player) },
+		Rebirth = {
+			Count = rebirth.Count,
+			RunEarnings = rebirth.RunEarnings,
+		},
+		Tutorial = {
+			Version = TutorialProgressStateService.Get(player),
+		},
 		Zones = zones,
 		Houses = houses,
 		Monsters = {

@@ -25,6 +25,10 @@
 
 local Players = game:GetService("Players")
 
+local PlayerRuntimeLoadReporter = require(
+	script.Parent.Analytics.PlayerRuntimeLoadReporter
+)
+
 local PlayerPlotAssignmentService = {}
 
 local ROOT_NAME = "PlayerPlots"
@@ -190,7 +194,8 @@ function PlayerPlotAssignmentService.Start()
 	end
 
 	Players.PlayerAdded:Connect(function(player)
-		local _, reason = PlayerPlotAssignmentService.Assign(player)
+		local plot, reason = PlayerPlotAssignmentService.Assign(player)
+		PlayerRuntimeLoadReporter.Report(player, "Plot", plot ~= nil, reason)
 		if reason and reason ~= "PlotRootUnavailable" then
 			warn(string.format("玩家 %s 分配 Plot 失败：%s", player.Name, reason))
 		end
@@ -200,7 +205,8 @@ function PlayerPlotAssignmentService.Start()
 	end)
 
 	for _, player in Players:GetPlayers() do
-		local _, reason = PlayerPlotAssignmentService.Assign(player)
+		local plot, reason = PlayerPlotAssignmentService.Assign(player)
+		PlayerRuntimeLoadReporter.Report(player, "Plot", plot ~= nil, reason)
 		if reason and reason ~= "PlotRootUnavailable" then
 			warn(string.format("玩家 %s 分配 Plot 失败：%s", player.Name, reason))
 		end

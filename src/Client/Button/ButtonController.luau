@@ -6,6 +6,7 @@ local MoneyProtocol = require(ReplicatedStorage.Shared.Economy.MoneyProtocol)
 local InstancePath = require(ReplicatedStorage.Shared.InstancePath)
 local LocalButtonController = require(script.Parent.LocalButtonController)
 local LocalPlotButtonAccess = require(script.Parent.LocalPlotButtonAccess)
+local LocalButtonWorldUIController = require(script.Parent.LocalButtonWorldUIController)
 
 local buttonRequest = InstancePath.Get("ReplicatedStorage/Remotes/ButtonRequest")
 assert(buttonRequest:IsA("RemoteFunction"), "ButtonRequest 必须是 RemoteFunction")
@@ -26,7 +27,7 @@ local function getButton(buttonName: string, config, ownPlot: Model?): Model?
 end
 
 local function request(buttonName: string, requestKind: string)
-	local succeeded, action, state = pcall(
+	local succeeded, action, state, presentation = pcall(
 		buttonRequest.InvokeServer,
 		buttonRequest,
 		buttonName,
@@ -34,9 +35,9 @@ local function request(buttonName: string, requestKind: string)
 	)
 	if not succeeded then
 		warn(string.format("按钮请求失败：%s/%s (%s)", buttonName, requestKind, tostring(action)))
-		return nil, "Locked"
+		return nil, "Locked", { Enabled = false }
 	end
-	return action, state or "Locked"
+	return action, state or "Locked", presentation
 end
 
 function ButtonController.Start(runAction)
@@ -51,9 +52,10 @@ function ButtonController.Start(runAction)
 				and binding.Config.ZoneId == zoneId
 				and not binding.IsBusy
 			then
-				local _, state = request(buttonName, "GetState")
+				local _, state, presentation = request(buttonName, "GetState")
 				if state ~= "PlayerDataNotReady" then
 					binding.Handle:SetState(state or binding.Config.InitialState)
+					binding.WorldUIHandle:SetPresentation(presentation)
 				end
 			end
 		end
@@ -68,9 +70,10 @@ function ButtonController.Start(runAction)
 			refreshAllScheduled = false
 			for buttonName, binding in bindings do
 				if not binding.IsBusy then
-					local _, state = request(buttonName, "GetState")
+					local _, state, presentation = request(buttonName, "GetState")
 					if state ~= "PlayerDataNotReady" then
 						binding.Handle:SetState(state or binding.Config.InitialState)
+						binding.WorldUIHandle:SetPresentation(presentation)
 					end
 				end
 			end
@@ -85,6 +88,7 @@ function ButtonController.Start(runAction)
 		local binding = {
 			Config = config,
 			Handle = nil,
+			WorldUIHandle = LocalButtonWorldUIController.Bind(button),
 			IsBusy = false,
 		}
 		bindings[buttonName] = binding
@@ -98,9 +102,10 @@ function ButtonController.Start(runAction)
 			task.spawn(function()
 				while generation == refreshGeneration and Players.LocalPlayer.Parent do
 					task.wait(0.25)
-					local _, state = request(buttonName, "GetState")
+					local _, state, presentation = request(buttonName, "GetState")
 					if state ~= "PlayerDataNotReady" then
 						binding.Handle:SetState(state or config.InitialState)
+						binding.WorldUIHandle:SetPresentation(presentation)
 						binding.IsBusy = false
 						task.defer(refreshRelatedButtons, config.Scope, config.ZoneId)
 						return
@@ -117,7 +122,7 @@ function ButtonController.Start(runAction)
 			binding.IsBusy = true
 			binding.Handle:SetState("Processing")
 
-			local action, nextState = request(buttonName, "Execute")
+			local action, nextState, presentation = request(buttonName, "Execute")
 			if action then
 				runAction(action)
 			end
@@ -126,16 +131,18 @@ function ButtonController.Start(runAction)
 				refreshWhenDataReady()
 			else
 				binding.Handle:SetState(nextState)
+				binding.WorldUIHandle:SetPresentation(presentation)
 				binding.IsBusy = false
-				task.defer(refreshRelatedButtons, config.Scope, config.ZoneId)
+				scheduleRefreshAllButtons()
 			end
 		end)
 
-		local _, initialState = request(buttonName, "GetState")
+		local _, initialState, initialPresentation = request(buttonName, "GetState")
 		if initialState == "PlayerDataNotReady" then
 			refreshWhenDataReady()
 		else
 			binding.Handle:SetState(initialState or config.InitialState)
+			binding.WorldUIHandle:SetPresentation(initialPresentation)
 		end
 	end
 

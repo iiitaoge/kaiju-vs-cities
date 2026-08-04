@@ -17,21 +17,29 @@
 
 	支持的 Kind：
 	- IncomeZonePrimary：需要 RegionId。
+	- IncomeZoneUnlock：需要 RegionId。
 	- IncomeZoneBoost：需要 RegionId。
-	- MonsterSpawnPointPrimary：需要 SpawnPointId。
+	- MonsterSpawnPointBuild：需要 SpawnPointId。
 ]]
 
 local IncomeZoneActionQuery = require(script.Parent.Parent.IncomeZoneActionQuery)
 local IncomeZoneBoostCoordinator = require(script.Parent.Parent.IncomeZoneBoostCoordinator)
 local IncomeZoneBoostQuery = require(script.Parent.Parent.IncomeZoneBoostQuery)
 local IncomeZonePrimaryCoordinator = require(script.Parent.Parent.IncomeZonePrimaryCoordinator)
+local IncomeZoneUnlockCoordinator = require(script.Parent.Parent.IncomeZoneUnlockCoordinator)
 local MonsterSpawnPointActionQuery = require(script.Parent.Parent.MonsterSpawnPointActionQuery)
 local MonsterSpawnPointPurchaseCoordinator = require(
 	script.Parent.Parent.MonsterSpawnPointPurchaseCoordinator
 )
+local ButtonPresentationQuery = require(script.Parent.ButtonPresentationQuery)
 local handlers = {
 	IncomeZonePrimary = function(player, action)
 		local outcome = IncomeZonePrimaryCoordinator.Execute(player, action.RegionId)
+		return nil, outcome.NextButtonState
+	end,
+
+	IncomeZoneUnlock = function(player, action)
+		local outcome = IncomeZoneUnlockCoordinator.Execute(player, action.RegionId)
 		return nil, outcome.NextButtonState
 	end,
 
@@ -40,8 +48,8 @@ local handlers = {
 		return nil, outcome.NextButtonState
 	end,
 
-	MonsterSpawnPointPrimary = function(player, action)
-		local outcome = MonsterSpawnPointPurchaseCoordinator.ExecutePrimary(
+	MonsterSpawnPointBuild = function(player, action)
+		local outcome = MonsterSpawnPointPurchaseCoordinator.Build(
 			player,
 			action.SpawnPointId
 		)
@@ -51,15 +59,19 @@ local handlers = {
 
 local stateHandlers = {
 	IncomeZonePrimary = function(player, action)
-		return IncomeZoneActionQuery.GetPrimaryButtonState(player, action.RegionId)
+		return IncomeZoneActionQuery.GetConstructionButtonState(player, action.RegionId)
+	end,
+
+	IncomeZoneUnlock = function(player, action)
+		return IncomeZoneActionQuery.GetUnlockButtonState(player, action.RegionId)
 	end,
 
 	IncomeZoneBoost = function(player, action)
 		return IncomeZoneBoostQuery.GetButtonState(player, action.RegionId)
 	end,
 
-	MonsterSpawnPointPrimary = function(player, action)
-		return MonsterSpawnPointActionQuery.GetPrimaryButtonState(player, action.SpawnPointId)
+	MonsterSpawnPointBuild = function(player, action)
+		return MonsterSpawnPointActionQuery.GetBuildButtonState(player, action.SpawnPointId)
 	end,
 }
 
@@ -76,6 +88,10 @@ end
 function ButtonActionExecutor.GetState(player, action): string?
 	local handler = stateHandlers[action.Kind]
 	return if handler then handler(player, action) else nil
+end
+
+function ButtonActionExecutor.GetPresentation(player, action)
+	return ButtonPresentationQuery.Get(player, action)
 end
 
 return ButtonActionExecutor
