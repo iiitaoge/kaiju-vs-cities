@@ -15,6 +15,7 @@ local MonsterSpawnPointPurchaseCoordinator = require(
 	script.Parent.MonsterSpawnPointPurchaseCoordinator
 )
 local PlayerCityRuntimeCoordinator = require(script.Parent.PlayerCityRuntimeCoordinator)
+local PlayerPlotSpawnService = require(script.Parent.PlayerPlotSpawnService)
 local PlayerMonsterRuntimeCoordinator = require(script.Parent.PlayerMonsterRuntimeCoordinator)
 local PlayerPersistenceCoordinator = require(script.Parent.PlayerPersistenceCoordinator)
 local PlayerRegionTransactionLock = require(script.Parent.PlayerRegionTransactionLock)
@@ -102,11 +103,9 @@ local function reloadRuntime(player: Player, data): (boolean, string?)
 		return false, monsters.Reason or "MonsterRuntimeReloadFailed"
 	end
 
-	local characterReloaded, characterError = pcall(function()
-		player:LoadCharacter()
-	end)
+	local characterReloaded, characterError = PlayerPlotSpawnService.ReloadCharacter(player)
 	if not characterReloaded then
-		return false, "CharacterReloadFailed:" .. tostring(characterError)
+		return false, "CharacterReloadFailed:" .. tostring(characterError or "Unknown")
 	end
 	return true, nil
 end

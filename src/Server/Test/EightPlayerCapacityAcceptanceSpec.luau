@@ -9,6 +9,7 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
 
 local Protocol = require(
 	ReplicatedStorage.Shared.Test.EightPlayerCapacityAcceptanceProtocol
@@ -48,6 +49,30 @@ local function waitForReadyPlot(player: Player): Model
 		task.wait(0.1)
 	until os.clock() >= deadline
 	error(string.format("等待玩家 %s Ready 和 Plot 分配超时", player.Name))
+end
+
+local function waitForCharacterAtPlot(player: Player, plot: Model): number
+	local spawn = plot:FindFirstChild("PlayerSpawn")
+	expect(spawn ~= nil and spawn:IsA("BasePart"), plot.Name .. " 缺少 PlayerSpawn")
+	local deadline = os.clock() + SETTLE_TIMEOUT_SECONDS
+	repeat
+		local character = player.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		local respawnLocation = player.RespawnLocation
+		if root and root:IsA("BasePart")
+			and humanoid and humanoid.Health > 0
+			and respawnLocation
+			and respawnLocation:IsA("SpawnLocation")
+			and respawnLocation:IsDescendantOf(plot) then
+			local distance = (root.Position - (spawn :: BasePart).Position).Magnitude
+			if distance <= 10 then
+				return distance
+			end
+		end
+		task.wait(0.1)
+	until os.clock() >= deadline
+	error(string.format("玩家 %s 没有在 %s 的出生点生成", player.Name, plot.Name))
 end
 
 local function validateTargetSet(attacker: Player, players: { Player }): number
@@ -116,6 +141,7 @@ function EightPlayerCapacityAcceptanceSpec.Run(players: { Player })
 
 	local plotNames = {}
 	local seenPlots = {}
+	local spawnDistances = {}
 	for _, player in ipairs(players) do
 		local plot = waitForReadyPlot(player)
 		expect(not seenPlots[plot], "两名玩家被分配到同一个 Plot")
@@ -125,6 +151,7 @@ function EightPlayerCapacityAcceptanceSpec.Run(players: { Player })
 			plot:GetAttribute("OwnerUserId") == player.UserId,
 			plot.Name .. " 的 OwnerUserId 与玩家不一致"
 		)
+		spawnDistances[tostring(player.UserId)] = waitForCharacterAtPlot(player, plot)
 
 		local plotErrors = IncomePlotContractValidator.ValidatePlot(plot)
 		expect(#plotErrors == 0, table.concat(plotErrors, "\n"))
@@ -145,6 +172,13 @@ function EightPlayerCapacityAcceptanceSpec.Run(players: { Player })
 			"八名玩家没有完整占用 Plot01–Plot08"
 		)
 	end
+	local availablePool = ServerStorage:FindFirstChild("AvailablePlayerPlots")
+	expect(availablePool ~= nil and availablePool:IsA("Folder"), "缺少空闲 Plot 池")
+	expect(
+		#workspace.PlayerPlots:GetChildren() == Protocol.RequiredPlayerCount,
+		"八名玩家在线时 Workspace 必须显示八个 Plot"
+	)
+	expect(#availablePool:GetChildren() == 0, "八名玩家在线时空闲池必须为空")
 
 	local previousR1Unlocked = {}
 	for _, player in ipairs(players) do
@@ -165,6 +199,9 @@ function EightPlayerCapacityAcceptanceSpec.Run(players: { Player })
 		PlayerCount = #players,
 		PlotNames = plotNames,
 		TargetCounts = targetCounts,
+		SpawnDistances = spawnDistances,
+		ActivePlotCount = #workspace.PlayerPlots:GetChildren(),
+		PooledPlotCount = #availablePool:GetChildren(),
 	}
 end
 

@@ -1,3 +1,8 @@
+local Players = game:GetService("Players")
+
+-- Plot 必须先分配并激活，角色才能在其专属 SpawnLocation 上首次创建。
+Players.CharacterAutoLoads = false
+
 local GameAnalyticsEconomyAggregator = require(
 	script.Parent.Analytics.GameAnalyticsEconomyAggregator
 )
