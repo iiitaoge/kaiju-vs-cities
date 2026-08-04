@@ -18,7 +18,7 @@ export type ExecuteOptions = {
 	Defense: CityDefenseCoordinator.SessionOptions,
 	ResolveCombatConfig: (Player, string) -> MonsterCombatCoordinator.CombatConfig?,
 	CombatFirstStrike: "Attacker" | "Defender",
-	SetCombatantMoving: ((Model, boolean) -> ())?,
+	SetCombatantMoving: ((Model, boolean, number?) -> ())?,
 	IsCancelled: (() -> boolean)?,
 	OnDefeated: (Player, string, MonsterDamageCoordinator.DamageSource) -> (),
 	OnHouseDestroyed: ((string, HouseAttackCommitter.CommitResult) -> ())?,

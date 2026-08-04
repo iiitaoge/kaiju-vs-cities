@@ -1,3 +1,4 @@
+local GameAnalyticsGateway = require(script.Parent.Analytics.GameAnalyticsGateway)
 local HouseAttackGeometry = require(script.Parent.HouseAttackGeometry)
 local HouseAttackTargetAccess = require(script.Parent.HouseAttackTargetAccess)
 local HouseTargetReservationService = require(script.Parent.HouseTargetReservationService)
@@ -174,7 +175,19 @@ function HouseAttackCommitter.Commit(
 		return fail(destroyReason or "DestroyRejected", reportedDamage)
 	end
 
-	local balance = MoneyService.Add(options.RewardPlayer, options.RewardAmount)
+	local balance = MoneyService.Earn(options.RewardPlayer, options.RewardAmount)
+	GameAnalyticsGateway.LogDesign(
+		options.RewardPlayer,
+		"Gameplay:Combat:HouseDestroyed:" .. houseId,
+		options.RewardAmount
+	)
+	GameAnalyticsGateway.LogResource(
+		options.RewardPlayer,
+		"Source",
+		options.RewardAmount,
+		"Combat",
+		"House-" .. houseId
+	)
 	local invalidated = HouseTargetReservationService.InvalidateHouse(
 		reservation.Defender,
 		houseId

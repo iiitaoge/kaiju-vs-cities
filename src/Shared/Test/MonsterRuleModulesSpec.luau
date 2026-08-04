@@ -8,6 +8,9 @@ local MonsterAttackConfigs = require(ReplicatedStorage.Shared.Monster.MonsterAtt
 local MonsterCatalog = require(ReplicatedStorage.Shared.Monster.MonsterCatalog)
 local MonsterExpeditionConfigs = require(ReplicatedStorage.Shared.Monster.MonsterExpeditionConfigs)
 local MonsterHealthRules = require(ReplicatedStorage.Shared.Monster.MonsterHealthRules)
+local MonsterMovementRules = require(
+	ReplicatedStorage.Shared.Monster.MonsterMovementRules
+)
 local MonsterStateRules = require(ReplicatedStorage.Shared.Monster.MonsterStateRules)
 local TerritoryPointRules = require(ReplicatedStorage.Shared.Monster.TerritoryPointRules)
 
@@ -45,9 +48,39 @@ function MonsterRuleModulesSpec.Run(): boolean
 		expect(attack ~= nil and attack.StructureDamage > 0, monsterKey .. " 建筑伤害无效")
 		expect(expedition ~= nil, monsterKey .. " 缺少正式远征配置")
 		expect(expedition.RewardAmount > 0, monsterKey .. " 摧毁奖励必须为正数")
-		expect(expedition.Movement.MoveSpeed > 0, monsterKey .. " 出征移速无效")
+		expect(expedition.Movement.MoveSpeed == 100, monsterKey .. " 出征基础移速错误")
+		expect(expedition.Movement.MaxTravelDuration == 3, monsterKey .. " 最长到达时间错误")
+		expect(expedition.Movement.TimingSafetyMargin == 0.1, monsterKey .. " 移动调度余量错误")
+		expect(expedition.Movement.TurnDuration == 0.2, monsterKey .. " 转向速度错误")
+		expect(attack.Animation.Speed == 2, monsterKey .. " 建筑攻击动画速度错误")
 		expect(expedition.RecoveryDuration >= 0, monsterKey .. " 恢复时间无效")
 		expect(expedition.Combat.Damage > 0, monsterKey .. " 互殴伤害无效")
+		expect(expedition.Combat.Movement.MoveSpeed == 100, monsterKey .. " 互殴接敌移速错误")
+		expect(expedition.Combat.AttackInterval == 0.5, monsterKey .. " 互殴间隔错误")
+		expect(expedition.Combat.Animation.Speed == 2, monsterKey .. " 互殴动画速度错误")
+		expect(
+			math.abs(MonsterMovementRules.ResolveWalkAnimationSpeed(
+				expedition.Movement.MoveSpeed,
+				expedition.Movement.WalkAnimation
+			) - 2.5) <= 1e-6,
+			monsterKey .. " 基础行走动画倍率错误"
+		)
+		expect(
+			math.abs(MonsterMovementRules.ResolveDetectionRadius(
+				attack.Detection.Radius,
+				expedition.Movement.MoveSpeed,
+				attack.Detection.MovementLookAheadSeconds
+			) - 45) <= 1e-6,
+			monsterKey .. " 基础高速检测半径错误"
+		)
+		local longDistanceSpeed = MonsterMovementRules.ResolveMoveSpeed(
+			1_200,
+			expedition.Movement
+		)
+		expect(
+			expedition.Movement.TurnDuration + 1_200 / longDistanceSpeed <= 3,
+			monsterKey .. " 无法在 3 秒内到达远距离目标"
+		)
 	end
 
 	local addAllowed = MonsterCapacityRules.CheckAdd(1, 2)

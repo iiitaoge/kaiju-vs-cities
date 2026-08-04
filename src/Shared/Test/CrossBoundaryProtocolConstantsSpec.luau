@@ -6,9 +6,21 @@ local CityBuildingPresentationProtocol = require(
 local EightPlayerCapacityAcceptanceProtocol = require(
 	ReplicatedStorage.Shared.Test.EightPlayerCapacityAcceptanceProtocol
 )
+local IncomeHouseWorldUIProtocol = require(
+	ReplicatedStorage.Shared.Building.IncomeHouseWorldUIProtocol
+)
 local MoneyProtocol = require(ReplicatedStorage.Shared.Economy.MoneyProtocol)
+local ModelMovementVisualProtocol = require(
+	ReplicatedStorage.Shared.Movement.ModelMovementVisualProtocol
+)
+local MonsterAttackProtocol = require(
+	ReplicatedStorage.Shared.Monster.MonsterAttackProtocol
+)
 local MonsterBuildPresentationProtocol = require(
 	ReplicatedStorage.Shared.Monster.MonsterBuildPresentationProtocol
+)
+local MonsterManagementProtocol = require(
+	ReplicatedStorage.Shared.Monster.MonsterManagementProtocol
 )
 local MultiplayerAttackAcceptanceProtocol = require(
 	ReplicatedStorage.Shared.Test.MultiplayerAttackAcceptanceProtocol
@@ -16,11 +28,22 @@ local MultiplayerAttackAcceptanceProtocol = require(
 local StudioSaveResetProtocol = require(
 	ReplicatedStorage.Shared.Persistence.StudioSaveResetProtocol
 )
+local RebirthProtocol = require(ReplicatedStorage.Shared.Progression.RebirthProtocol)
+local TutorialProtocol = require(ReplicatedStorage.Shared.Tutorial.TutorialProtocol)
 
 local CrossBoundaryProtocolConstantsSpec = {}
 
 local function expect(condition: boolean, message: string)
 	assert(condition, "CrossBoundaryProtocolConstantsSpec: " .. message)
+end
+
+local function expectUniqueNonEmpty(values, kind: string)
+	local seen = {}
+	for label, value in values do
+		expect(type(value) == "string" and value ~= "", label .. " 不是非空 " .. kind)
+		expect(seen[value] == nil, string.format("%s 与 %s 的 %s 重名", label, seen[value] or "?", kind))
+		seen[value] = label
+	end
 end
 
 -- 输入：服务端与客户端共同使用的 Remote/Attribute 协议模块。
@@ -31,6 +54,11 @@ function CrossBoundaryProtocolConstantsSpec.Run(): boolean
 		CityBuildingPresentationProtocol.RemoteName == "CityBuildingPresentation",
 		"城市建筑表现 Remote 名称漂移"
 	)
+	expect(MonsterAttackProtocol.TargetQueryRemoteName == "MonsterAttackTargets", "怪兽目标查询 Remote 名称漂移")
+	expect(MonsterAttackProtocol.CommandRemoteName == "MonsterAttackCommand", "怪兽攻击 Remote 名称漂移")
+	expect(MonsterManagementProtocol.RemoteName == "MonsterManagementRequest", "怪兽管理 Remote 名称漂移")
+	expect(RebirthProtocol.RemoteName == "RebirthRequest", "重生 Remote 名称漂移")
+	expect(TutorialProtocol.SnapshotRemoteName == "TutorialSnapshot", "新手引导 Remote 名称漂移")
 	expect(
 		MonsterBuildPresentationProtocol.RemoteName == "MonsterBuildPresentation",
 		"怪兽建造表现 Remote 名称漂移"
@@ -41,10 +69,67 @@ function CrossBoundaryProtocolConstantsSpec.Run(): boolean
 	)
 	expect(MoneyProtocol.BalanceAttributeName == "MoneyBalance", "余额 Attribute 名称漂移")
 	expect(
+		ModelMovementVisualProtocol.RemoteName == "ModelMovementVisual",
+		"模型移动表现 Remote 名称漂移"
+	)
+	expect(ModelMovementVisualProtocol.Kinds.Move == "Move", "模型移动 Move Kind 漂移")
+	expect(ModelMovementVisualProtocol.Kinds.Cancel == "Cancel", "模型移动 Cancel Kind 漂移")
+	expect(ModelMovementVisualProtocol.Kinds.Snap == "Snap", "模型移动 Snap Kind 漂移")
+	for _, item in {
+		{ "房屋生命周期", IncomeHouseWorldUIProtocol.LifeStateAttributeName, "BuildingUILifeState" },
+		{ "房屋自动收入", IncomeHouseWorldUIProtocol.AutoIncomeAttributeName, "BuildingUIAutoIncome" },
+		{ "房屋每秒收入", IncomeHouseWorldUIProtocol.IncomePerSecondAttributeName, "BuildingUIIncomePerSecond" },
+		{ "房屋存款", IncomeHouseWorldUIProtocol.StoredMoneyAttributeName, "BuildingUIStoredMoney" },
+		{ "房屋结算时间", IncomeHouseWorldUIProtocol.LastIncomeAtAttributeName, "BuildingUILastIncomeAt" },
+		{ "房屋当前生命", IncomeHouseWorldUIProtocol.CurrentHealthAttributeName, "BuildingCurrentHealth" },
+		{ "房屋最大生命", IncomeHouseWorldUIProtocol.MaxHealthAttributeName, "BuildingMaxHealth" },
+	} do
+		local label, actual, expected = table.unpack(item)
+		expect(actual == expected, label .. " Attribute 名称漂移")
+	end
+	expect(MonsterManagementProtocol.GetSnapshot == "GetSnapshot", "怪兽管理快照请求名称漂移")
+	expect(MonsterManagementProtocol.Upgrade == "Upgrade", "怪兽管理升级请求名称漂移")
+	expect(TutorialProtocol.CompletedVersionAttributeName == "TutorialCompletedVersion", "新手引导完成版本 Attribute 名称漂移")
+	expect(
 		MultiplayerAttackAcceptanceProtocol.RemoteName
 			== "CodexMultiplayerAttackAcceptance",
 		"多人攻击验收 Remote 名称漂移"
 	)
+	expectUniqueNonEmpty({
+		CityBuildingPresentation = CityBuildingPresentationProtocol.RemoteName,
+		MonsterBuildPresentation = MonsterBuildPresentationProtocol.RemoteName,
+		MonsterAttackTargets = MonsterAttackProtocol.TargetQueryRemoteName,
+		MonsterAttackCommand = MonsterAttackProtocol.CommandRemoteName,
+		MonsterManagement = MonsterManagementProtocol.RemoteName,
+		Rebirth = RebirthProtocol.RemoteName,
+		Tutorial = TutorialProtocol.SnapshotRemoteName,
+		StudioSaveReset = StudioSaveResetProtocol.RemoteName,
+		ModelMovementVisual = ModelMovementVisualProtocol.RemoteName,
+		MultiplayerAcceptance = MultiplayerAttackAcceptanceProtocol.RemoteName,
+	}, "Remote 名称")
+	expectUniqueNonEmpty({
+		Money = MoneyProtocol.BalanceAttributeName,
+		LifeState = IncomeHouseWorldUIProtocol.LifeStateAttributeName,
+		AutoIncome = IncomeHouseWorldUIProtocol.AutoIncomeAttributeName,
+		IncomePerSecond = IncomeHouseWorldUIProtocol.IncomePerSecondAttributeName,
+		StoredMoney = IncomeHouseWorldUIProtocol.StoredMoneyAttributeName,
+		LastIncomeAt = IncomeHouseWorldUIProtocol.LastIncomeAtAttributeName,
+		CurrentHealth = IncomeHouseWorldUIProtocol.CurrentHealthAttributeName,
+		MaxHealth = IncomeHouseWorldUIProtocol.MaxHealthAttributeName,
+		TutorialCompletedVersion = TutorialProtocol.CompletedVersionAttributeName,
+	}, "Attribute 名称")
+	for label, protocol in {
+		CityBuildingPresentation = CityBuildingPresentationProtocol,
+		MonsterBuildPresentation = MonsterBuildPresentationProtocol,
+		IncomeHouseWorldUI = IncomeHouseWorldUIProtocol,
+		MonsterAttack = MonsterAttackProtocol,
+		MonsterManagement = MonsterManagementProtocol,
+		ModelMovementVisual = ModelMovementVisualProtocol,
+		Rebirth = RebirthProtocol,
+		Tutorial = TutorialProtocol,
+	} do
+		expect(table.isfrozen(protocol), label .. " 协议必须只读")
+	end
 	expect(
 		MultiplayerAttackAcceptanceProtocol.TestArgument
 			== "MultiplayerAttackAcceptance",
@@ -53,6 +138,13 @@ function CrossBoundaryProtocolConstantsSpec.Run(): boolean
 	expect(
 		MultiplayerAttackAcceptanceProtocol.RequiredPlayerCount == 3,
 		"多人攻击验收所需玩家数漂移"
+	)
+	expect(
+		MultiplayerAttackAcceptanceProtocol.Kinds.RequestMonsterVisualSnapshot
+			== "RequestMonsterVisualSnapshot"
+			and MultiplayerAttackAcceptanceProtocol.Kinds.MonsterVisualSnapshot
+				== "MonsterVisualSnapshot",
+		"多人攻击视觉快照 Kind 漂移"
 	)
 	expect(
 		EightPlayerCapacityAcceptanceProtocol.TestArgument
@@ -70,9 +162,14 @@ function CrossBoundaryProtocolConstantsSpec.Run(): boolean
 	)
 	expect(table.isfrozen(StudioSaveResetProtocol), "Studio 删档协议必须只读")
 	expect(table.isfrozen(MoneyProtocol), "余额协议必须只读")
+	expect(table.isfrozen(ModelMovementVisualProtocol.Kinds), "模型移动 Kind 表必须只读")
 	expect(
 		table.isfrozen(MultiplayerAttackAcceptanceProtocol),
 		"多人攻击验收协议必须只读"
+	)
+	expect(
+		table.isfrozen(MultiplayerAttackAcceptanceProtocol.Kinds),
+		"多人攻击验收 Kind 表必须只读"
 	)
 	expect(
 		table.isfrozen(EightPlayerCapacityAcceptanceProtocol),

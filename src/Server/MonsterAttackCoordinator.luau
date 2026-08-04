@@ -9,6 +9,9 @@ local HouseAttackGeometry = require(script.Parent.HouseAttackGeometry)
 local HouseAttackTargetAccess = require(script.Parent.HouseAttackTargetAccess)
 local NearbyHouseTargetSelector = require(script.Parent.NearbyHouseTargetSelector)
 local HouseTargetReservationService = require(script.Parent.HouseTargetReservationService)
+local MonsterMovementRules = require(
+	ReplicatedStorage.Shared.Monster.MonsterMovementRules
+)
 local ValueValidation = require(ReplicatedStorage.Shared.ValueValidation)
 
 local MonsterAttackCoordinator = {}
@@ -24,6 +27,7 @@ export type MonsterAttackConfig = {
 	StructureDamage: number,
 	Detection: {
 		Radius: number,
+		MovementLookAheadSeconds: number?,
 	},
 	Geometry: {
 		DesiredGap: number,
@@ -41,7 +45,10 @@ export type ExecuteOptions = {
 	ModelAnimationConfig: ModelAnimationConfig,
 	MonsterAttackConfig: MonsterAttackConfig,
 	MoveSpeed: number,
+	MaxTravelDuration: number?,
+	TimingSafetyMargin: number?,
 	TurnDuration: number,
+	WalkAnimation: any?,
 	RewardAmount: number,
 	RewardPlayer: Player,
 	-- 移动或攻击期间轮询外部防御事件；nil 表示当前没有中断。
@@ -138,6 +145,25 @@ function MonsterAttackCoordinator.Execute(
 		type(options.TurnDuration) == "number" and options.TurnDuration > 0,
 		"TurnDuration 必须大于 0"
 	)
+	if options.MaxTravelDuration ~= nil then
+		local safetyMargin = options.TimingSafetyMargin or 0
+		assert(
+			type(options.MaxTravelDuration) == "number"
+				and type(safetyMargin) == "number"
+				and safetyMargin >= 0
+				and options.MaxTravelDuration > options.TurnDuration + safetyMargin,
+			"MaxTravelDuration 必须大于 TurnDuration 与 TimingSafetyMargin 之和"
+		)
+	end
+	MonsterMovementRules.ResolveWalkAnimationSpeed(
+		options.MoveSpeed,
+		options.WalkAnimation
+	)
+	MonsterMovementRules.ResolveDetectionRadius(
+		options.MonsterAttackConfig.Detection.Radius,
+		0,
+		options.MonsterAttackConfig.Detection.MovementLookAheadSeconds
+	)
 	assert(
 		type(options.RewardAmount) == "number" and options.RewardAmount >= 0,
 		"RewardAmount 必须大于等于 0"
@@ -181,12 +207,16 @@ function MonsterAttackCoordinator.Execute(
 		ownedReservation = nil
 	end
 
-	local function setMoving(isMoving: boolean)
+	local activeMoveSpeed = 0
+	local function setMoving(isMoving: boolean, moveSpeed: number?)
+		activeMoveSpeed = if isMoving then moveSpeed or options.MoveSpeed else 0
 		if isCurrent() then
 			GodzillaService.SetMoving(
 				monster,
 				options.ModelAnimationConfig,
-				isMoving
+				isMoving,
+				moveSpeed,
+				options.WalkAnimation
 			)
 		end
 	end
@@ -197,6 +227,8 @@ function MonsterAttackCoordinator.Execute(
 		end
 		return GodzillaMoveService.MoveTo(monster, position, {
 			MoveSpeed = options.MoveSpeed,
+			MaxTravelDuration = options.MaxTravelDuration,
+			TimingSafetyMargin = options.TimingSafetyMargin,
 			TurnDuration = options.TurnDuration,
 			SetMoving = setMoving,
 		})
@@ -215,6 +247,7 @@ function MonsterAttackCoordinator.Execute(
 
 	local function handleInterruption(value): (boolean, string?)
 		GodzillaMoveService.Cancel(monster)
+		setMoving(false, nil)
 		if not options.HandleInterruption then
 			return false, "Interrupted"
 		end
@@ -250,10 +283,17 @@ function MonsterAttackCoordinator.Execute(
 			end
 		end
 
+		local detection = options.MonsterAttackConfig.Detection
 		return NearbyHouseTargetSelector.Select(
 			monster,
 			candidates,
-			options.MonsterAttackConfig.Detection
+			{
+				Radius = MonsterMovementRules.ResolveDetectionRadius(
+					detection.Radius,
+					activeMoveSpeed,
+					detection.MovementLookAheadSeconds
+				),
+			}
 		)
 	end
 

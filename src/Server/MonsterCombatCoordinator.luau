@@ -3,6 +3,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local AttackAnimationPlayer = require(script.Parent.AttackAnimationPlayer)
 local AttackAnimationSelector = require(script.Parent.AttackAnimationSelector)
 local GodzillaMoveService = require(script.Parent.GodzillaMoveService)
+local GodzillaService = require(script.Parent.GodzillaService)
 local MonsterDamageCoordinator = require(script.Parent.MonsterDamageCoordinator)
 local MonsterRosterCoordinator = require(script.Parent.MonsterRosterCoordinator)
 local MonsterCombatGeometry = require(ReplicatedStorage.Shared.Monster.MonsterCombatGeometry)
@@ -21,6 +22,8 @@ export type CombatConfig = {
 		DesiredGap: number,
 		MaxGap: number,
 		MoveSpeed: number,
+		MaxTravelDuration: number?,
+		TimingSafetyMargin: number?,
 		TurnDuration: number,
 	},
 	Animation: {
@@ -41,7 +44,7 @@ export type ExecuteOptions = {
 	DefenderResumeState: string,
 	IsCancelled: (() -> boolean)?,
 	OnDefeated: ((Player, string, MonsterDamageCoordinator.DamageSource) -> ())?,
-	SetMoving: ((Model, boolean) -> ())?,
+	SetMoving: ((Model, boolean, number?) -> ())?,
 }
 
 export type CombatResult = {
@@ -145,10 +148,12 @@ local function positionCombatants(
 	)
 	local moved = GodzillaMoveService.MoveTo(moverRecord.Model, pose.Position, {
 		MoveSpeed = moverConfig.Movement.MoveSpeed,
+		MaxTravelDuration = moverConfig.Movement.MaxTravelDuration,
+		TimingSafetyMargin = moverConfig.Movement.TimingSafetyMargin,
 		TurnDuration = moverConfig.Movement.TurnDuration,
-		SetMoving = function(isMoving)
+		SetMoving = function(isMoving, moveSpeed)
 			if options.SetMoving then
-				options.SetMoving(moverRecord.Model, isMoving)
+				options.SetMoving(moverRecord.Model, isMoving, moveSpeed)
 			end
 		end,
 	})
@@ -278,6 +283,20 @@ function MonsterCombatCoordinator.Execute(
 	if not defenderTransition.Succeeded then
 		restoreState(attacker, options.AttackerResumeState)
 		return makeResult(false, defenderTransition.Reason, nil, false, false)
+	end
+	for _, combatant in { attacker, defender } do
+		local record = MonsterRosterCoordinator.Get(
+			combatant.Player,
+			combatant.SpawnPointId
+		)
+		if record and record.Model then
+			GodzillaMoveService.Cancel(record.Model)
+			if options.SetMoving then
+				options.SetMoving(record.Model, false, nil)
+			else
+				GodzillaService.StopMoving(record.Model)
+			end
+		end
 	end
 
 	local positioned, positionReason = positionCombatants(attacker, defender, options)

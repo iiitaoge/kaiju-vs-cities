@@ -10,7 +10,12 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local PlayerAttackTargetQuery = require(script.Parent.PlayerAttackTargetQuery)
 local PlayerDataReadyService = require(script.Parent.PlayerDataReadyService)
 local PlayerMonsterAttackApplication = require(script.Parent.PlayerMonsterAttackApplication)
+local GameAnalyticsGateway = require(script.Parent.Analytics.GameAnalyticsGateway)
+local SecurityAnalyticsAggregator = require(
+	script.Parent.Analytics.SecurityAnalyticsAggregator
+)
 local ServerRemoteAccess = require(script.Parent.ServerRemoteAccess)
+local TutorialProgressStateService = require(script.Parent.TutorialProgressStateService)
 local MonsterAttackProtocol = require(ReplicatedStorage.Shared.Monster.MonsterAttackProtocol)
 local ValueValidation = require(ReplicatedStorage.Shared.ValueValidation)
 
@@ -38,6 +43,7 @@ commandRemote.OnServerInvoke = function(player, spawnPointId, targetPlayerId, en
 		return { Succeeded = false, Reason = "PlayerDataNotReady", CommandId = nil, Monster = nil }
 	end
 	if type(spawnPointId) ~= "string" or spawnPointId == "" then
+		SecurityAnalyticsAggregator.Record(player, "MonsterAttack", "InvalidSpawnPointId")
 		return { Succeeded = false, Reason = "InvalidSpawnPointId", CommandId = nil, Monster = nil }
 	end
 	if type(targetPlayerId) ~= "number"
@@ -45,9 +51,11 @@ commandRemote.OnServerInvoke = function(player, spawnPointId, targetPlayerId, en
 		or math.abs(targetPlayerId) == math.huge
 		or targetPlayerId % 1 ~= 0
 		or targetPlayerId == 0 then
+		SecurityAnalyticsAggregator.Record(player, "MonsterAttack", "InvalidTargetPlayerId")
 		return { Succeeded = false, Reason = "InvalidTargetPlayerId", CommandId = nil, Monster = nil }
 	end
 	if not ValueValidation.IsFiniteVector3(entryPoint) then
+		SecurityAnalyticsAggregator.Record(player, "MonsterAttack", "InvalidEntryPoint")
 		return { Succeeded = false, Reason = "InvalidEntryPoint", CommandId = nil, Monster = nil }
 	end
 
@@ -68,6 +76,16 @@ commandRemote.OnServerInvoke = function(player, spawnPointId, targetPlayerId, en
 			tostring(responseOrError)
 		))
 		return { Succeeded = false, Reason = "ServerError", CommandId = nil, Monster = nil }
+	end
+	if responseOrError.Succeeded then
+		TutorialProgressStateService.Complete(player)
+	else
+		local reason = responseOrError.Reason or "Unknown"
+		reason = string.match(reason, "^[^:]+") or "Unknown"
+		GameAnalyticsGateway.LogDesign(
+			player,
+			"Gameplay:Attack:Rejected:" .. string.sub(reason, 1, 32)
+		)
 	end
 	return responseOrError
 end

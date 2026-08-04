@@ -2,16 +2,23 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local ModelMover = require(script.Parent.ModelMover)
 local ValueValidation = require(ReplicatedStorage.Shared.ValueValidation)
+local MonsterMovementRules = require(
+	ReplicatedStorage.Shared.Monster.MonsterMovementRules
+)
 
 local GodzillaMoveService = {}
 
 export type MoveOptions = {
 	-- 怪兽水平移动速度，单位为 studs/秒。
 	MoveSpeed: number,
+	-- 包含 TurnDuration 在内的单次最长到达时间；nil 表示只使用 MoveSpeed。
+	MaxTravelDuration: number?,
+	-- 为 Heartbeat/Tween 完成调度预留的时间，计入 MaxTravelDuration。
+	TimingSafetyMargin: number?,
 	-- 开始移动前的平滑转向时间，单位为秒。
 	TurnDuration: number,
 	-- 移动状态回调；true 开始移动，false 停止移动。
-	SetMoving: (boolean) -> (),
+	SetMoving: (boolean, number?) -> (),
 }
 
 local latestRequestIds = setmetatable({}, { __mode = "k" })
@@ -24,6 +31,16 @@ local function validateInputs(model: Model, options: MoveOptions)
 	assert(model:IsA("Model"), "model 必须是 Model")
 	assert(type(options) == "table", "options 必须是 table")
 	assert(type(options.MoveSpeed) == "number" and options.MoveSpeed > 0, "MoveSpeed 必须是大于 0 的 number")
+	if options.MaxTravelDuration ~= nil then
+		local safetyMargin = options.TimingSafetyMargin or 0
+		assert(
+			type(options.MaxTravelDuration) == "number"
+				and type(safetyMargin) == "number"
+				and safetyMargin >= 0
+				and options.MaxTravelDuration > options.TurnDuration + safetyMargin,
+			"MaxTravelDuration 必须大于 TurnDuration 与 TimingSafetyMargin 之和"
+		)
+	end
 	assert(
 		type(options.TurnDuration) == "number" and options.TurnDuration > 0,
 		"TurnDuration 必须是大于 0 的 number"
@@ -65,17 +82,19 @@ function GodzillaMoveService.MoveTo(
 
 	local targetCFrame = makeTargetCFrame(model, clickedPosition)
 
-	options.SetMoving(false)
+	options.SetMoving(false, nil)
 	local turned = ModelMover.TurnTo(model, targetCFrame, options.TurnDuration)
 	if not turned or latestRequestIds[model] ~= requestId then
 		return false
 	end
 
-	options.SetMoving(true)
-	local completed = ModelMover.MoveTo(model, targetCFrame, options.MoveSpeed)
+	local distance = (targetCFrame.Position - model:GetPivot().Position).Magnitude
+	local effectiveMoveSpeed = MonsterMovementRules.ResolveMoveSpeed(distance, options)
+	options.SetMoving(true, effectiveMoveSpeed)
+	local completed = ModelMover.MoveTo(model, targetCFrame, effectiveMoveSpeed)
 
 	if latestRequestIds[model] == requestId then
-		options.SetMoving(false)
+		options.SetMoving(false, nil)
 	end
 
 	return completed

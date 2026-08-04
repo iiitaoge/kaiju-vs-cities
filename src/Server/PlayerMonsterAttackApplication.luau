@@ -12,7 +12,10 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local GameAnalyticsGateway = require(script.Parent.Analytics.GameAnalyticsGateway)
+local GodzillaMoveService = require(script.Parent.GodzillaMoveService)
 local GodzillaService = require(script.Parent.GodzillaService)
+local ModelMover = require(script.Parent.ModelMover)
 local MonsterAttackCommandCoordinator = require(script.Parent.MonsterAttackCommandCoordinator)
 local MonsterExpeditionCoordinator = require(script.Parent.MonsterExpeditionCoordinator)
 local MonsterExpeditionReportService = require(script.Parent.MonsterExpeditionReportService)
@@ -22,6 +25,7 @@ local MonsterReturnCoordinator = require(script.Parent.MonsterReturnCoordinator)
 local MonsterRosterCoordinator = require(script.Parent.MonsterRosterCoordinator)
 local MonsterTemplateResolver = require(script.Parent.MonsterTemplateResolver)
 local PlayerPlotAssignmentService = require(script.Parent.PlayerPlotAssignmentService)
+local PlayerRebirthBonusQuery = require(script.Parent.PlayerRebirthBonusQuery)
 local PlayerRuntimeHouseAttackAccess = require(script.Parent.PlayerRuntimeHouseAttackAccess)
 local PlayerRuntimeDefenseTowerAccess = require(script.Parent.PlayerRuntimeDefenseTowerAccess)
 local WorkspacePlayerWorldAccess = require(script.Parent.WorkspacePlayerWorldAccess)
@@ -35,6 +39,27 @@ local MonsterExpeditionReportBuilder = require(
 )
 
 local PlayerMonsterAttackApplication = {}
+
+local function scaleMovement(movement, multiplier: number)
+	return {
+		DesiredGap = movement.DesiredGap,
+		MaxGap = movement.MaxGap,
+		MoveSpeed = movement.MoveSpeed * multiplier,
+		MaxTravelDuration = movement.MaxTravelDuration,
+		TimingSafetyMargin = movement.TimingSafetyMargin,
+		TurnDuration = movement.TurnDuration,
+		WalkAnimation = movement.WalkAnimation,
+	}
+end
+
+local function scaleStructureAttack(attack, multiplier: number)
+	return {
+		StructureDamage = attack.StructureDamage * multiplier,
+		Detection = attack.Detection,
+		Geometry = attack.Geometry,
+		Animation = attack.Animation,
+	}
+end
 
 local function resolveStaticConfigs(monsterKey: string)
 	local animation = ModelAnimationConfigs[monsterKey]
@@ -60,10 +85,14 @@ local function resolveCombatConfig(player: Player, spawnPointId: string)
 		return nil
 	end
 	local combat = configs.Expedition.Combat
+	local bonuses = PlayerRebirthBonusQuery.Get(player)
 	return {
-		Damage = combat.Damage,
+		Damage = combat.Damage * bonuses.MonsterDamageMultiplier,
 		AttackInterval = combat.AttackInterval,
-		Movement = combat.Movement,
+		Movement = scaleMovement(
+			combat.Movement,
+			bonuses.MonsterMoveSpeedMultiplier
+		),
 		Animation = {
 			Animations = configs.Animation.Animations,
 			AttackSequence = configs.Animation.AttackSequence,
@@ -74,14 +103,33 @@ local function resolveCombatConfig(player: Player, spawnPointId: string)
 	}
 end
 
-local function setCombatantMoving(model: Model, isMoving: boolean)
-	local monsterKey = model:GetAttribute("MonsterKey")
-	local animation = if type(monsterKey) == "string"
-		then ModelAnimationConfigs[monsterKey]
-		else nil
-	if animation then
-		GodzillaService.SetMoving(model, animation, isMoving)
+local function setCombatantMoving(
+	model: Model,
+	isMoving: boolean,
+	moveSpeed: number?
+)
+	if not isMoving then
+		GodzillaService.StopMoving(model)
+		return
 	end
+	local monsterKey = model:GetAttribute("MonsterKey")
+	local configs = if type(monsterKey) == "string"
+		then resolveStaticConfigs(monsterKey)
+		else nil
+	if configs then
+		GodzillaService.SetMoving(
+			model,
+			configs.Animation,
+			isMoving,
+			moveSpeed,
+			configs.Expedition.Movement.WalkAnimation
+		)
+	end
+end
+
+local function stopCombatantMotion(model: Model)
+	GodzillaMoveService.Cancel(model)
+	GodzillaService.StopMoving(model)
 end
 
 local function beginRecovery(player: Player, spawnPointId: string, plotOverride: Model?)
@@ -130,18 +178,30 @@ local function beginIncubatorReturn(
 	plotOverride: Model?
 )
 	local returnPlot = plotOverride or PlayerPlotAssignmentService.GetPlot(player)
+	local current = MonsterRosterCoordinator.Get(player, spawnPointId)
+	if current and current.Model then
+		stopCombatantMotion(current.Model)
+	end
 	return MonsterReturnCoordinator.Begin(player, spawnPointId, {
 		ExecuteReturn = function(model, spawnCFrame)
+			stopCombatantMotion(model)
 			if not returnPlot then
-				model:PivotTo(spawnCFrame)
+				ModelMover.Snap(model, spawnCFrame)
 				return { Succeeded = true, Reason = nil }
 			end
-			return MonsterIncubatorCoordinator.Restore(
+			local restored = MonsterIncubatorCoordinator.Restore(
 				returnPlot,
 				spawnPointId,
 				model,
 				spawnCFrame
 			)
+			if restored.Succeeded and model.Parent then
+				ModelMover.Snap(model, spawnCFrame)
+			end
+			return restored
+		end,
+		OnReturned = function(_returnedPlayer, _returnedSpawnPointId, model)
+			GodzillaService.StopMoving(model)
 		end,
 	})
 end
@@ -220,6 +280,7 @@ function PlayerMonsterAttackApplication.Execute(
 		}
 	end
 	local monsterKey = record.MonsterKey
+	local bonuses = PlayerRebirthBonusQuery.Get(attacker)
 	local plot, plotReason = PlayerPlotAssignmentService.GetPlot(attacker)
 	if not plot then
 		return {
@@ -239,7 +300,7 @@ function PlayerMonsterAttackApplication.Execute(
 		}
 	end
 
-	return MonsterAttackCommandCoordinator.Execute(
+	local commandResult = MonsterAttackCommandCoordinator.Execute(
 		attacker,
 		spawnPointId,
 		targetPlayer,
@@ -285,9 +346,16 @@ function PlayerMonsterAttackApplication.Execute(
 					{
 						HouseAccess = PlayerRuntimeHouseAttackAccess,
 						ModelAnimationConfig = configs.Animation,
-						MonsterAttackConfig = configs.Attack,
-						MoveSpeed = configs.Expedition.Movement.MoveSpeed,
+						MonsterAttackConfig = scaleStructureAttack(
+							configs.Attack,
+							bonuses.MonsterDamageMultiplier
+						),
+						MoveSpeed = configs.Expedition.Movement.MoveSpeed
+							* bonuses.MonsterMoveSpeedMultiplier,
+						MaxTravelDuration = configs.Expedition.Movement.MaxTravelDuration,
+						TimingSafetyMargin = configs.Expedition.Movement.TimingSafetyMargin,
 						TurnDuration = configs.Expedition.Movement.TurnDuration,
+						WalkAnimation = configs.Expedition.Movement.WalkAnimation,
 						RewardAmount = configs.Expedition.RewardAmount,
 						Defense = {
 							TowerAccess = PlayerRuntimeDefenseTowerAccess,
@@ -298,6 +366,13 @@ function PlayerMonsterAttackApplication.Execute(
 						SetCombatantMoving = setCombatantMoving,
 						IsCancelled = isCancelled,
 						OnDefeated = function(defeatedPlayer, defeatedSpawnPointId, _source)
+							local defeatedRecord = MonsterRosterCoordinator.Get(
+								defeatedPlayer,
+								defeatedSpawnPointId
+							)
+							if defeatedRecord and defeatedRecord.Model then
+								stopCombatantMotion(defeatedRecord.Model)
+							end
 							beginRecovery(
 								defeatedPlayer,
 								defeatedSpawnPointId,
@@ -329,6 +404,21 @@ function PlayerMonsterAttackApplication.Execute(
 					StartedAt = commandContext.StartedAt,
 				}, callSucceeded, result, workspace:GetServerTimeNow())
 				MonsterExpeditionReportService.Store(commandContext.Attacker, report)
+				if commandContext.Attacker.Parent == Players then
+					GameAnalyticsGateway.LogDesign(
+						commandContext.Attacker,
+						string.format(
+							"Gameplay:Attack:Finished:%s:%s",
+							commandContext.AttackerSpawnPointId,
+							report.EndReason
+						),
+						report.Duration,
+						{
+							reason = report.Reason or "None",
+							monsterKey = report.MonsterKey,
+						}
+					)
+				end
 				if commandContext.Attacker.Parent ~= Players then
 					local restored = MonsterIncubatorCoordinator.Restore(
 						plot,
@@ -350,6 +440,13 @@ function PlayerMonsterAttackApplication.Execute(
 			end,
 		}
 	)
+	if commandResult.Succeeded then
+		GameAnalyticsGateway.LogDesign(
+			attacker,
+			"Gameplay:Attack:Accepted:" .. spawnPointId
+		)
+	end
+	return commandResult
 end
 
 return PlayerMonsterAttackApplication

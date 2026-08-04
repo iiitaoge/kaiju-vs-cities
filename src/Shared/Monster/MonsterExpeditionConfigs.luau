@@ -8,38 +8,52 @@ local MonsterCatalog = require(script.Parent.MonsterCatalog)
 local MonsterLevelProgressionRules = require(script.Parent.MonsterLevelProgressionRules)
 local MonsterProgressionConfigs = require(script.Parent.MonsterProgressionConfigs)
 
-local movement = table.freeze({ MoveSpeed = 16, TurnDuration = 0.75 })
+local walkAnimation = table.freeze({
+	ReferenceMoveSpeed = 40,
+	MinPlaybackSpeed = 1,
+	MaxPlaybackSpeed = 3,
+})
+local movement = table.freeze({
+	MoveSpeed = 100,
+	MaxTravelDuration = 3,
+	TimingSafetyMargin = 0.1,
+	TurnDuration = 0.2,
+	WalkAnimation = walkAnimation,
+})
 local defense = table.freeze({ DefenderDetectionRadius = 45 })
 local combatMovement = table.freeze({
 	DesiredGap = 2,
 	MaxGap = 5,
-	MoveSpeed = 16,
-	TurnDuration = 0.75,
+	MoveSpeed = 100,
+	MaxTravelDuration = 3,
+	TimingSafetyMargin = 0.1,
+	TurnDuration = 0.2,
+	WalkAnimation = walkAnimation,
 })
 local combatAnimation = table.freeze({
 	SelectionMode = "Sequence",
 	HitProgress = 0.65,
-	Speed = 1,
+	Speed = 2,
 })
 
 local configs = {}
 for _, definition in MonsterCatalog.GetAll() do
 	local progression = MonsterProgressionConfigs[definition.ProgressionId]
 	local combat = table.freeze({
-		Damage = MonsterLevelProgressionRules.ScaleInteger(
+		Damage = MonsterLevelProgressionRules.ScaleIntegerByStages(
 			progression.CombatDamageBase,
-			progression.CombatDamageGrowth,
+			progression.CombatDamageGrowthStages,
 			definition.Level
 		),
-		AttackInterval = 1,
+		AttackInterval = 0.5,
 		Movement = combatMovement,
 		Animation = combatAnimation,
 	})
 	configs[definition.MonsterKey] = table.freeze({
 		Movement = movement,
-		RewardAmount = MonsterLevelProgressionRules.ScaleInteger(
+		RewardAmount = MonsterLevelProgressionRules.ScaleIntegerByStages(
 			progression.RewardBase,
-			progression.RewardGrowth,
+			progression.RewardGrowthStages,
 			definition.Level
 		),
 		RecoveryDuration = 10,

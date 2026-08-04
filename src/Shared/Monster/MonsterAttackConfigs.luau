@@ -8,21 +8,25 @@ local MonsterCatalog = require(script.Parent.MonsterCatalog)
 local MonsterLevelProgressionRules = require(script.Parent.MonsterLevelProgressionRules)
 local MonsterProgressionConfigs = require(script.Parent.MonsterProgressionConfigs)
 
-local detection = table.freeze({ Radius = 30 })
+local detection = table.freeze({
+	Radius = 30,
+	-- 覆盖正式移动检测的 0.1 秒轮询，并保留 0.05 秒调度余量。
+	MovementLookAheadSeconds = 0.15,
+})
 local geometry = table.freeze({ DesiredGap = 1, MaxGap = 3 })
 local animation = table.freeze({
 	SelectionMode = "Sequence",
 	HitProgress = 0.65,
-	Speed = 1,
+	Speed = 2,
 })
 
 local configs = {}
 for _, definition in MonsterCatalog.GetAll() do
 	local progression = MonsterProgressionConfigs[definition.ProgressionId]
 	configs[definition.MonsterKey] = table.freeze({
-		StructureDamage = MonsterLevelProgressionRules.ScaleInteger(
+		StructureDamage = MonsterLevelProgressionRules.ScaleIntegerByStages(
 			progression.StructureDamageBase,
-			progression.StructureDamageGrowth,
+			progression.StructureDamageGrowthStages,
 			definition.Level
 		),
 		Detection = detection,

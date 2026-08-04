@@ -13,6 +13,7 @@ export type DamageSource = {
 }
 
 export type ApplyOptions = {
+	-- 在死亡状态写入后、运行时模型销毁前调用，供上层终止移动/动画并启动恢复。
 	OnDefeated: ((Player, string, DamageSource) -> ())?,
 }
 
@@ -105,8 +106,6 @@ function MonsterDamageCoordinator.ApplyDamage(
 				Defeated = false,
 			}
 		end
-		MonsterRosterCoordinator.DestroyRuntimeModel(targetPlayer, targetSpawnPointId)
-
 		if options and options.OnDefeated then
 			local callbackSucceeded, callbackError = pcall(
 				options.OnDefeated,
@@ -118,6 +117,8 @@ function MonsterDamageCoordinator.ApplyDamage(
 				warn("怪兽死亡回调失败：", callbackError)
 			end
 		end
+
+		MonsterRosterCoordinator.DestroyRuntimeModel(targetPlayer, targetSpawnPointId)
 	end
 
 	return {

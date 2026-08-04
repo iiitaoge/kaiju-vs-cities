@@ -1,7 +1,7 @@
 --[[
-	职责：在 Studio 多客户端验收中调用正式攻击 Remote，并上报本客户端看到的建筑表现命令。
+	职责：在 Studio 多客户端验收中调用正式攻击 Remote，并上报建筑命令与怪兽最终视觉快照。
 	输入：Run 接收测试服务器创建的控制 RemoteEvent。
-	输出：通过控制通道返回目标查询证据、攻击响应和表现观察；返回可断开 Session。
+	输出：通过控制通道返回目标查询、攻击响应、建筑表现和怪兽位置/动画证据；返回可断开 Session。
 	内部算法：按服务器场景令牌隔离观察记录；攻击前先走正式目标查询，再走正式攻击命令。
 	不负责：准备玩家数据、直接调用服务器业务、修改怪兽/房屋状态或替代正式表现控制器。
 ]]
@@ -20,6 +20,43 @@ local MultiplayerAttackAcceptanceProtocol = require(
 )
 
 local MultiplayerAttackAcceptanceClient = {}
+
+local function hasPlayingMovementAnimation(model: Model): boolean
+	for _, descendant in model:GetDescendants() do
+		if descendant:IsA("Animator") then
+			for _, track in descendant:GetPlayingAnimationTracks() do
+				if track.IsPlaying
+					and track.Priority == Enum.AnimationPriority.Movement then
+					return true
+				end
+			end
+		end
+	end
+	return false
+end
+
+local function captureMonsterVisual(entry)
+	local model = if type(entry) == "table" then entry.Model else nil
+	local label = if type(entry) == "table" then entry.Label else nil
+	if typeof(model) ~= "Instance"
+		or not model:IsA("Model")
+		or not model:IsDescendantOf(workspace) then
+		return {
+			Label = label,
+			ModelAvailable = false,
+			MonsterState = nil,
+			Position = nil,
+			HasMovementAnimation = false,
+		}
+	end
+	return {
+		Label = label,
+		ModelAvailable = true,
+		MonsterState = model:GetAttribute("MonsterState"),
+		Position = model:GetPivot().Position,
+		HasMovementAnimation = hasPlayingMovementAnimation(model),
+	}
+end
 
 local function findTargetSnapshot(values, targetPlayerId: number)
 	for _, value in values do
@@ -106,6 +143,28 @@ function MultiplayerAttackAcceptanceClient.Run(control: RemoteEvent)
 				CommandId = response.CommandId,
 				HasMonster = response.Monster ~= nil,
 			})
+			return
+		end
+
+		if message.Kind
+			== MultiplayerAttackAcceptanceProtocol.Kinds.RequestMonsterVisualSnapshot
+			and message.ScenarioId == activeScenarioId
+			and type(message.RequestId) == "number"
+			and type(message.Monsters) == "table" then
+			task.defer(function()
+				-- 给 Attribute、最终 Snap 和动画停止各留一个短复制窗口。
+				task.wait(0.2)
+				local snapshots = {}
+				for _, entry in message.Monsters do
+					table.insert(snapshots, captureMonsterVisual(entry))
+				end
+				control:FireServer({
+					Kind = MultiplayerAttackAcceptanceProtocol.Kinds.MonsterVisualSnapshot,
+					ScenarioId = message.ScenarioId,
+					RequestId = message.RequestId,
+					Snapshots = snapshots,
+				})
+			end)
 			return
 		end
 
