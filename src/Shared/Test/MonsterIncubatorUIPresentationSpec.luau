@@ -18,17 +18,16 @@ local function expectNear(actual: number, expected: number, message: string)
 	expect(math.abs(actual - expected) <= 1e-5, message)
 end
 
--- 输入：桌面/手机视口、罐体四个观察方向和接近距离边界。
--- 输出：缩放、显示范围及外表面定位合同稳定时返回 true。
--- 内部算法：验证缩放上下限与触屏下限，并用四个方位检查位置始终落在摄像头近侧。
+-- 输入：桌面/手机视口、屏幕位置配置和接近距离边界。
+-- 输出：缩放、显示范围及安全区内屏幕定位合同稳定时返回 true。
+-- 内部算法：验证缩放上下限、触屏下限、右侧居中锚点和接近距离边界。
 function MonsterIncubatorUIPresentationSpec.Run(): boolean
 	local config = MonsterIncubatorUIPresentationConfig
 	local scaleConfig = config.ResponsiveScale
-	expectNear(
-		config.VerticalOffsetRatio,
-		-0.1,
-		"UI 锚点必须留在罐体中下部，避免正对罐体时面板越出屏幕"
-	)
+	expect(config.ScreenAnchorPoint == Vector2.new(1, 0.5), "屏幕 UI 必须右侧居中锚定")
+	expect(config.ScreenPosition.X.Scale == 1, "屏幕 UI 必须贴近安全区右侧")
+	expect(config.ScreenPosition.X.Offset < 0, "屏幕 UI 必须保留右侧边距")
+	expect(config.ScreenPosition.Y.Scale == 0.5, "屏幕 UI 必须垂直居中")
 	expectNear(
 		ResponsiveUIScale.Compute(Vector2.new(960, 720), false, scaleConfig),
 		1,
@@ -51,6 +50,14 @@ function MonsterIncubatorUIPresentationSpec.Run(): boolean
 	)
 
 	local center = Vector3.new(10, 20, 30)
+	expectNear(
+		MonsterIncubatorUIPlacement.HorizontalDistance(
+			center + Vector3.new(3, 100, 4),
+			center
+		),
+		5,
+		"最近培养罐选择距离必须忽略高度"
+	)
 	expect(
 		MonsterIncubatorUIPlacement.IsWithinHorizontalDistance(
 			center + Vector3.new(20, 100, 0),
@@ -67,33 +74,6 @@ function MonsterIncubatorUIPresentationSpec.Run(): boolean
 		),
 		"超出水平边界仍然显示"
 	)
-
-	local glassSize = Vector3.new(22, 20, 22)
-	local expectedRadius = glassSize.X * 0.5 + config.SurfacePadding
-	for _, direction in {
-		Vector3.new(1, 0, 0),
-		Vector3.new(-1, 0, 0),
-		Vector3.new(0, 0, 1),
-		Vector3.new(0, 0, -1),
-	} do
-		local position = MonsterIncubatorUIPlacement.ResolveWorldPosition(
-			center,
-			glassSize,
-			center + direction * 50,
-			center + direction * 10,
-			config.SurfacePadding,
-			config.VerticalOffsetRatio
-		)
-		local horizontal = Vector3.new(position.X - center.X, 0, position.Z - center.Z)
-		expectNear(horizontal.Magnitude, expectedRadius, "UI 未落在罐体外表面")
-		expect(horizontal:Dot(direction) > 0, "UI 未落在摄像头近侧")
-		expectNear(
-			position.Y,
-			center.Y + glassSize.Y * config.VerticalOffsetRatio,
-			"UI 高度未落在罐体中下部"
-		)
-	end
-
 	expect(table.isfrozen(ResponsiveUIScale), "响应式缩放模块必须只读")
 	expect(table.isfrozen(MonsterIncubatorUIPlacement), "定位模块必须只读")
 	expect(table.isfrozen(config), "培养罐 UI 配置必须只读")

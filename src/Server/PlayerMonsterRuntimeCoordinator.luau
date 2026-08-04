@@ -27,6 +27,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local MonsterBuildPresentationPublisher = require(
 	script.Parent.MonsterBuildPresentationPublisher
 )
+local MonsterBuildButtonPresentationService = require(
+	script.Parent.Button.MonsterBuildButtonPresentationService
+)
 local MonsterIncubatorBuildCoordinator = require(script.Parent.MonsterIncubatorBuildCoordinator)
 local MonsterRosterCoordinator = require(script.Parent.MonsterRosterCoordinator)
 local MonsterSpawnPointStateService = require(script.Parent.MonsterSpawnPointStateService)
@@ -34,6 +37,9 @@ local MonsterTemplateResolver = require(script.Parent.MonsterTemplateResolver)
 local MonsterUpgradeCoordinator = require(script.Parent.MonsterUpgradeCoordinator)
 local PlayerPlotAssignmentService = require(script.Parent.PlayerPlotAssignmentService)
 local PlayerDataReadyService = require(script.Parent.PlayerDataReadyService)
+local PlayerRuntimeLoadReporter = require(
+	script.Parent.Analytics.PlayerRuntimeLoadReporter
+)
 local PlotMonsterRuntimeAccess = require(script.Parent.PlotMonsterRuntimeAccess)
 local SpawnPointMonsterBinding = require(script.Parent.SpawnPointMonsterBinding)
 local WorkspaceMonsterIncubatorAccess = require(script.Parent.WorkspaceMonsterIncubatorAccess)
@@ -41,6 +47,12 @@ local WorkspacePlayerWorldAccess = require(script.Parent.WorkspacePlayerWorldAcc
 local ZoneStateService = require(script.Parent.ZoneStateService)
 local BuildingPresentationConfigs = require(
 	ReplicatedStorage.Shared.Building.BuildingPresentationConfigs
+)
+local BuildPresentationVisibility = require(
+	ReplicatedStorage.Shared.Building.BuildPresentationVisibility
+)
+local BuildPresentationTiming = require(
+	ReplicatedStorage.Shared.Building.BuildPresentationTiming
 )
 local MonsterIncubatorConfigs = require(
 	ReplicatedStorage.Shared.Monster.MonsterIncubatorConfigs
@@ -51,6 +63,7 @@ local MonsterSpawnPointCatalog = require(
 )
 local MonsterCapacityRules = require(ReplicatedStorage.Shared.Monster.MonsterCapacityRules)
 local MonsterStateRules = require(ReplicatedStorage.Shared.Monster.MonsterStateRules)
+local PlayerRebirthBonusQuery = require(script.Parent.PlayerRebirthBonusQuery)
 
 local PlayerMonsterRuntimeCoordinator = {}
 
@@ -81,6 +94,7 @@ type RuntimeActionPlan = {
 	PresentationId: string,
 	RiseDuration: number,
 	DemolishDuration: number,
+	BuildSpeedMultiplier: number,
 	PreviousMonsterKey: string?,
 	TemplateChanged: boolean,
 }
@@ -95,6 +109,27 @@ local INITIAL_LEVEL = 1
 local loadedPlots: { [Player]: Model } = setmetatable({}, { __mode = "k" })
 local loadedPoints: { [Player]: { [string]: BasePart } } = setmetatable({}, { __mode = "k" })
 local started = false
+
+local function refreshBuildButtons(player: Player, plot: Model)
+	local called, refreshed, reason = pcall(
+		MonsterBuildButtonPresentationService.RefreshAll,
+		player,
+		plot
+	)
+	if not called then
+		warn(string.format(
+			"刷新怪兽建造按钮异常：%s (%s)",
+			player.Name,
+			tostring(refreshed)
+		))
+	elseif not refreshed then
+		warn(string.format(
+			"刷新怪兽建造按钮失败：%s (%s)",
+			player.Name,
+			reason or "Unknown"
+		))
+	end
+end
 
 local function result(
 	succeeded: boolean,
@@ -175,6 +210,7 @@ local function createLoadPlan(player: Player, plot: Model): ({ PlanItem }?, stri
 	end
 
 	local plan = {}
+	local healthMultiplier = PlayerRebirthBonusQuery.Get(player).MonsterHealthMultiplier
 	for _, state in MonsterSpawnPointStateService.List(player) do
 		if not state.Built then
 			continue
@@ -216,7 +252,7 @@ local function createLoadPlan(player: Player, plot: Model): ({ PlanItem }?, stri
 			SpawnPointId = state.SpawnPointId,
 			MonsterKey = monsterKey,
 			Template = template,
-			MaxHealth = monsterDefinition.MaxHealth,
+			MaxHealth = monsterDefinition.MaxHealth * healthMultiplier,
 			Point = point,
 		})
 	end
@@ -228,12 +264,21 @@ local function prepareBuild(player: Player, spawnPointId: string): (RuntimeActio
 	if not plot then
 		return nil, "MonsterRuntimeNotLoaded"
 	end
-	if not MonsterSpawnPointCatalog.Get(spawnPointId) then
+	local definition = MonsterSpawnPointCatalog.Get(spawnPointId)
+	if not definition then
 		return nil, "UnknownSpawnPoint"
 	end
 	local state = MonsterSpawnPointStateService.Get(player, spawnPointId)
 	if state.Built then
 		return nil, "SpawnPointAlreadyBuilt"
+	end
+	if definition.RequiredBuiltSpawnPointId
+		and not MonsterSpawnPointStateService.Get(
+			player,
+			definition.RequiredBuiltSpawnPointId
+		).Built
+	then
+		return nil, "RequiredSpawnPointNotBuilt"
 	end
 
 	local capacity = MonsterCapacityRules.CheckAdd(
@@ -266,18 +311,20 @@ local function prepareBuild(player: Player, spawnPointId: string): (RuntimeActio
 	if not presentationId or not presentation then
 		return nil, presentationReason or "MonsterBuildPresentationUnavailable"
 	end
+	local bonuses = PlayerRebirthBonusQuery.Get(player)
 	return {
 		Plot = plot,
 		SpawnPointId = spawnPointId,
 		TargetLevel = INITIAL_LEVEL,
 		MonsterKey = monsterKey,
 		Template = template,
-		MaxHealth = monsterDefinition.MaxHealth,
+		MaxHealth = monsterDefinition.MaxHealth * bonuses.MonsterHealthMultiplier,
 		Point = point,
 		RuntimeRoot = runtimeRoot,
 		PresentationId = presentationId,
 		RiseDuration = presentation.Rise.TotalDuration,
 		DemolishDuration = presentation.Demolish.TotalDuration,
+		BuildSpeedMultiplier = bonuses.BuildSpeedMultiplier,
 		PreviousMonsterKey = nil,
 		TemplateChanged = true,
 	}, nil
@@ -344,18 +391,20 @@ local function prepareUpgrade(
 	if not presentationId or not presentation then
 		return nil, presentationReason or "MonsterBuildPresentationUnavailable"
 	end
+	local bonuses = PlayerRebirthBonusQuery.Get(player)
 	return {
 		Plot = plot,
 		SpawnPointId = spawnPointId,
 		TargetLevel = targetLevel,
 		MonsterKey = monsterKey,
 		Template = template,
-		MaxHealth = monsterDefinition.MaxHealth,
+		MaxHealth = monsterDefinition.MaxHealth * bonuses.MonsterHealthMultiplier,
 		Point = point,
 		RuntimeRoot = runtimeRoot,
 		PresentationId = presentationId,
 		RiseDuration = presentation.Rise.TotalDuration,
 		DemolishDuration = presentation.Demolish.TotalDuration,
+		BuildSpeedMultiplier = bonuses.BuildSpeedMultiplier,
 		PreviousMonsterKey = record.MonsterKey,
 		TemplateChanged = templateChanged,
 	}, nil
@@ -454,6 +503,7 @@ function PlayerMonsterRuntimeCoordinator.Load(player: Player): Result
 
 	loadedPlots[player] = plot
 	loadedPoints[player] = points
+	refreshBuildButtons(player, plot)
 	return result(true, nil, nil, #createdItems)
 end
 
@@ -480,7 +530,8 @@ function PlayerMonsterRuntimeCoordinator.Build(player: Player, spawnPointId: str
 		plan.Template,
 		plan.Point,
 		plan.MaxHealth,
-		plan.RuntimeRoot
+		plan.RuntimeRoot,
+		true
 	)
 	if not created.Succeeded then
 		local removed = MonsterIncubatorBuildCoordinator.Remove(
@@ -498,8 +549,12 @@ function PlayerMonsterRuntimeCoordinator.Build(player: Player, spawnPointId: str
 		OwnerUserId = player.UserId,
 		SpawnPointId = spawnPointId,
 		PresentationId = plan.PresentationId,
+		BuildSpeedMultiplier = plan.BuildSpeedMultiplier,
 		MonsterKey = plan.MonsterKey,
-	}, plan.RiseDuration, function()
+	}, BuildPresentationTiming.ScaleDuration(
+		plan.RiseDuration,
+		plan.BuildSpeedMultiplier
+	), function()
 		return player.Parent ~= Players
 			or plan.Plot.Parent == nil
 			or plan.Plot:GetAttribute("OwnerUserId") ~= player.UserId
@@ -528,10 +583,12 @@ function PlayerMonsterRuntimeCoordinator.Build(player: Player, spawnPointId: str
 			nil
 		)
 	end
+	BuildPresentationVisibility.Restore(assert(created.Record and created.Record.Model))
 
 	MonsterSpawnPointStateService.MarkBuilt(player, spawnPointId, plan.TargetLevel, plan.MonsterKey)
 	loadedPoints[player] = loadedPoints[player] or {}
 	loadedPoints[player][spawnPointId] = plan.Point
+	refreshBuildButtons(player, plan.Plot)
 	return result(true, nil, created.Record, nil)
 end
 
@@ -567,7 +624,8 @@ function PlayerMonsterRuntimeCoordinator.Upgrade(
 		plan.MonsterKey,
 		plan.Template,
 		plan.Point,
-		plan.MaxHealth
+		plan.MaxHealth,
+		plan.TemplateChanged
 	)
 	if not upgraded.Succeeded then
 		return result(false, upgraded.Reason, upgraded.Record, nil)
@@ -579,9 +637,14 @@ function PlayerMonsterRuntimeCoordinator.Upgrade(
 			OwnerUserId = player.UserId,
 			SpawnPointId = spawnPointId,
 			PresentationId = plan.PresentationId,
+			BuildSpeedMultiplier = plan.BuildSpeedMultiplier,
 			PreviousMonsterKey = assert(plan.PreviousMonsterKey),
 			MonsterKey = plan.MonsterKey,
-		}, plan.DemolishDuration + plan.RiseDuration, nil)
+		}, BuildPresentationTiming.ScaleDuration(
+			plan.DemolishDuration + plan.RiseDuration,
+			plan.BuildSpeedMultiplier
+		), nil)
+		BuildPresentationVisibility.Restore(assert(upgraded.Record and upgraded.Record.Model))
 		if not presented.Succeeded then
 			-- 模型替换和保存身份已经提交；表现失败不能把成功升级误报为购买失败并退款。
 			warn(string.format(
@@ -640,6 +703,12 @@ end
 
 local function loadAndWarn(player: Player)
 	local loadResult = PlayerMonsterRuntimeCoordinator.Load(player)
+	PlayerRuntimeLoadReporter.Report(
+		player,
+		"Monster",
+		loadResult.Succeeded,
+		loadResult.Reason
+	)
 	if not loadResult.Succeeded then
 		warn(string.format("加载玩家 %s 怪兽失败：%s", player.Name, loadResult.Reason or "Unknown"))
 	end

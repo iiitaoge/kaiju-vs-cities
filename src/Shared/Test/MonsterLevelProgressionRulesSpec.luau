@@ -22,6 +22,22 @@ function Spec.Run(): boolean
 	expectAppearance(75, 5, 3)
 	assert(MonsterLevelProgressionRules.ResolveAppearance(76, 5, 3, 5) == nil, "封顶后不应继续映射")
 	assert(MonsterLevelProgressionRules.GetMaxLevel(5, 3, 5) == 75, "封顶等级错误")
+	local staged = {
+		{ UntilLevel = 3, Growth = 2 },
+		{ UntilLevel = 5, Growth = 3 },
+	}
+	assert(
+		MonsterLevelProgressionRules.ScaleIntegerByStages(10, staged, 1) == 10,
+		"分段成长 Level 1 错误"
+	)
+	assert(
+		MonsterLevelProgressionRules.ScaleIntegerByStages(10, staged, 3) == 40,
+		"分段成长第一阶段错误"
+	)
+	assert(
+		MonsterLevelProgressionRules.ScaleIntegerByStages(10, staged, 5) == 360,
+		"分段成长跨阶段错误"
+	)
 	assert(MonsterLevelProgressionRules.MakeMonsterKey("Godzilla-L", 6) == "Godzilla-L006", "Key 不稳定")
 	return true
 end

@@ -62,4 +62,44 @@ function MonsterLevelProgressionRules.ScaleInteger(baseValue: number, growth: nu
 	return math.floor(baseValue * growth ^ (level - 1) + 0.5)
 end
 
+-- 输入：基础值、按等级上限排列的成长阶段，以及实际等级。
+-- 输出：跨阶段连续成长并四舍五入后的整数；Level 1 返回基础值。
+-- 阶段示例：{ { UntilLevel = 30, Growth = 1.4 }, { UntilLevel = 75, Growth = 1.15 } }。
+function MonsterLevelProgressionRules.ScaleIntegerByStages(
+	baseValue: number,
+	stages,
+	level: number
+): number
+	assert(type(baseValue) == "number" and baseValue >= 0 and baseValue < math.huge, "baseValue 无效")
+	assert(type(stages) == "table" and #stages >= 1, "stages 必须是非空数组")
+	assertPositiveInteger(level, "level")
+
+	local value = baseValue
+	local previousUntilLevel = 1
+	for index, stage in ipairs(stages) do
+		assert(type(stage) == "table", string.format("stages[%d] 必须是 table", index))
+		assertPositiveInteger(stage.UntilLevel, string.format("stages[%d].UntilLevel", index))
+		assert(
+			stage.UntilLevel > previousUntilLevel,
+			string.format("stages[%d].UntilLevel 必须递增", index)
+		)
+		assert(
+			type(stage.Growth) == "number"
+				and stage.Growth > 0
+				and stage.Growth < math.huge,
+			string.format("stages[%d].Growth 无效", index)
+		)
+
+		local appliedUntilLevel = math.min(level, stage.UntilLevel)
+		local stepCount = math.max(0, appliedUntilLevel - previousUntilLevel)
+		value *= stage.Growth ^ stepCount
+		previousUntilLevel = stage.UntilLevel
+		if level <= stage.UntilLevel then
+			return math.floor(value + 0.5)
+		end
+	end
+
+	error(string.format("等级 %d 超出成长阶段配置", level))
+end
+
 return table.freeze(MonsterLevelProgressionRules)

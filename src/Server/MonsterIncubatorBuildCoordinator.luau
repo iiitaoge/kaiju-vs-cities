@@ -22,9 +22,16 @@ local WorkspaceMonsterIncubatorSlotAccess = require(
 local BuildingPresentationConfigs = require(
 	ReplicatedStorage.Shared.Building.BuildingPresentationConfigs
 )
+local BuildPresentationVisibility = require(
+	ReplicatedStorage.Shared.Building.BuildPresentationVisibility
+)
+local BuildPresentationTiming = require(
+	ReplicatedStorage.Shared.Building.BuildPresentationTiming
+)
 local MonsterIncubatorConfigs = require(
 	ReplicatedStorage.Shared.Monster.MonsterIncubatorConfigs
 )
+local PlayerRebirthBonusQuery = require(script.Parent.PlayerRebirthBonusQuery)
 
 local MonsterIncubatorBuildCoordinator = {}
 
@@ -133,7 +140,8 @@ local function create(
 			SpawnPointId = spawnPointId,
 			ZoneId = config.ZoneId,
 			TemplateId = config.TemplateId,
-		}
+		},
+		animate
 	)
 	if not created then
 		warn(string.format(
@@ -150,12 +158,17 @@ local function create(
 	local model = modelOrError :: Model
 
 	if animate then
+		local buildSpeedMultiplier = PlayerRebirthBonusQuery.Get(player).BuildSpeedMultiplier
 		local motion = MonsterBuildPresentationPublisher.PublishAndWait({
 			Kind = "IncubatorBuild",
 			OwnerUserId = player.UserId,
 			SpawnPointId = spawnPointId,
 			PresentationId = config.PresentationId,
-		}, presentation.Rise.TotalDuration, function()
+			BuildSpeedMultiplier = buildSpeedMultiplier,
+		}, BuildPresentationTiming.ScaleDuration(
+			presentation.Rise.TotalDuration,
+			buildSpeedMultiplier
+		), function()
 				return player.Parent ~= Players
 					or plot.Parent == nil
 					or plot:GetAttribute("OwnerUserId") ~= player.UserId
@@ -175,6 +188,7 @@ local function create(
 				nil
 			)
 		end
+		BuildPresentationVisibility.Restore(model)
 	end
 
 	local incubator, accessReason = WorkspaceMonsterIncubatorAccess.Resolve(

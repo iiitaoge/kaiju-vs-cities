@@ -1,7 +1,19 @@
 --[[
-	职责：集中定义怪兽等级、外观路径和测试期数值曲线。
+	职责：集中定义怪兽等级、外观路径和正式分段数值曲线。
 	不负责：等级映射、扣款、模型生成或攻击流程。
 ]]
+
+local function stages(earlyGrowth: number, middleGrowth: number, lateGrowth: number)
+	local result = {
+		{ UntilLevel = 30, Growth = earlyGrowth },
+		{ UntilLevel = 50, Growth = middleGrowth },
+		{ UntilLevel = 75, Growth = lateGrowth },
+	}
+	for _, stage in ipairs(result) do
+		table.freeze(stage)
+	end
+	return table.freeze(result)
+end
 
 local configs = {
 	Godzilla = {
@@ -12,18 +24,21 @@ local configs = {
 		VisualLevelCount = 3,
 		FormCount = 5,
 
-		MaxHealthBase = 100,
-		MaxHealthGrowth = 1.04,
-		StructureDamageBase = 35,
-		StructureDamageGrowth = 1.03,
-		CombatDamageBase = 25,
-		CombatDamageGrowth = 1.03,
-		RewardBase = 10,
-		RewardGrowth = 1.02,
+		-- 同等级怪兽互殴约十次命中分胜负；后段放缓，避免 75 级指数失控。
+		MaxHealthBase = 300,
+		MaxHealthGrowthStages = stages(1.16, 1.10, 1.06),
+		CombatDamageBase = 30,
+		CombatDamageGrowthStages = stages(1.16, 1.10, 1.06),
 
-		BuildCost = 250,
-		UpgradeBaseCost = 25,
-		UpgradeCostGrowth = 1.04,
+		-- 前 30 级跟随 R1～R6 的城市跨度，后段逐步降低成长率。
+		StructureDamageBase = 50,
+		StructureDamageGrowthStages = stages(1.25, 1.12, 1.06),
+
+		-- 单栋摧毁奖励约为下一次怪兽升级成本的 20%。
+		RewardBase = 100,
+		RewardGrowthStages = stages(1.40, 1.25, 1.15),
+		UpgradeBaseCost = 500,
+		UpgradeCostGrowthStages = stages(1.40, 1.25, 1.15),
 	},
 }
 

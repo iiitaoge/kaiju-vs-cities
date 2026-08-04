@@ -5,34 +5,41 @@
 	不负责：解析场景、Clone、移动对象、怪兽状态或购买事务。
 ]]
 
-local standard = {
-	ZoneId = "M1",
-	IncubatorSlotId = "M1-S1",
-	TemplateRootName = "MonsterIncubators",
-	TemplateId = "PetriDish",
-	PresentationId = "MonsterStandard",
-	EasingStyle = Enum.EasingStyle.Sine,
-	EasingDirection = Enum.EasingDirection.InOut,
-	Release = {
-		Liquid = { Duration = 1, StartNextAt = 0.6 },
-		Glass = { Duration = 1, StartNextAt = 0.6 },
-		Base = { Duration = 0.8 },
-	},
-	Restore = {
-		Base = { Duration = 0.8, StartNextAt = 0.6 },
-		Glass = { Duration = 1, StartNextAt = 0.6 },
-		Liquid = { Duration = 1 },
-	},
+local release = {
+	Liquid = { Duration = 1, StartNextAt = 0.6 },
+	Glass = { Duration = 1, StartNextAt = 0.6 },
+	Base = { Duration = 0.8 },
+}
+local restore = {
+	Base = { Duration = 0.8, StartNextAt = 0.6 },
+	Glass = { Duration = 1, StartNextAt = 0.6 },
+	Liquid = { Duration = 1 },
 }
 
-for _, groupName in { "Release", "Restore" } do
-	for _, step in standard[groupName] do
+for _, group in { release, restore } do
+	for _, step in group do
 		table.freeze(step)
 	end
-	table.freeze(standard[groupName])
+	table.freeze(group)
 end
-table.freeze(standard)
+
+local function standard(spawnPointId: string)
+	return table.freeze({
+		ZoneId = "M1",
+		IncubatorSlotId = spawnPointId,
+		TemplateRootName = "MonsterIncubators",
+		TemplateId = "PetriDish-3",
+		PresentationId = "MonsterStandard",
+		EasingStyle = Enum.EasingStyle.Sine,
+		EasingDirection = Enum.EasingDirection.InOut,
+		Release = release,
+		Restore = restore,
+	})
+end
 
 return table.freeze({
-	["M1-S1"] = standard,
+	["M1-S1"] = standard("M1-S1"),
+	["M1-S2"] = standard("M1-S2"),
+	["M1-S3"] = standard("M1-S3"),
+	["M1-S4"] = standard("M1-S4"),
 })

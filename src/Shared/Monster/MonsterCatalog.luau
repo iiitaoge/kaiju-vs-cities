@@ -51,9 +51,9 @@ for progressionId, config in pairs(MonsterProgressionConfigs) do
 				appearance.VisualLevel,
 				appearance.FormIndex
 			),
-			MaxHealth = MonsterLevelProgressionRules.ScaleInteger(
+			MaxHealth = MonsterLevelProgressionRules.ScaleIntegerByStages(
 				config.MaxHealthBase,
-				config.MaxHealthGrowth,
+				config.MaxHealthGrowthStages,
 				level
 			),
 		}

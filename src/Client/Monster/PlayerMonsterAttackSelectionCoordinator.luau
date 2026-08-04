@@ -4,7 +4,7 @@
 	输入：自己的 SpawnPointId、管理状态机回调，以及可选表现回调。
 	输出：切换/刷新目标、提交世界点、取消和恢复跟随视角的会话。
 	内部算法：查询一次目标快照并建立缓存，复用 AttackPanelCoordinator 管理选择状态；
-	目标变化时切换总领地视角，监听屏幕世界点击，服务器接受后跟随出征怪兽。
+	目标变化时切换总领地视角和准星合法范围，监听屏幕世界点击，服务器接受后跟随出征怪兽。
 
 	不负责：创建 GUI、美术布局、服务器权威校验或执行战斗。
 ]]
@@ -17,6 +17,7 @@ local MonsterFollowCamera = require(script.Parent.Parent.Camera.MonsterFollowCam
 local WorldPointInputController = require(script.Parent.Parent.Camera.WorldPointInputController)
 local AttackPanelCoordinator = require(script.Parent.AttackPanelCoordinator)
 local AttackTargetSnapshotMapper = require(script.Parent.AttackTargetSnapshotMapper)
+local LocalAttackCrosshairPresenter = require(script.Parent.LocalAttackCrosshairPresenter)
 local MonsterAttackRemoteClient = require(script.Parent.MonsterAttackRemoteClient)
 local MonsterAttackSelectionConfig = require(
 	ReplicatedStorage.Shared.Monster.MonsterAttackSelectionConfig
@@ -32,6 +33,7 @@ export type Callbacks = {
 	OnValidationFailed: ((string) -> ())?,
 	OnClosed: ((string) -> ())?,
 	OnFollowStarted: ((Model) -> ())?,
+	OnFollowStopped: ((string) -> ())?,
 }
 
 export type Session = {
@@ -76,6 +78,7 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 	local followSession = nil
 	local inputSession = nil
 	local panelSession = nil
+	local crosshairSession = nil
 
 	local function restoreBrowseCamera()
 		local session = browseSession
@@ -93,6 +96,30 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 		end
 	end
 
+	local function stopCrosshair()
+		local session = crosshairSession
+		crosshairSession = nil
+		if session then
+			session.Stop()
+		end
+	end
+
+	local crosshairConfig = MonsterAttackSelectionConfig.Crosshair
+	local crosshairTemplate = ReplicatedStorage:FindFirstChild(crosshairConfig.TemplateName)
+	if crosshairTemplate and crosshairTemplate:IsA("Model") then
+		local crosshairReason
+		crosshairSession, crosshairReason = LocalAttackCrosshairPresenter.Start({
+			Template = crosshairTemplate,
+			AnimationAssetId = crosshairConfig.AnimationAssetId,
+			SurfaceOffset = crosshairConfig.SurfaceOffset,
+		})
+		if not crosshairSession then
+			warn("攻击准星启动失败：" .. tostring(crosshairReason))
+		end
+	else
+		warn("找不到攻击准星模板：ReplicatedStorage/" .. crosshairConfig.TemplateName)
+	end
+
 	panelSession = AttackPanelCoordinator.Open(spawnPointId, {
 		LocalPlayer = Players.LocalPlayer,
 		GetTargets = function()
@@ -100,6 +127,9 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 		end,
 		RequestAttack = MonsterAttackRemoteClient.RequestAttack,
 		OnTargetChanged = function(target)
+			if crosshairSession then
+				crosshairSession.SetTerritories(target.UnlockedTerritories)
+			end
 			if browseSession then
 				browseSession.SetTarget(target.AttackView)
 			else
@@ -113,6 +143,9 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 			end
 		end,
 		OnTargetUnavailable = function()
+			if crosshairSession then
+				crosshairSession.SetTerritories({})
+			end
 			callbacks.OnUnavailable("TargetUnavailable")
 		end,
 		OnValidationFailed = function(reason)
@@ -123,9 +156,20 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 		OnAccepted = function(result, _target)
 			local monster = result.Monster
 			if monster and monster:IsDescendantOf(workspace) then
+				local followConfig = MonsterAttackSelectionConfig.FollowCamera
 				followSession = MonsterFollowCamera.Start(
 					monster,
-					MonsterAttackSelectionConfig.FollowCamera
+					{
+						Offset = followConfig.Offset,
+						FieldOfView = followConfig.FieldOfView,
+						Responsiveness = followConfig.Responsiveness,
+						OnStopped = function(reason)
+							followSession = nil
+							if callbacks.OnFollowStopped then
+								callbacks.OnFollowStopped(reason)
+							end
+						end,
+					}
 				)
 				if callbacks.OnFollowStarted then
 					callbacks.OnFollowStarted(monster)
@@ -135,6 +179,7 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 		end,
 		OnClosed = function(reason)
 			stopInput()
+			stopCrosshair()
 			restoreBrowseCamera()
 			if reason == "Cancelled" then
 				callbacks.OnCancelled()

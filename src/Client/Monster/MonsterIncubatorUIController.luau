@@ -1,8 +1,8 @@
 --[[
-	职责：把 Plot1 培养罐上的 MonsterUI 接到现有怪兽管理与攻击选择链。
-	输入：本地玩家的 M1-S1 运行时培养罐和服务器管理快照。
-	输出：标题、现金升级价格、Start/升级按钮状态及点击请求。
-	内部算法：定位服务器克隆的培养罐，组合管理状态机；怪兽回到 IdleAtSpawn 时重新打开。
+	职责：把本地玩家最近的已建培养罐 MonsterUI 以近距离屏幕面板接到现有怪兽管理与攻击选择链。
+	输入：本地玩家 M1-S1 至 M1-S4 的运行时培养罐、玩家位置和服务器管理快照。
+	输出：安全区内固定显示的标题、现金升级价格、Start/升级按钮状态及点击请求。
+	内部算法：在显示范围内选择水平距离最近的培养罐，将其 Panel 挂到独立 ScreenGui，组合管理状态机；怪兽回到 IdleAtSpawn 时重新打开。
 	不负责：创建 UI、美术布局、扣款、升级模型、选择攻击目标或 Robux 购买。
 ]]
 
@@ -15,9 +15,7 @@ local Workspace = game:GetService("Workspace")
 local LocalMonsterBuildPresentationAccess = require(script.Parent.LocalMonsterBuildPresentationAccess)
 local LocalMonsterIncubatorUIAccess = require(script.Parent.LocalMonsterIncubatorUIAccess)
 local MonsterManagementCoordinator = require(script.Parent.MonsterManagementCoordinator)
-local PlayerMonsterAttackSelectionCoordinator = require(
-	script.Parent.PlayerMonsterAttackSelectionCoordinator
-)
+local AttackSelectionHUDController = require(script.Parent.AttackSelectionHUDController)
 local MonsterCatalog = require(ReplicatedStorage.Shared.Monster.MonsterCatalog)
 local MonsterIncubatorUIPresentationConfig = require(
 	ReplicatedStorage.Shared.Monster.MonsterIncubatorUIPresentationConfig
@@ -25,14 +23,19 @@ local MonsterIncubatorUIPresentationConfig = require(
 local MonsterIncubatorUIPlacement = require(
 	ReplicatedStorage.Shared.Monster.MonsterIncubatorUIPlacement
 )
+local MonsterSpawnPointCatalog = require(
+	ReplicatedStorage.Shared.Monster.MonsterSpawnPointCatalog
+)
 local ResponsiveUIScale = require(ReplicatedStorage.Shared.UI.ResponsiveUIScale)
 
 local MonsterIncubatorUIController = {}
 
-local SPAWN_POINT_ID = "M1-S1"
 local PLOT_WAIT_TIMEOUT = 20
 local BUILD_RETRY_DELAY = 0.25
+local BINDING_REFRESH_SECONDS = 0.1
 local RESPONSIVE_SCALE_NAME = "ResponsiveUIScale"
+local SCREEN_GUI_NAME = "MonsterManagementScreen"
+local SCREEN_CONTAINER_NAME = "Container"
 local started = false
 
 local function setButtonEnabled(button: TextButton, enabled: boolean)
@@ -55,6 +58,42 @@ local function getOrCreateResponsiveScale(panel: Frame): UIScale
 	return uiScale
 end
 
+local function createScreenPresentation(playerGui: PlayerGui, panel: Frame): ScreenGui
+	local existing = playerGui:FindFirstChild(SCREEN_GUI_NAME)
+	if existing then
+		existing:Destroy()
+	end
+
+	local screenGui = Instance.new("ScreenGui")
+	screenGui.Name = SCREEN_GUI_NAME
+	screenGui.Enabled = false
+	screenGui.ResetOnSpawn = false
+	screenGui.IgnoreGuiInset = false
+	screenGui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets
+	screenGui.SafeAreaCompatibility = Enum.SafeAreaCompatibility.FullscreenExtension
+	screenGui.ClipToDeviceSafeArea = true
+	screenGui.DisplayOrder = MonsterIncubatorUIPresentationConfig.DisplayOrder
+	screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+	local maximumCanvasSize = MonsterIncubatorUIPresentationConfig.BaseCanvasSize
+		* MonsterIncubatorUIPresentationConfig.ResponsiveScale.MaxScale
+	local container = Instance.new("Frame")
+	container.Name = SCREEN_CONTAINER_NAME
+	container.BackgroundTransparency = 1
+	container.BorderSizePixel = 0
+	container.ClipsDescendants = false
+	container.AnchorPoint = MonsterIncubatorUIPresentationConfig.ScreenAnchorPoint
+	container.Position = MonsterIncubatorUIPresentationConfig.ScreenPosition
+	container.Size = UDim2.fromOffset(
+		math.round(maximumCanvasSize.X),
+		math.round(maximumCanvasSize.Y)
+	)
+	container.Parent = screenGui
+	panel.Parent = container
+	screenGui.Parent = playerGui
+	return screenGui
+end
+
 function MonsterIncubatorUIController.Start()
 	if started then
 		return
@@ -74,11 +113,12 @@ function MonsterIncubatorUIController.Start()
 		end
 
 		local boundIncubator: Model? = nil
+		local boundSpawnPointId: string? = nil
 		local references: LocalMonsterIncubatorUIAccess.References? = nil
 		local management = nil
 		local currentMonster: Model? = nil
 		local responsiveScale: UIScale? = nil
-		local originalAttachmentPosition: Vector3? = nil
+		local screenGui: ScreenGui? = nil
 		local managementWantsVisible = false
 		local isWithinProximity = false
 		local lastViewportSize: Vector2? = nil
@@ -86,6 +126,7 @@ function MonsterIncubatorUIController.Start()
 		local monsterConnections: { RBXScriptConnection } = {}
 		local retryToken = 0
 		local refreshScheduled = false
+		local lastBindingRefresh = 0
 
 		local function disconnectAll(connections: { RBXScriptConnection })
 			for _, connection in connections do
@@ -95,9 +136,9 @@ function MonsterIncubatorUIController.Start()
 		end
 
 		local function applyVisibility()
-			local refs = references
-			if refs then
-				refs.Gui.Enabled = managementWantsVisible and isWithinProximity
+			local layer = screenGui
+			if layer then
+				layer.Enabled = managementWantsVisible and isWithinProximity
 			end
 		end
 
@@ -106,8 +147,7 @@ function MonsterIncubatorUIController.Start()
 			local uiScale = responsiveScale
 			local character = player.Character
 			local root = character and character:FindFirstChild("HumanoidRootPart")
-			local camera = Workspace.CurrentCamera
-			if not refs or not uiScale or not root or not root:IsA("BasePart") or not camera then
+			if not refs or not uiScale or not root or not root:IsA("BasePart") then
 				isWithinProximity = false
 				applyVisibility()
 				return
@@ -118,28 +158,20 @@ function MonsterIncubatorUIController.Start()
 				refs.Glass.Position,
 				MonsterIncubatorUIPresentationConfig.HorizontalActivationDistance
 			)
-			if isWithinProximity then
-				local worldPosition = MonsterIncubatorUIPlacement.ResolveWorldPosition(
-					refs.Glass.Position,
-					refs.Glass.Size,
-					camera.CFrame.Position,
-					root.Position,
-					MonsterIncubatorUIPresentationConfig.SurfacePadding,
-					MonsterIncubatorUIPresentationConfig.VerticalOffsetRatio
-				)
-				refs.Attachment.Position = refs.Glass.CFrame:PointToObjectSpace(worldPosition)
-			end
 
-			local viewportSize = camera.ViewportSize
-			if lastViewportSize ~= viewportSize then
-				lastViewportSize = viewportSize
-				local scale = ResponsiveUIScale.Compute(
-					viewportSize,
-					UserInputService.TouchEnabled,
-					MonsterIncubatorUIPresentationConfig.ResponsiveScale
-				)
-				uiScale.Scale = scale
-					/ MonsterIncubatorUIPresentationConfig.ResponsiveScale.MaxScale
+			local camera = Workspace.CurrentCamera
+			if camera then
+				local viewportSize = camera.ViewportSize
+				if lastViewportSize ~= viewportSize then
+					lastViewportSize = viewportSize
+					local scale = ResponsiveUIScale.Compute(
+						viewportSize,
+						UserInputService.TouchEnabled,
+						MonsterIncubatorUIPresentationConfig.ResponsiveScale
+					)
+					uiScale.Scale = scale
+						/ MonsterIncubatorUIPresentationConfig.ResponsiveScale.MaxScale
+				end
 			end
 			applyVisibility()
 		end
@@ -205,64 +237,46 @@ function MonsterIncubatorUIController.Start()
 			if references then
 				local refs = references
 				refs.Gui.Enabled = false
-				refs.Gui.Adornee = nil
-				refs.Gui.StudsOffsetWorldSpace = Vector3.zero
-				if originalAttachmentPosition then
-					refs.Attachment.Position = originalAttachmentPosition
-				end
 				if refs.Gui.Parent and refs.Attachment.Parent then
-					refs.Gui.Parent = refs.Attachment
-				elseif refs.Gui.Parent then
-					refs.Gui:Destroy()
+					refs.Panel.Parent = refs.Gui
+				elseif refs.Panel.Parent then
+					refs.Panel:Destroy()
 				end
+			end
+			if screenGui then
+				screenGui:Destroy()
 			end
 			management = nil
 			responsiveScale = nil
-			originalAttachmentPosition = nil
+			screenGui = nil
 			references = nil
 			boundIncubator = nil
+			boundSpawnPointId = nil
 		end
 
-		local function bindIncubator(incubator: Model)
-			if boundIncubator == incubator then
+		local function bindIncubator(
+			spawnPointId: string,
+			incubator: Model,
+			resolved: LocalMonsterIncubatorUIAccess.References
+		)
+			if boundSpawnPointId == spawnPointId and boundIncubator == incubator then
 				return
 			end
 			unbindIncubator()
-			local resolved = LocalMonsterIncubatorUIAccess.Resolve(incubator)
-			if not resolved then
-				-- 培养罐首次复制到客户端时，后代会分帧到达；后续 DescendantAdded 会重试。
-				return
-			end
+			boundSpawnPointId = spawnPointId
 			boundIncubator = incubator
 			references = resolved
 			managementWantsVisible = false
 			isWithinProximity = false
 			lastViewportSize = nil
 			resolved.Gui.Enabled = false
-			resolved.Gui.Adornee = resolved.Attachment
-			resolved.Gui.StudsOffsetWorldSpace = Vector3.zero
-			resolved.Gui.AlwaysOnTop = true
-			resolved.Gui.LightInfluence = 0
-			resolved.Gui.MaxDistance = MonsterIncubatorUIPresentationConfig.CameraMaxDistance
-			resolved.Gui.ResetOnSpawn = false
-			-- Studio 设备模拟中，竖屏 BillboardGui 开启根裁剪会错误得到 0x0 画布。
-			-- 最大画布已按 MaxScale 预留，因此关闭根裁剪不会让响应式 Panel 溢出。
-			resolved.Gui.ClipsDescendants = false
-			local maximumCanvasSize = MonsterIncubatorUIPresentationConfig.BaseCanvasSize
-				* MonsterIncubatorUIPresentationConfig.ResponsiveScale.MaxScale
-			resolved.Gui.Size = UDim2.fromOffset(
-				math.round(maximumCanvasSize.X),
-				math.round(maximumCanvasSize.Y)
-			)
 			responsiveScale = getOrCreateResponsiveScale(resolved.Panel)
-			originalAttachmentPosition = resolved.Attachment.Position
 			resolved.Robux.Visible = false
-			resolved.Gui.Parent = playerGui
-			table.insert(uiConnections, RunService.RenderStepped:Connect(updateSpatialPresentation))
+			screenGui = createScreenPresentation(playerGui, resolved.Panel)
 			updateSpatialPresentation()
 			management = MonsterManagementCoordinator.Create({
 				Render = render,
-				OpenAttackSelection = PlayerMonsterAttackSelectionCoordinator.Open,
+				OpenAttackSelection = AttackSelectionHUDController.Open,
 			})
 			local session = management
 			table.insert(uiConnections, resolved.StartButton.Activated:Connect(function()
@@ -271,7 +285,7 @@ function MonsterIncubatorUIController.Start()
 			table.insert(uiConnections, resolved.MoneyButton.Activated:Connect(function()
 				session.ChooseUpgrade()
 			end))
-			session.Open(SPAWN_POINT_ID)
+			session.Open(spawnPointId)
 		end
 
 		local function handleMonsterState()
@@ -280,8 +294,8 @@ function MonsterIncubatorUIController.Start()
 			end
 			local monsterState = currentMonster:GetAttribute("MonsterState")
 			local mode = management.GetState().Mode
-			if monsterState == "IdleAtSpawn" and mode == "Closed" then
-				management.Open(SPAWN_POINT_ID)
+			if monsterState == "IdleAtSpawn" and mode == "Closed" and boundSpawnPointId then
+				management.Open(boundSpawnPointId)
 			elseif monsterState ~= "IdleAtSpawn"
 				and (mode == "Managing" or mode == "Upgrading")
 			then
@@ -304,11 +318,14 @@ function MonsterIncubatorUIController.Start()
 			table.insert(monsterConnections, monster.AncestryChanged:Connect(function()
 				if not monster.Parent then
 					task.defer(function()
-						bindMonster(LocalMonsterBuildPresentationAccess.FindMonsterForSpawnPoint(
-							plot,
-							SPAWN_POINT_ID,
-							player.UserId
-						))
+						local activeSpawnPointId = boundSpawnPointId
+						bindMonster(if activeSpawnPointId
+							then LocalMonsterBuildPresentationAccess.FindMonsterForSpawnPoint(
+								plot,
+								activeSpawnPointId,
+								player.UserId
+							)
+							else nil)
 					end)
 				end
 			end))
@@ -316,21 +333,57 @@ function MonsterIncubatorUIController.Start()
 		end
 
 		local function refreshRuntimeBindings()
-			local incubator = LocalMonsterBuildPresentationAccess.FindIncubator(
-				plot,
-				SPAWN_POINT_ID,
-				player.UserId
-			)
-			if incubator then
-				bindIncubator(incubator)
+			local character = player.Character
+			local root = character and character:FindFirstChild("HumanoidRootPart")
+			local nearestSpawnPointId: string? = nil
+			local nearestIncubator: Model? = nil
+			local nearestReferences: LocalMonsterIncubatorUIAccess.References? = nil
+			local nearestDistance = math.huge
+
+			if root and root:IsA("BasePart") then
+				for _, definition in MonsterSpawnPointCatalog.GetAll() do
+					local incubator = LocalMonsterBuildPresentationAccess.FindIncubator(
+						plot,
+						definition.SpawnPointId,
+						player.UserId
+					)
+					local resolved = if incubator == boundIncubator
+						and definition.SpawnPointId == boundSpawnPointId
+						then references
+						elseif incubator
+						then LocalMonsterIncubatorUIAccess.Resolve(incubator)
+						else nil
+					if incubator and resolved then
+						local distance = MonsterIncubatorUIPlacement.HorizontalDistance(
+							root.Position,
+							resolved.Glass.Position
+						)
+						if distance <= MonsterIncubatorUIPresentationConfig.HorizontalActivationDistance
+							and distance < nearestDistance
+						then
+							nearestSpawnPointId = definition.SpawnPointId
+							nearestIncubator = incubator
+							nearestReferences = resolved
+							nearestDistance = distance
+						end
+					end
+				end
+			end
+
+			if nearestSpawnPointId and nearestIncubator and nearestReferences then
+				bindIncubator(nearestSpawnPointId, nearestIncubator, nearestReferences)
 			elseif boundIncubator then
 				unbindIncubator()
 			end
-			local monster = LocalMonsterBuildPresentationAccess.FindMonsterForSpawnPoint(
-				plot,
-				SPAWN_POINT_ID,
-				player.UserId
-			)
+
+			local activeSpawnPointId = boundSpawnPointId
+			local monster = if activeSpawnPointId
+				then LocalMonsterBuildPresentationAccess.FindMonsterForSpawnPoint(
+					plot,
+					activeSpawnPointId,
+					player.UserId
+				)
+				else nil
 			bindMonster(monster)
 			if monster and management then
 				local state = management.GetState()
@@ -356,6 +409,14 @@ function MonsterIncubatorUIController.Start()
 
 		plot.DescendantAdded:Connect(scheduleRefresh)
 		plot.DescendantRemoving:Connect(scheduleRefresh)
+		RunService.RenderStepped:Connect(function()
+			local now = os.clock()
+			if now - lastBindingRefresh >= BINDING_REFRESH_SECONDS then
+				lastBindingRefresh = now
+				refreshRuntimeBindings()
+			end
+			updateSpatialPresentation()
+		end)
 		refreshRuntimeBindings()
 	end)
 end

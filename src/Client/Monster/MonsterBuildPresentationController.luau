@@ -24,6 +24,9 @@ local LocalMonsterBuildPresentationAccess = require(
 local BuildingPresentationConfigs = require(
 	ReplicatedStorage.Shared.Building.BuildingPresentationConfigs
 )
+local BuildPresentationTiming = require(
+	ReplicatedStorage.Shared.Building.BuildPresentationTiming
+)
 local InstancePath = require(ReplicatedStorage.Shared.InstancePath)
 local MonsterBuildPresentationProtocol = require(
 	ReplicatedStorage.Shared.Monster.MonsterBuildPresentationProtocol
@@ -60,6 +63,17 @@ local function resolveCommon(command)
 		BuildingPresentationConfigs[command.PresentationId],
 		"缺少建造表现配置：" .. command.PresentationId
 	)
+	presentation = {
+		ResolveTimeout = presentation.ResolveTimeout,
+		Demolish = BuildPresentationTiming.ScaleMotion(
+			presentation.Demolish,
+			command.BuildSpeedMultiplier
+		),
+		Rise = BuildPresentationTiming.ScaleMotion(
+			presentation.Rise,
+			command.BuildSpeedMultiplier
+		),
+	}
 	local plot = assert(
 		LocalMonsterBuildPresentationAccess.WaitForPlot(
 			command.OwnerUserId,

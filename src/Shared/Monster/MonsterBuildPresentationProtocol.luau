@@ -17,6 +17,7 @@ export type IncubatorBuildCommand = {
 	OwnerUserId: number,
 	SpawnPointId: string,
 	PresentationId: string,
+	BuildSpeedMultiplier: number,
 }
 
 export type MonsterBuildCommand = {
@@ -24,6 +25,7 @@ export type MonsterBuildCommand = {
 	OwnerUserId: number,
 	SpawnPointId: string,
 	PresentationId: string,
+	BuildSpeedMultiplier: number,
 	MonsterKey: string,
 }
 
@@ -32,6 +34,7 @@ export type MonsterUpgradeCommand = {
 	OwnerUserId: number,
 	SpawnPointId: string,
 	PresentationId: string,
+	BuildSpeedMultiplier: number,
 	PreviousMonsterKey: string,
 	MonsterKey: string,
 }
@@ -60,6 +63,11 @@ function MonsterBuildPresentationProtocol.Validate(command): (boolean, string?)
 	if not ValueValidation.IsNonEmptyString(command.PresentationId) then
 		return false, "InvalidPresentationId"
 	end
+	if not ValueValidation.IsFiniteNumber(command.BuildSpeedMultiplier)
+		or command.BuildSpeedMultiplier <= 0
+	then
+		return false, "InvalidBuildSpeedMultiplier"
+	end
 
 	if command.Kind == "IncubatorBuild" then
 		return true, nil
@@ -85,4 +93,4 @@ function MonsterBuildPresentationProtocol.Validate(command): (boolean, string?)
 	return false, "InvalidKind"
 end
 
-return MonsterBuildPresentationProtocol
+return table.freeze(MonsterBuildPresentationProtocol)

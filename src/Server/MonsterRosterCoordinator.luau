@@ -144,7 +144,8 @@ local function createForSpawnPoint(
 	spawnPoint: BasePart,
 	maxHealth: number,
 	runtimeParent: Instance,
-	enforceCapacity: boolean
+	enforceCapacity: boolean,
+	hideForPresentation: boolean
 ): OperationResult
 	assert(player:IsA("Player"), "player 必须是 Player")
 	if type(spawnPointId) ~= "string" or spawnPointId == "" then
@@ -210,7 +211,8 @@ local function createForSpawnPoint(
 			State = state.State,
 			Health = state.Health,
 			MaxHealth = state.MaxHealth,
-		}
+		},
+		hideForPresentation
 	)
 	if not created then
 		MonsterStateService.Remove(player, spawnPointId)
@@ -226,9 +228,9 @@ local function createForSpawnPoint(
 	return operation(true, nil, recordWithModel(player, state))
 end
 
--- 输入：玩家、唯一出生点、模板身份、模板、出生位置、最大生命和玩家 Plot 运行时父级。
+-- 输入：玩家、唯一出生点、模板身份、模板、出生位置、最大生命、运行时父级和可选预隐藏标记。
 -- 输出：新增后的怪兽记录或明确失败原因。
--- 内部算法：验证一出生点一怪兽和容量，先建状态，再创建服务器模型；失败时回滚状态。
+-- 内部算法：验证一出生点一怪兽和容量，先建状态，再按要求创建可见或预隐藏模型；失败时回滚状态。
 function MonsterRosterCoordinator.CreateForSpawnPoint(
 	player: Player,
 	spawnPointId: string,
@@ -236,8 +238,13 @@ function MonsterRosterCoordinator.CreateForSpawnPoint(
 	template: Model,
 	spawnPoint: BasePart,
 	maxHealth: number,
-	runtimeParent: Instance
+	runtimeParent: Instance,
+	hideForPresentation: boolean?
 ): OperationResult
+	assert(
+		hideForPresentation == nil or type(hideForPresentation) == "boolean",
+		"hideForPresentation 必须是 boolean 或 nil"
+	)
 	return createForSpawnPoint(
 		player,
 		spawnPointId,
@@ -246,7 +253,8 @@ function MonsterRosterCoordinator.CreateForSpawnPoint(
 		spawnPoint,
 		maxHealth,
 		runtimeParent,
-		true
+		true,
+		hideForPresentation == true
 	)
 end
 
@@ -268,21 +276,27 @@ function MonsterRosterCoordinator.RestoreForSpawnPoint(
 		spawnPoint,
 		maxHealth,
 		runtimeParent,
+		false,
 		false
 	)
 end
 
--- 输入：玩家、出生点和目标怪兽模板。
+-- 输入：玩家、出生点、目标怪兽模板，以及可选的建造表现预隐藏标记。
 -- 输出：替换后的怪兽记录。
--- 内部算法：只允许 IdleAtSpawn；先成功创建新模型，再更新状态并替换运行时索引。
+-- 内部算法：只允许 IdleAtSpawn；先成功创建可见或预隐藏的新模型，再更新状态并替换运行时索引。
 function MonsterRosterCoordinator.ReplaceForSpawnPoint(
 	player: Player,
 	spawnPointId: string,
 	newMonsterKey: string,
 	template: Model,
 	spawnPoint: BasePart,
-	maxHealth: number
+	maxHealth: number,
+	hideForPresentation: boolean?
 ): OperationResult
+	assert(
+		hideForPresentation == nil or type(hideForPresentation) == "boolean",
+		"hideForPresentation 必须是 boolean 或 nil"
+	)
 	local current = MonsterStateService.Get(player, spawnPointId)
 	if not current then
 		return operation(false, "UnknownSpawnPoint", nil)
@@ -326,7 +340,8 @@ function MonsterRosterCoordinator.ReplaceForSpawnPoint(
 			State = current.State,
 			Health = maxHealth,
 			MaxHealth = maxHealth,
-		}
+		},
+		hideForPresentation
 	)
 	if not replaced then
 		warn("替换出生点怪兽失败：", modelOrError)
@@ -342,6 +357,62 @@ function MonsterRosterCoordinator.ReplaceForSpawnPoint(
 		"替换模型后出生点绑定意外失效"
 	)
 	MonsterRuntimeRegistry.Set(player, spawnPointId, modelOrError)
+	return operation(true, nil, recordWithModel(player, updated))
+end
+
+-- 输入：玩家、出生点和同一外观升级后的怪兽身份/最大生命。
+-- 输出：保留原 Model Instance、满血更新后的记录。
+-- 内部算法：验证空闲状态、出生点绑定和运行时模型，再同步更新状态、绑定和 Model 身份。
+-- 不负责：判断模板是否变化、价格、等级映射或播放表现。
+function MonsterRosterCoordinator.UpgradeInPlace(
+	player: Player,
+	spawnPointId: string,
+	newMonsterKey: string,
+	spawnPoint: BasePart,
+	maxHealth: number
+): OperationResult
+	local current = MonsterStateService.Get(player, spawnPointId)
+	if not current then
+		return operation(false, "UnknownSpawnPoint", nil)
+	end
+	local permission = MonsterStateRules.CheckUpgrade(current.State)
+	if not permission.Allowed then
+		return operation(false, permission.Reason, recordWithModel(player, current))
+	end
+	if type(newMonsterKey) ~= "string" or newMonsterKey == "" then
+		return operation(false, "InvalidMonsterKey", recordWithModel(player, current))
+	end
+	if typeof(spawnPoint) ~= "Instance" or not spawnPoint:IsA("BasePart") then
+		return operation(false, "InvalidSpawnPoint", recordWithModel(player, current))
+	end
+	if not validPositiveNumber(maxHealth) then
+		return operation(false, "InvalidMaxHealth", recordWithModel(player, current))
+	end
+	local binding = SpawnPointMonsterBinding.Get(spawnPoint)
+	if binding.SpawnPointId ~= spawnPointId or binding.MonsterKey ~= current.MonsterKey then
+		return operation(false, "SpawnPointBindingMismatch", recordWithModel(player, current))
+	end
+	local model = resolveRuntimeModel(player, spawnPointId)
+	if not model or not model.Parent then
+		return operation(false, "RuntimeModelUnavailable", recordWithModel(player, current))
+	end
+
+	local updated = assert(
+		MonsterStateService.SetMonster(player, spawnPointId, newMonsterKey, maxHealth),
+		"原地升级时怪兽状态意外丢失"
+	)
+	assert(
+		SpawnPointMonsterBinding.SetMonsterKey(spawnPoint, spawnPointId, newMonsterKey),
+		"原地升级时出生点绑定意外失效"
+	)
+	MonsterModelFactory.UpdateIdentity(model, {
+		OwnerUserId = player.UserId,
+		SpawnPointId = spawnPointId,
+		MonsterKey = newMonsterKey,
+		State = updated.State,
+		Health = updated.Health,
+		MaxHealth = updated.MaxHealth,
+	})
 	return operation(true, nil, recordWithModel(player, updated))
 end
 

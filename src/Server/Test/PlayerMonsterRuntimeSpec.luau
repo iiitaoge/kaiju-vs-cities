@@ -24,8 +24,8 @@ local function expect(condition: boolean, message: string)
 end
 
 -- 输入：已经完成 Plot 和怪兽运行时加载的测试玩家。
--- 输出：容量/余额拒绝、购买扣款、玩家 Plot 归属、升级和重载全部通过时返回 true。
--- 内部算法：依次覆盖 Locked → Insufficient → Ready → Insufficient → Ready → Locked。
+-- 输出：容量/余额拒绝、顺序建造、实体按钮生命周期、管理 UI 升级和重载全部通过时返回 true。
+-- 内部算法：验证 S1 只能建造一次、建成后切换到 S2 按钮，升级仍走独立 Upgrade 接口。
 function PlayerMonsterRuntimeSpec.Run(player: Player): boolean
 	local economy = MonsterSpawnPointEconomyConfigs["M1-S1"]
 	local buildCost = economy.BuildCost
@@ -48,7 +48,11 @@ function PlayerMonsterRuntimeSpec.Run(player: Player): boolean
 		"被容量拒绝后不应写入 Built"
 	)
 
-	expect(MonsterRosterCoordinator.SetCapacity(player, 1).Succeeded, "无法恢复测试容量 1")
+	expect(MonsterRosterCoordinator.SetCapacity(player, 4).Succeeded, "无法恢复测试容量 4")
+	expect(
+		MonsterSpawnPointActionQuery.GetBuildButtonState(player, "M1-S2") == "Locked",
+		"S1 建成前 S2 建造按钮必须锁定"
+	)
 	local noBuildMoney = MonsterSpawnPointPurchaseCoordinator.Build(player, "M1-S1")
 	expect(not noBuildMoney.Succeeded, "余额不足时不应允许建造")
 	expect(noBuildMoney.Reason == "InsufficientMoney", "建造余额拒绝原因错误")
@@ -56,14 +60,15 @@ function PlayerMonsterRuntimeSpec.Run(player: Player): boolean
 
 	MoneyService.Add(player, buildCost)
 	expect(
-		MonsterSpawnPointActionQuery.GetPrimaryButtonState(player, "M1-S1") == "Ready",
+		MonsterSpawnPointActionQuery.GetBuildButtonState(player, "M1-S1") == "Ready",
 		"余额充足时建造按钮应为 Ready"
 	)
-	local built = MonsterSpawnPointPurchaseCoordinator.ExecutePrimary(player, "M1-S1")
+	local built = MonsterSpawnPointPurchaseCoordinator.Build(player, "M1-S1")
 	expect(built.Succeeded, "建造失败：" .. tostring(built.Reason))
 	expect(built.Action == "Build" and built.Cost == buildCost and built.Balance == 0, "建造扣款错误")
-	expect(built.NextButtonState == "Insufficient", "建造后升级余额不足应为 Insufficient")
+	expect(built.NextButtonState == "Locked", "建造完成后原实体按钮必须锁定")
 	expect(built.Record ~= nil and built.Record.Model ~= nil, "建造成功后缺少运行时模型")
+	local originalModel = built.Record.Model
 
 	local plot = PlayerPlotAssignmentService.GetPlot(player)
 	expect(plot ~= nil, "玩家没有 Plot")
@@ -77,6 +82,21 @@ function PlayerMonsterRuntimeSpec.Run(player: Player): boolean
 	)
 	local button, pull, buttonReason = PlotButtonAccess.Get(plot, "M1", "M1-S1-Button")
 	expect(button ~= nil and pull ~= nil, "玩家 Plot 按钮场景合同缺失：" .. tostring(buttonReason))
+	local nextButton, nextPull, nextButtonReason = PlotButtonAccess.Get(
+		plot,
+		"M1",
+		"M1-S2-Button"
+	)
+	expect(
+		nextButton ~= nil and nextPull ~= nil,
+		"玩家 Plot 的 S2 按钮场景合同缺失：" .. tostring(nextButtonReason)
+	)
+	expect(button:GetAttribute("MonsterBuildButtonVisible") == false, "S1 建成后按钮没有隐藏")
+	expect(nextButton:GetAttribute("MonsterBuildButtonVisible") == true, "S1 建成后没有显示 S2 按钮")
+	expect(
+		MonsterSpawnPointActionQuery.GetBuildButtonState(player, "M1-S2") == "Insufficient",
+		"S1 建成后 S2 应进入待付费建造状态"
+	)
 
 	local noUpgradeMoney = MonsterSpawnPointPurchaseCoordinator.Upgrade(player, "M1-S1")
 	expect(not noUpgradeMoney.Succeeded, "余额不足时不应允许升级")
@@ -84,17 +104,26 @@ function PlayerMonsterRuntimeSpec.Run(player: Player): boolean
 	expect(built.Record.Model.Parent == plot.Runtime.Monsters, "升级拒绝后原怪兽不应消失")
 
 	MoneyService.Add(player, upgradeCost)
-	expect(
-		MonsterSpawnPointActionQuery.GetPrimaryButtonState(player, "M1-S1") == "Ready",
-		"余额充足时升级按钮应为 Ready"
-	)
-	local upgraded = MonsterSpawnPointPurchaseCoordinator.ExecutePrimary(player, "M1-S1")
+	local managementSnapshot = assert(MonsterSpawnPointActionQuery.Get(player, "M1-S1"))
+	expect(managementSnapshot.Upgrade.Allowed and managementSnapshot.Upgrade.Affordable, "管理 UI 升级应可用")
+	local upgraded = MonsterSpawnPointPurchaseCoordinator.Upgrade(player, "M1-S1")
 	expect(upgraded.Succeeded, "升级失败：" .. tostring(upgraded.Reason))
 	expect(
 		upgraded.Action == "Upgrade" and upgraded.Cost == upgradeCost and upgraded.Balance == 0,
 		"升级扣款错误"
 	)
 	expect(upgraded.Record ~= nil and upgraded.Record.MonsterKey == levelTwoMonsterKey, "升级后实际等级身份错误")
+	expect(upgraded.Record.Model == originalModel, "同外观升级不应替换怪兽 Model Instance")
+	expect(
+		upgraded.Record.Health == upgraded.Record.MaxHealth
+			and originalModel:GetAttribute("MonsterHealth") == upgraded.Record.MaxHealth
+			and originalModel:GetAttribute("MonsterMaxHealth") == upgraded.Record.MaxHealth,
+		"同外观升级没有按新生命上限回满"
+	)
+	expect(
+		originalModel:GetAttribute("MonsterKey") == levelTwoMonsterKey,
+		"同外观升级没有更新原 Model 身份"
+	)
 	expect(upgraded.NextButtonState == "Insufficient", "升级后余额不足应为 Insufficient")
 	local finalActions = assert(MonsterSpawnPointActionQuery.Get(player, "M1-S1"))
 	expect(finalActions.Attack.Allowed, "升级后空闲怪兽应该允许进入攻击 UI")

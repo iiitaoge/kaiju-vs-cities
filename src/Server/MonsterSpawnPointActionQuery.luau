@@ -2,7 +2,7 @@
 	职责：把出生点状态、怪兽状态、运行时环境和经济配置组合成无副作用的可用操作快照。
 
 	输入：Player、SpawnPointId。
-	输出：Build、Upgrade、Attack 的 Allowed/Reason/Cost/Affordable，以及主按钮状态。
+	输出：Build、Upgrade、Attack 的 Allowed/Reason/Cost/Affordable，以及管理主动作和实体建造按钮状态。
 	内部算法：调用运行时预检查，读取余额，并由 Built 决定主按钮当前代表 Build 还是 Upgrade。
 
 	不负责：扣款、修改状态、创建模型、发送 Remote 或播放表现。
@@ -149,6 +149,19 @@ function MonsterSpawnPointActionQuery.GetPrimaryButtonState(
 ): string
 	local snapshot = MonsterSpawnPointActionQuery.Get(player, spawnPointId)
 	return if snapshot then snapshot.PrimaryButtonState else "Locked"
+end
+
+function MonsterSpawnPointActionQuery.GetBuildButtonState(
+	player: Player,
+	spawnPointId: string
+): string
+	local snapshot = MonsterSpawnPointActionQuery.Get(player, spawnPointId)
+	if not snapshot or snapshot.Built
+		or snapshot.Build.Reason == "RequiredSpawnPointNotBuilt"
+	then
+		return "Locked"
+	end
+	return buttonState(snapshot.Build)
 end
 
 return MonsterSpawnPointActionQuery

@@ -8,6 +8,7 @@
 	不负责：实体按钮、管理 UI、攻击命令、价格计算或表现动画。
 ]]
 
+local GameAnalyticsGateway = require(script.Parent.Analytics.GameAnalyticsGateway)
 local MoneyService = require(script.Parent.MoneyService)
 local MonsterSpawnPointActionQuery = require(script.Parent.MonsterSpawnPointActionQuery)
 local PlayerMonsterRuntimeCoordinator = require(script.Parent.PlayerMonsterRuntimeCoordinator)
@@ -15,6 +16,7 @@ local PlayerMonsterRuntimeCoordinator = require(script.Parent.PlayerMonsterRunti
 local MonsterSpawnPointPurchaseCoordinator = {}
 
 local locks: { [Player]: { [string]: boolean } } = setmetatable({}, { __mode = "k" })
+local exclusiveLocks: { [Player]: boolean } = setmetatable({}, { __mode = "k" })
 
 local function resultForSpawnPoint(
 	succeeded: boolean,
@@ -26,8 +28,11 @@ local function resultForSpawnPoint(
 	record
 )
 	-- 状态刷新属于返回值增强；不能让它把已经提交成功的购买误报为事务失败。
+	local stateQuery = if action == "Build"
+		then MonsterSpawnPointActionQuery.GetBuildButtonState
+		else MonsterSpawnPointActionQuery.GetPrimaryButtonState
 	local stateSucceeded, nextButtonState = pcall(
-		MonsterSpawnPointActionQuery.GetPrimaryButtonState,
+		stateQuery,
 		player,
 		spawnPointId
 	)
@@ -113,6 +118,22 @@ local function executeUnlocked(player: Player, spawnPointId: string, action: "Bu
 		)
 	end
 
+	local targetLevel = actionStatus.TargetLevel
+		or (runtimeResultOrError.Record and runtimeResultOrError.Record.Level)
+		or 1
+	GameAnalyticsGateway.LogDesign(
+		player,
+		string.format("Gameplay:Monster:%s:%s", action, spawnPointId),
+		targetLevel
+	)
+	GameAnalyticsGateway.LogResource(
+		player,
+		"Sink",
+		actionStatus.Cost,
+		"Monster",
+		string.format("%s-%s-L%d", action, spawnPointId, targetLevel)
+	)
+
 	return resultForSpawnPoint(
 		true,
 		nil,
@@ -125,6 +146,17 @@ local function executeUnlocked(player: Player, spawnPointId: string, action: "Bu
 end
 
 local function executeLocked(player: Player, spawnPointId: string, action: "Build" | "Upgrade")
+	if exclusiveLocks[player] then
+		return {
+			Succeeded = false,
+			Reason = "ActionBusy",
+			Action = action,
+			Cost = 0,
+			Balance = MoneyService.Get(player),
+			Record = nil,
+			NextButtonState = "Processing",
+		}
+	end
 	local playerLocks = locks[player]
 	if not playerLocks then
 		playerLocks = {}
@@ -176,6 +208,31 @@ function MonsterSpawnPointPurchaseCoordinator.ExecutePrimary(player: Player, spa
 		return resultForSpawnPoint(false, "UnknownSpawnPoint", "Build", 0, player, spawnPointId, nil)
 	end
 	return executeLocked(player, spawnPointId, snapshot.PrimaryAction)
+end
+
+function MonsterSpawnPointPurchaseCoordinator.IsBusy(player: Player): boolean
+	assert(typeof(player) == "Instance" and player:IsA("Player"), "player 必须是 Player")
+	local playerLocks = locks[player]
+	return exclusiveLocks[player] == true
+		or (playerLocks ~= nil and next(playerLocks) ~= nil)
+end
+
+function MonsterSpawnPointPurchaseCoordinator.TryAcquireExclusive(
+	player: Player
+): (() -> ())?
+	assert(typeof(player) == "Instance" and player:IsA("Player"), "player 必须是 Player")
+	if MonsterSpawnPointPurchaseCoordinator.IsBusy(player) then
+		return nil
+	end
+	exclusiveLocks[player] = true
+	local released = false
+	return function()
+		if released then
+			return
+		end
+		released = true
+		exclusiveLocks[player] = nil
+	end
 end
 
 return MonsterSpawnPointPurchaseCoordinator

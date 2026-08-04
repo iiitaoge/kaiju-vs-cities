@@ -12,6 +12,7 @@ export type Definition = {
 	ZoneId: string,
 	SlotId: string,
 	ProgressionId: string,
+	RequiredBuiltSpawnPointId: string?,
 }
 
 local definitions: { [string]: Definition } = {
@@ -20,6 +21,27 @@ local definitions: { [string]: Definition } = {
 		ZoneId = "M1",
 		SlotId = "M1-S1",
 		ProgressionId = "Godzilla",
+	},
+	["M1-S2"] = {
+		SpawnPointId = "M1-S2",
+		ZoneId = "M1",
+		SlotId = "M1-S2",
+		ProgressionId = "Godzilla",
+		RequiredBuiltSpawnPointId = "M1-S1",
+	},
+	["M1-S3"] = {
+		SpawnPointId = "M1-S3",
+		ZoneId = "M1",
+		SlotId = "M1-S3",
+		ProgressionId = "Godzilla",
+		RequiredBuiltSpawnPointId = "M1-S2",
+	},
+	["M1-S4"] = {
+		SpawnPointId = "M1-S4",
+		ZoneId = "M1",
+		SlotId = "M1-S4",
+		ProgressionId = "Godzilla",
+		RequiredBuiltSpawnPointId = "M1-S3",
 	},
 }
 
@@ -32,6 +54,12 @@ for spawnPointId, definition in pairs(definitions) do
 	assert(type(definition.ZoneId) == "string" and definition.ZoneId ~= "", "ZoneId 无效")
 	assert(type(definition.SlotId) == "string" and definition.SlotId ~= "", "SlotId 无效")
 	assert(MonsterCatalog.GetMonsterKey(definition.ProgressionId, 1) ~= nil, "出生点必须配置有效成长线")
+	if definition.RequiredBuiltSpawnPointId then
+		assert(
+			definitions[definition.RequiredBuiltSpawnPointId] ~= nil,
+			spawnPointId .. " 前置出生点无效"
+		)
+	end
 	table.freeze(definition)
 	table.insert(sortedDefinitions, definition)
 end

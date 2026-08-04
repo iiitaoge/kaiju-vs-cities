@@ -10,6 +10,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local MonsterManagementCoordinator = require(script.Parent.MonsterManagementCoordinator)
 local PlayerDataReadyService = require(script.Parent.PlayerDataReadyService)
+local SecurityAnalyticsAggregator = require(
+	script.Parent.Analytics.SecurityAnalyticsAggregator
+)
 local ServerRemoteAccess = require(script.Parent.ServerRemoteAccess)
 local MonsterManagementProtocol = require(
 	ReplicatedStorage.Shared.Monster.MonsterManagementProtocol
@@ -22,10 +25,12 @@ remote.OnServerInvoke = function(player, requestKind, spawnPointId)
 		return { Succeeded = false, Reason = "PlayerDataNotReady", Snapshot = nil }
 	end
 	if type(spawnPointId) ~= "string" or spawnPointId == "" then
+		SecurityAnalyticsAggregator.Record(player, "MonsterManagement", "InvalidSpawnPointId")
 		return { Succeeded = false, Reason = "InvalidSpawnPointId", Snapshot = nil }
 	end
 	if requestKind ~= MonsterManagementProtocol.GetSnapshot
 		and requestKind ~= MonsterManagementProtocol.Upgrade then
+		SecurityAnalyticsAggregator.Record(player, "MonsterManagement", "InvalidRequest")
 		return { Succeeded = false, Reason = "InvalidRequest", Snapshot = nil }
 	end
 

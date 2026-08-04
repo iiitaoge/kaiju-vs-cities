@@ -1,10 +1,16 @@
 --[[
 	职责：从已验证模板创建一个服务器权威罐体 Model。
-	输入：模板、目标 Pivot、Runtime Folder、完整身份。
+	输入：模板、目标 Pivot、Runtime Folder、完整身份，以及可选的建造表现预隐藏标记。
 	输出：已经定位并挂入 Runtime 的罐体 Model。
-	内部算法：Clone、写入身份、确保零件锚定、PivotTo 后 Parent。
+	内部算法：Clone、写入身份、确保零件锚定、PivotTo；可选预隐藏后再 Parent。
 	不负责：解析模板/Plot、播放动画、创建怪兽、状态或失败退款。
 ]]
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local BuildPresentationVisibility = require(
+	ReplicatedStorage.Shared.Building.BuildPresentationVisibility
+)
 
 local MonsterIncubatorFactory = {}
 
@@ -23,7 +29,8 @@ function MonsterIncubatorFactory.Create(
 	template: Model,
 	targetCFrame: CFrame,
 	parent: Folder,
-	identity: Identity
+	identity: Identity,
+	hideForPresentation: boolean?
 ): Model
 	assert(typeof(template) == "Instance" and template:IsA("Model"), "template 必须是 Model")
 	assert(typeof(targetCFrame) == "CFrame", "targetCFrame 必须是 CFrame")
@@ -39,6 +46,10 @@ function MonsterIncubatorFactory.Create(
 	assertNonEmpty(identity.SpawnPointId, "SpawnPointId")
 	assertNonEmpty(identity.ZoneId, "ZoneId")
 	assertNonEmpty(identity.TemplateId, "TemplateId")
+	assert(
+		hideForPresentation == nil or type(hideForPresentation) == "boolean",
+		"hideForPresentation 必须是 boolean 或 nil"
+	)
 
 	local model = template:Clone()
 	model.Name = identity.SpawnPointId
@@ -52,6 +63,9 @@ function MonsterIncubatorFactory.Create(
 		end
 	end
 	model:PivotTo(targetCFrame)
+	if hideForPresentation == true then
+		BuildPresentationVisibility.Hide(model)
+	end
 	model.Parent = parent
 	return model
 end

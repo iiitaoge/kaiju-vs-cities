@@ -1,6 +1,6 @@
 --[[
-	职责：保存攻击目标浏览和出征跟随相机的第一版技术参数。
-	不负责：创建 GUI、决定美术样式或保存玩家偏好。
+	职责：保存攻击目标浏览、世界准星和出征跟随相机的技术参数。
+	不负责：创建 GUI/模型、决定攻击合法性或保存玩家偏好。
 ]]
 
 local browseCamera = table.freeze({
@@ -16,7 +16,14 @@ local followCamera = table.freeze({
 	Responsiveness = 8,
 })
 
+local crosshair = table.freeze({
+	TemplateName = "Crosshair",
+	AnimationAssetId = 100062745080464,
+	SurfaceOffset = 0.05,
+})
+
 return table.freeze({
 	BrowseCamera = browseCamera,
 	FollowCamera = followCamera,
+	Crosshair = crosshair,
 })
