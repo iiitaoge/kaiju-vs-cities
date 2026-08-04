@@ -9,6 +9,7 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
 
 local HouseLifecycleConfigs = require(script.Parent.Parent.HouseLifecycleConfigs)
 local HouseStateService = require(script.Parent.Parent.HouseStateService)
@@ -673,7 +674,11 @@ function MultiplayerAttackAcceptanceSpec.Run(players: { Player })
 			return defender.Parent ~= Players
 		end, REQUEST_TIMEOUT, "防守玩家离开服务器")
 		waitFor(function()
-			return defenderPlot:GetAttribute("OwnerUserId") == 0 and runtimeIsEmpty(defenderPlot)
+			local pool = ServerStorage:FindFirstChild("AvailablePlayerPlots")
+			return defenderPlot:GetAttribute("OwnerUserId") == 0
+				and runtimeIsEmpty(defenderPlot)
+				and pool ~= nil
+				and defenderPlot.Parent == pool
 		end, REQUEST_TIMEOUT, "离服后 Plot Runtime 清理")
 		waitMonsterIdle(attackerB)
 
@@ -688,10 +693,15 @@ function MultiplayerAttackAcceptanceSpec.Run(players: { Player })
 		task.wait(riseDuration + 0.25)
 		expect(defenderPlot:GetAttribute("OwnerUserId") == 0, "异步任务重新占用了已释放 Plot")
 		expect(runtimeIsEmpty(defenderPlot), "异步任务在已释放 Plot 留下孤儿 Model")
+		expect(
+			defenderPlot.Parent == ServerStorage:FindFirstChild("AvailablePlayerPlots"),
+			"离服后的 Plot 没有回到服务器空闲池"
+		)
 		table.insert(report.Scenarios, {
 			Name = "DefenderLeavesDuringRebuilding",
 			PlotReleased = true,
 			RuntimeEmpty = true,
+			PlotParked = true,
 			ReservationReleased = true,
 			AttackerFinalState = "IdleAtSpawn",
 		})

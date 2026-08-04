@@ -2,6 +2,7 @@
 	职责：
 	- 把在线玩家分配到 Workspace/PlayerPlots 下预先放置的固定 Plot。
 	- 以 Plot 的 OwnerUserId Attribute 保存服务器权威占用关系。
+	- 空 Plot 停放到 ServerStorage；占用时移回 Workspace，使客户端只收到在线玩家的 Plot。
 
 	场景合同：
 	- PlayerPlots (Folder)
@@ -19,11 +20,14 @@
 	- Release：是否释放成功。
 
 	内部算法：
-	- 按 PlotId 稳定排序，选择第一个 OwnerUserId 为 0 的合法 Plot。
+	- 合并 Workspace 活跃 Plot 与 ServerStorage 空闲池，按 PlotId 稳定排序。
+	- 选择第一个 OwnerUserId 为 0 的合法 Plot，先写占用再移入 Workspace。
+	- 释放时先清空 Runtime，再清除占用并移回 ServerStorage。
 	- 分配和释放时清空 Runtime，永远不修改 Zones 等静态场景。
 ]]
 
 local Players = game:GetService("Players")
+local ServerStorage = game:GetService("ServerStorage")
 
 local PlayerRuntimeLoadReporter = require(
 	script.Parent.Analytics.PlayerRuntimeLoadReporter
@@ -32,6 +36,7 @@ local PlayerRuntimeLoadReporter = require(
 local PlayerPlotAssignmentService = {}
 
 local ROOT_NAME = "PlayerPlots"
+local AVAILABLE_POOL_NAME = "AvailablePlayerPlots"
 local OWNER_ATTRIBUTE = "OwnerUserId"
 
 local assignments: { [Player]: Model } = setmetatable({}, { __mode = "k" })
@@ -44,6 +49,21 @@ end
 local function getRoot(): Folder?
 	local root = workspace:FindFirstChild(ROOT_NAME)
 	return if root and root:IsA("Folder") then root else nil
+end
+
+local function getAvailablePool(): Folder
+	local existing = ServerStorage:FindFirstChild(AVAILABLE_POOL_NAME)
+	if existing then
+		assert(
+			existing:IsA("Folder"),
+			"ServerStorage/" .. AVAILABLE_POOL_NAME .. " 必须是 Folder"
+		)
+		return existing
+	end
+	local pool = Instance.new("Folder")
+	pool.Name = AVAILABLE_POOL_NAME
+	pool.Parent = ServerStorage
+	return pool
 end
 
 local function checkPlot(instance: Instance): (Model?, string?)
@@ -73,21 +93,36 @@ end
 
 local function listPlots(): { Model }
 	local root = getRoot()
-	if not root then
-		return {}
-	end
-
 	local plots = {}
-	for _, child in root:GetChildren() do
-		local plot = checkPlot(child)
-		if plot then
-			table.insert(plots, plot)
+	local containers = { getAvailablePool() }
+	if root then
+		table.insert(containers, root)
+	end
+	for _, container in containers do
+		for _, child in container:GetChildren() do
+			local plot = checkPlot(child)
+			if plot then
+				table.insert(plots, plot)
+			end
 		end
 	end
 	table.sort(plots, function(a, b)
 		return a.Name < b.Name
 	end)
 	return plots
+end
+
+local function activate(plot: Model): (boolean, string?)
+	local root = getRoot()
+	if not root then
+		return false, "PlotRootUnavailable"
+	end
+	plot.Parent = root
+	return true, nil
+end
+
+local function park(plot: Model)
+	plot.Parent = getAvailablePool()
 end
 
 local function getOwnerUserId(plot: Model): number
@@ -144,6 +179,11 @@ function PlayerPlotAssignmentService.Assign(player: Player): (Model?, string?)
 		if getOwnerUserId(plot) == 0 then
 			clearRuntime(plot)
 			plot:SetAttribute(OWNER_ATTRIBUTE, player.UserId)
+			local activated, activateReason = activate(plot)
+			if not activated then
+				plot:SetAttribute(OWNER_ATTRIBUTE, 0)
+				return nil, activateReason
+			end
 			assignments[player] = plot
 			return plot, nil
 		end
@@ -171,6 +211,7 @@ function PlayerPlotAssignmentService.Release(player: Player): boolean
 
 	clearRuntime(plot)
 	plot:SetAttribute(OWNER_ATTRIBUTE, 0)
+	park(plot)
 	return true
 end
 
@@ -187,8 +228,11 @@ function PlayerPlotAssignmentService.Start()
 		if not player or claimedUserIds[ownerUserId] then
 			clearRuntime(plot)
 			plot:SetAttribute(OWNER_ATTRIBUTE, 0)
+			park(plot)
 		else
 			claimedUserIds[ownerUserId] = true
+			local activated, reason = activate(plot)
+			assert(activated, reason)
 			assignments[player] = plot
 		end
 	end
