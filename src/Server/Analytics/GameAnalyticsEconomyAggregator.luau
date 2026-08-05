@@ -1,8 +1,8 @@
 --[[
 	职责：聚合每秒自动收入，避免向 GameAnalytics 发送高频 Resource 事件。
 	输入：Start 注册周期刷新；RecordAutoIncome 接收已成功领取的玩家、区域和金额。
-	输出：FlushPlayer 返回交给 GA 的聚合条数；GA 未启用或金额为零时不记录。
-	内部算法：按 Player + RegionId 累加 60 秒 → 发送单条 Money/Income Source。
+	输出：FlushPlayer 返回交给 GA 的资源与余额/本轮收入指标条数。
+	内部算法：按 Player + RegionId 累加 60 秒 → Resource Source；同时记录权威余额和本轮收入快照。
 	不负责：领取收入、计算金额、记录低频支出或改变玩家余额。
 ]]
 
@@ -10,6 +10,9 @@ local Players = game:GetService("Players")
 
 local GameAnalyticsConfig = require(script.Parent.GameAnalyticsConfig)
 local GameAnalyticsGateway = require(script.Parent.GameAnalyticsGateway)
+local MoneyService = require(script.Parent.Parent.MoneyService)
+local PlayerDataReadyService = require(script.Parent.Parent.PlayerDataReadyService)
+local RebirthStateService = require(script.Parent.Parent.RebirthStateService)
 
 local GameAnalyticsEconomyAggregator = {}
 
@@ -46,18 +49,38 @@ end
 function GameAnalyticsEconomyAggregator.FlushPlayer(player: Player): number
 	local byRegion = pending[player]
 	pending[player] = nil
-	if not byRegion then
-		return 0
-	end
 
 	local flushed = 0
-	for regionId, amount in byRegion do
-		if GameAnalyticsGateway.LogResource(
+	if byRegion then
+		for regionId, amount in byRegion do
+			if GameAnalyticsGateway.LogResource(
+				player,
+				"Source",
+				amount,
+				"Income",
+				"Auto-" .. regionId
+			) then
+				flushed += 1
+			end
+		end
+	end
+	if GameAnalyticsGateway.IsEnabled()
+		and PlayerDataReadyService.Get(player).Status == "Ready"
+	then
+		local rebirth = RebirthStateService.Get(player)
+		if GameAnalyticsGateway.LogDesign(
 			player,
-			"Source",
-			amount,
-			"Income",
-			"Auto-" .. regionId
+			"Metric:Economy:Balance",
+			MoneyService.Get(player),
+			{ snapshot = "Periodic" }
+		) then
+			flushed += 1
+		end
+		if GameAnalyticsGateway.LogDesign(
+			player,
+			"Metric:Progression:RunEarnings",
+			rebirth.RunEarnings,
+			{ snapshot = "Periodic" }
 		) then
 			flushed += 1
 		end
@@ -66,7 +89,7 @@ function GameAnalyticsEconomyAggregator.FlushPlayer(player: Player): number
 end
 
 local function flushAll()
-	for player in pending do
+	for _, player in Players:GetPlayers() do
 		GameAnalyticsEconomyAggregator.FlushPlayer(player)
 	end
 end

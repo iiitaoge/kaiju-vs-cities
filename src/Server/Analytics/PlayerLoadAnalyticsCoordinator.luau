@@ -10,6 +10,9 @@ local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 
 local GameAnalyticsGateway = require(script.Parent.GameAnalyticsGateway)
+local PlayerJourneyAnalyticsCoordinator = require(
+	script.Parent.PlayerJourneyAnalyticsCoordinator
+)
 local PlayerRuntimeLoadReporter = require(script.Parent.PlayerRuntimeLoadReporter)
 local RobloxFunnelGateway = require(script.Parent.RobloxFunnelGateway)
 local PlayerDataReadyService = require(script.Parent.Parent.PlayerDataReadyService)
@@ -23,7 +26,14 @@ type Record = {
 	PlayableLogged: boolean,
 }
 
-local REQUIRED_STAGES = table.freeze({ "Save", "Plot", "City", "Monster", "Character" })
+local REQUIRED_STAGES = table.freeze({
+	"Save",
+	"Plot",
+	"City",
+	"Monster",
+	"DefenseMonster",
+	"Character",
+})
 local records: { [Player]: Record } = setmetatable({}, { __mode = "k" })
 local started = false
 
@@ -57,6 +67,7 @@ local function maybeLogPlayable(player: Player, record: Record)
 		elapsed(record)
 	)
 	RobloxFunnelGateway.LogSessionLoadStep(player, record.FunnelSessionId, 3)
+	PlayerJourneyAnalyticsCoordinator.RecordPlayable(player)
 end
 
 local function recordStage(

@@ -1,8 +1,8 @@
 --[[
-	职责：发送 Roblox AnalyticsService 原生的每局加载漏斗步骤。
-	输入：Player、同一局唯一 FunnelSessionId、1~3 的步骤编号。
+	职责：发送 Roblox AnalyticsService 原生的一次性和重复漏斗步骤。
+	输入：Player、稳定漏斗名/步骤名；重复漏斗额外接收唯一 FunnelSessionId。
 	输出：调用是否成功；Studio/未发布环境或服务异常时安全返回 false。
-	内部算法：把固定步骤映射为稳定名称，并以 pcall 调用 LogFunnelStepEvent。
+	内部算法：校验公共参数，再以 pcall 调用对应 AnalyticsService 方法。
 	不负责：生成 SessionId、判断阶段是否完成、发送 GameAnalytics 事件或改变玩家状态。
 ]]
 
@@ -39,6 +39,64 @@ function RobloxFunnelGateway.LogSessionLoadStep(
 		player,
 		GameAnalyticsConfig.SessionLoadFunnelName,
 		funnelSessionId,
+		step,
+		stepName
+	)
+	return succeeded
+end
+
+function RobloxFunnelGateway.LogRecurringStep(
+	player: Player,
+	funnelName: string,
+	funnelSessionId: string,
+	step: number,
+	stepName: string
+): boolean
+	if typeof(player) ~= "Instance"
+		or not player:IsA("Player")
+		or type(funnelName) ~= "string"
+		or funnelName == ""
+		or type(funnelSessionId) ~= "string"
+		or funnelSessionId == ""
+		or type(step) ~= "number"
+		or step < 1
+		or step % 1 ~= 0
+		or type(stepName) ~= "string"
+		or stepName == ""
+	then
+		return false
+	end
+	local succeeded = pcall(
+		AnalyticsService.LogFunnelStepEvent,
+		AnalyticsService,
+		player,
+		funnelName,
+		funnelSessionId,
+		step,
+		stepName
+	)
+	return succeeded
+end
+
+function RobloxFunnelGateway.LogOnboardingStep(
+	player: Player,
+	step: number,
+	stepName: string
+): boolean
+	if typeof(player) ~= "Instance"
+		or not player:IsA("Player")
+		or type(step) ~= "number"
+		or step < 1
+		or step % 1 ~= 0
+		or type(stepName) ~= "string"
+		or stepName == ""
+	then
+		return false
+	end
+	local succeeded = pcall(
+		AnalyticsService.LogOnboardingFunnelStepEvent,
+		AnalyticsService,
+		player,
 		step,
 		stepName
 	)

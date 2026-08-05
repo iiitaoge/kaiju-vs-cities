@@ -23,5 +23,10 @@ return table.freeze({
 	}),
 	AutoIncomeFlushIntervalSeconds = 60,
 	SecurityFlushIntervalSeconds = 60,
+	IntentRateWindowSeconds = 10,
+	IntentRateLimit = 30,
 	SessionLoadFunnelName = "SessionLoad",
+	AttackLaunchFunnelName = "AttackLaunch",
+	MonsterUpgradeFunnelName = "MonsterUpgrade",
+	RebirthFunnelName = "Rebirth",
 })

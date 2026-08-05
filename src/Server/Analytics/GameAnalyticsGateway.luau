@@ -1,6 +1,6 @@
 --[[
 	职责：隔离项目业务代码与官方 GameAnalytics SDK。
-	输入：Start 从 ServerStorage Attributes 读取凭据；LogDesign/LogResource 接收已裁决的服务器事实。
+	输入：Start 从 ServerStorage Attributes 读取凭据；事件函数接收已裁决的服务器事实。
 	输出：返回事件是否已交给 SDK 队列；缺凭据、参数无效或 SDK 异常时返回 false。
 	内部算法：校验配置 → 延迟 require SDK → 初始化白名单/Build → 保护调用事件接口。
 	不负责：判断业务成功、聚合高频事件、计算金额、创建 Roblox 漏斗或重试网络请求。
@@ -14,6 +14,7 @@ local GameAnalyticsConfig = require(script.Parent.GameAnalyticsConfig)
 local GameAnalyticsGateway = {}
 
 export type ResourceFlow = "Source" | "Sink"
+export type ProgressionStatus = "Start" | "Complete" | "Fail"
 
 local started = false
 local enabled = false
@@ -154,6 +155,53 @@ function GameAnalyticsGateway.LogResource(
 			amount = amount,
 			itemType = itemType,
 			itemId = itemId,
+			customFields = customFields,
+		})
+	end)
+	return succeeded
+end
+
+function GameAnalyticsGateway.LogProgression(
+	player: Player,
+	status: ProgressionStatus,
+	progression01: string,
+	progression02: string?,
+	progression03: string?,
+	score: number?,
+	customFields: { [string]: any }?
+): boolean
+	if not enabled
+		or not sdk
+		or typeof(player) ~= "Instance"
+		or not player:IsA("Player")
+		or (status ~= "Start" and status ~= "Complete" and status ~= "Fail")
+		or type(progression01) ~= "string"
+		or progression01 == ""
+		or (progression02 ~= nil
+			and (type(progression02) ~= "string" or progression02 == ""))
+		or (progression03 ~= nil
+			and (type(progression03) ~= "string" or progression03 == ""))
+		or (progression03 ~= nil and progression02 == nil)
+		or (score ~= nil
+			and (type(score) ~= "number"
+				or score ~= score
+				or math.abs(score) == math.huge))
+	then
+		return false
+	end
+
+	local progressionStatus = if status == "Start"
+		then sdk.EGAProgressionStatus.Start
+		else if status == "Complete"
+			then sdk.EGAProgressionStatus.Complete
+			else sdk.EGAProgressionStatus.Fail
+	local succeeded = pcall(function()
+		sdk:addProgressionEvent(player.UserId, {
+			progressionStatus = progressionStatus,
+			progression01 = progression01,
+			progression02 = progression02,
+			progression03 = progression03,
+			score = score,
 			customFields = customFields,
 		})
 	end)

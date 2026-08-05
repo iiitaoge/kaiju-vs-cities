@@ -8,7 +8,7 @@
 
 local PlayerRuntimeLoadReporter = {}
 
-export type Stage = "Plot" | "City" | "Monster" | "Character"
+export type Stage = "Plot" | "City" | "Monster" | "DefenseMonster" | "Character"
 
 local changed = Instance.new("BindableEvent")
 
@@ -20,7 +20,11 @@ function PlayerRuntimeLoadReporter.Report(
 )
 	assert(typeof(player) == "Instance" and player:IsA("Player"), "player 必须是 Player")
 	assert(
-		stage == "Plot" or stage == "City" or stage == "Monster" or stage == "Character",
+		stage == "Plot"
+			or stage == "City"
+			or stage == "Monster"
+			or stage == "DefenseMonster"
+			or stage == "Character",
 		"stage 无效"
 	)
 	assert(type(succeeded) == "boolean", "succeeded 必须是 boolean")
