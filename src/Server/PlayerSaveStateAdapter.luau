@@ -10,6 +10,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local HouseStateService = require(script.Parent.HouseStateService)
 local MoneyService = require(script.Parent.MoneyService)
+local DefenseMonsterSpawnPointStateService = require(
+	script.Parent.DefenseMonsterSpawnPointStateService
+)
 local MonsterSpawnPointStateService = require(script.Parent.MonsterSpawnPointStateService)
 local MonsterStateService = require(script.Parent.MonsterStateService)
 local RebirthStateService = require(script.Parent.RebirthStateService)
@@ -18,6 +21,9 @@ local RegionUpgradeConfigs = require(script.Parent.RegionUpgradeConfigs)
 local TutorialProgressStateService = require(script.Parent.TutorialProgressStateService)
 local ZoneStateService = require(script.Parent.ZoneStateService)
 local HouseCatalog = require(ReplicatedStorage.Shared.Building.HouseCatalog)
+local DefenseMonsterSlotCatalog = require(
+	ReplicatedStorage.Shared.Monster.DefenseMonsterSlotCatalog
+)
 local IncomeBuildingProgressionRules = require(
 	ReplicatedStorage.Shared.Building.IncomeBuildingProgressionRules
 )
@@ -154,9 +160,32 @@ function PlayerSaveStateAdapter.Apply(player: Player, data, now: number?)
 		end
 	end
 
+	local defenseMonsterCount = 0
+	for _, definition in DefenseMonsterSlotCatalog.GetAll() do
+		local saved = data.DefenseMonsters.SpawnPoints[definition.SpawnPointId]
+		local savedMonsterKey = if saved
+			then DefenseMonsterSlotCatalog.GetMonsterKey(definition.SpawnPointId, saved.Level)
+			else nil
+		local built = saved ~= nil
+			and saved.Built == true
+			and ZoneStateService.GetUnlocked(player, definition.RegionId)
+			and savedMonsterKey ~= nil
+		DefenseMonsterSpawnPointStateService.Restore(
+			player,
+			definition.SpawnPointId,
+			built,
+			if built then saved.Level else 0,
+			if built then savedMonsterKey else nil
+		)
+		if built then
+			defenseMonsterCount += 1
+		end
+	end
+
 	return {
 		HouseCount = houseCount,
 		SpawnPointCount = spawnPointCount,
+		DefenseMonsterCount = defenseMonsterCount,
 	}
 end
 
@@ -201,6 +230,15 @@ function PlayerSaveStateAdapter.Capture(player: Player, now: number?)
 			MonsterKey = state.MonsterKey,
 		}
 	end
+	local defenseSpawnPoints = {}
+	for _, definition in DefenseMonsterSlotCatalog.GetAll() do
+		local state = DefenseMonsterSpawnPointStateService.Get(player, definition.SpawnPointId)
+		defenseSpawnPoints[definition.SpawnPointId] = {
+			Built = state.Built,
+			Level = state.Level,
+			MonsterKey = state.MonsterKey,
+		}
+	end
 
 	return {
 		Version = PlayerSaveSchema.CurrentVersion,
@@ -219,6 +257,9 @@ function PlayerSaveStateAdapter.Capture(player: Player, now: number?)
 		Monsters = {
 			Capacity = MonsterStateService.GetCapacity(player),
 			SpawnPoints = spawnPoints,
+		},
+		DefenseMonsters = {
+			SpawnPoints = defenseSpawnPoints,
 		},
 	}
 end

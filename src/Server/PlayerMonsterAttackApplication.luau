@@ -13,6 +13,9 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local GameAnalyticsGateway = require(script.Parent.Analytics.GameAnalyticsGateway)
+local PlayerJourneyAnalyticsCoordinator = require(
+	script.Parent.Analytics.PlayerJourneyAnalyticsCoordinator
+)
 local GodzillaMoveService = require(script.Parent.GodzillaMoveService)
 local GodzillaService = require(script.Parent.GodzillaService)
 local ModelMover = require(script.Parent.ModelMover)
@@ -24,6 +27,9 @@ local MonsterRecoveryCoordinator = require(script.Parent.MonsterRecoveryCoordina
 local MonsterReturnCoordinator = require(script.Parent.MonsterReturnCoordinator)
 local MonsterRosterCoordinator = require(script.Parent.MonsterRosterCoordinator)
 local MonsterTemplateResolver = require(script.Parent.MonsterTemplateResolver)
+local PlayerDefenseMonsterRuntimeCoordinator = require(
+	script.Parent.PlayerDefenseMonsterRuntimeCoordinator
+)
 local PlayerPlotAssignmentService = require(script.Parent.PlayerPlotAssignmentService)
 local PlayerRebirthBonusQuery = require(script.Parent.PlayerRebirthBonusQuery)
 local PlayerRuntimeHouseAttackAccess = require(script.Parent.PlayerRuntimeHouseAttackAccess)
@@ -31,11 +37,17 @@ local PlayerRuntimeDefenseTowerAccess = require(script.Parent.PlayerRuntimeDefen
 local WorkspacePlayerWorldAccess = require(script.Parent.WorkspacePlayerWorldAccess)
 local ModelAnimationConfigs = require(ReplicatedStorage.Shared.Animation.ModelAnimationConfigs)
 local MonsterAttackConfigs = require(ReplicatedStorage.Shared.Monster.MonsterAttackConfigs)
+local DefenseMonsterSlotCatalog = require(
+	ReplicatedStorage.Shared.Monster.DefenseMonsterSlotCatalog
+)
 local MonsterExpeditionConfigs = require(
 	ReplicatedStorage.Shared.Monster.MonsterExpeditionConfigs
 )
 local MonsterExpeditionReportBuilder = require(
 	ReplicatedStorage.Shared.Monster.MonsterExpeditionReportBuilder
+)
+local MonsterExpeditionTimingConfigs = require(
+	ReplicatedStorage.Shared.Monster.MonsterExpeditionTimingConfigs
 )
 
 local PlayerMonsterAttackApplication = {}
@@ -158,8 +170,8 @@ local function beginRecovery(player: Player, spawnPointId: string, plotOverride:
 			)
 		end,
 		ResolveTemplate = function(monsterKey)
-			local template = MonsterTemplateResolver.Resolve(monsterKey)
-			return template
+			local template, _, modelScale = MonsterTemplateResolver.Resolve(monsterKey)
+			return template, modelScale
 		end,
 	})
 	if not recovery.Succeeded then
@@ -251,6 +263,14 @@ function PlayerMonsterAttackApplication.Execute(
 	targetPlayerId: number,
 	entryPoint: Vector3
 )
+	if DefenseMonsterSlotCatalog.Get(spawnPointId) then
+		return {
+			Succeeded = false,
+			Reason = "DefenseMonsterCannotAttack",
+			CommandId = nil,
+			Monster = nil,
+		}
+	end
 	local targetPlayer = Players:GetPlayerByUserId(targetPlayerId)
 	if not targetPlayer then
 		return {
@@ -357,9 +377,12 @@ function PlayerMonsterAttackApplication.Execute(
 						TurnDuration = configs.Expedition.Movement.TurnDuration,
 						WalkAnimation = configs.Expedition.Movement.WalkAnimation,
 						RewardAmount = configs.Expedition.RewardAmount,
+						MaxExpeditionDuration = MonsterExpeditionTimingConfigs.ExpeditionDuration,
+						MaxBuildingDuration = MonsterExpeditionTimingConfigs.BuildingDuration,
+						DuelResolutionDuration = MonsterExpeditionTimingConfigs.DuelResolutionDuration,
+						DuelWatchdogDuration = MonsterExpeditionTimingConfigs.DuelWatchdogDuration,
 						Defense = {
 							TowerAccess = PlayerRuntimeDefenseTowerAccess,
-							DefenderDetectionRadius = configs.Expedition.Defense.DefenderDetectionRadius,
 						},
 						ResolveCombatConfig = resolveCombatConfig,
 						CombatFirstStrike = "Defender",
@@ -373,17 +396,33 @@ function PlayerMonsterAttackApplication.Execute(
 							if defeatedRecord and defeatedRecord.Model then
 								stopCombatantMotion(defeatedRecord.Model)
 							end
-							beginRecovery(
-								defeatedPlayer,
-								defeatedSpawnPointId,
-								if defeatedPlayer == commandContext.Attacker then plot else nil
-							)
+							if DefenseMonsterSlotCatalog.Get(defeatedSpawnPointId) then
+								local recovery = PlayerDefenseMonsterRuntimeCoordinator.BeginRecovery(
+									defeatedPlayer,
+									defeatedSpawnPointId
+								)
+								if not recovery.Succeeded then
+									warn("启动防守怪兽恢复失败：", recovery.Reason)
+								end
+							else
+								beginRecovery(
+									defeatedPlayer,
+									defeatedSpawnPointId,
+									if defeatedPlayer == commandContext.Attacker then plot else nil
+								)
+							end
 						end,
 						OnReturnRequired = function(returnPlayer, returnSpawnPointId, _endReason)
 							return beginIncubatorReturn(
 								returnPlayer,
 								returnSpawnPointId,
 								if returnPlayer == commandContext.Attacker then plot else nil
+							)
+						end,
+						OnDefenderReturnRequired = function(returnPlayer, returnSpawnPointId)
+							return PlayerDefenseMonsterRuntimeCoordinator.ReturnToSlot(
+								returnPlayer,
+								returnSpawnPointId
 							)
 						end,
 					}
@@ -417,6 +456,11 @@ function PlayerMonsterAttackApplication.Execute(
 							reason = report.Reason or "None",
 							monsterKey = report.MonsterKey,
 						}
+					)
+					PlayerJourneyAnalyticsCoordinator.RecordAttackFinished(
+						commandContext.Attacker,
+						commandContext.Defender,
+						report
 					)
 				end
 				if commandContext.Attacker.Parent ~= Players then

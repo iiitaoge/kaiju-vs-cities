@@ -8,6 +8,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local DefenseMonsterActionQuery = require(script.Parent.Parent.DefenseMonsterActionQuery)
 local IncomeZoneActionQuery = require(script.Parent.Parent.IncomeZoneActionQuery)
 local IncomeZoneBoostQuery = require(script.Parent.Parent.IncomeZoneBoostQuery)
 local MonsterSpawnPointActionQuery = require(
@@ -65,6 +66,18 @@ function ButtonPresentationQuery.Get(player: Player, action)
 		if not snapshot or snapshot.Built
 			or snapshot.Build.Reason == "RequiredSpawnPointNotBuilt"
 		then
+			return { Enabled = false }
+		end
+		return ButtonWorldUIPresentationRules.Resolve({
+			Kind = "MonsterBuild",
+			Cost = snapshot.Build.Cost,
+			Reason = snapshot.Build.Reason,
+		})
+	end
+
+	if action.Kind == "DefenseMonsterBuild" then
+		local snapshot = DefenseMonsterActionQuery.Get(player, action.SpawnPointId)
+		if not snapshot or snapshot.Built or not snapshot.Build.Allowed then
 			return { Enabled = false }
 		end
 		return ButtonWorldUIPresentationRules.Resolve({

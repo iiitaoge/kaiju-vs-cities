@@ -11,10 +11,16 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local MonsterExpeditionReportService = require(script.Parent.MonsterExpeditionReportService)
+local PlayerJourneyAnalyticsCoordinator = require(
+	script.Parent.Analytics.PlayerJourneyAnalyticsCoordinator
+)
 local MonsterSpawnPointPurchaseCoordinator = require(
 	script.Parent.MonsterSpawnPointPurchaseCoordinator
 )
 local PlayerCityRuntimeCoordinator = require(script.Parent.PlayerCityRuntimeCoordinator)
+local PlayerDefenseMonsterRuntimeCoordinator = require(
+	script.Parent.PlayerDefenseMonsterRuntimeCoordinator
+)
 local PlayerPlotSpawnService = require(script.Parent.PlayerPlotSpawnService)
 local PlayerMonsterRuntimeCoordinator = require(script.Parent.PlayerMonsterRuntimeCoordinator)
 local PlayerPersistenceCoordinator = require(script.Parent.PlayerPersistenceCoordinator)
@@ -82,6 +88,7 @@ end
 
 local function reloadRuntime(player: Player, data): (boolean, string?)
 	PlayerMonsterRuntimeCoordinator.Unload(player)
+	PlayerDefenseMonsterRuntimeCoordinator.Unload(player)
 	PlayerCityRuntimeCoordinator.Unload(player)
 	MonsterExpeditionReportService.Clear(player)
 
@@ -101,6 +108,10 @@ local function reloadRuntime(player: Player, data): (boolean, string?)
 	local monsters = PlayerMonsterRuntimeCoordinator.Load(player)
 	if not monsters.Succeeded then
 		return false, monsters.Reason or "MonsterRuntimeReloadFailed"
+	end
+	local defenseMonsters = PlayerDefenseMonsterRuntimeCoordinator.Load(player)
+	if not defenseMonsters.Succeeded then
+		return false, defenseMonsters.Reason or "DefenseMonsterRuntimeReloadFailed"
 	end
 
 	local characterReloaded, characterError = PlayerPlotSpawnService.ReloadCharacter(player)
@@ -136,6 +147,11 @@ local function executeLocked(player: Player)
 		Reason = query.Reason,
 	})
 	if not query.Allowed then
+		PlayerJourneyAnalyticsCoordinator.RecordRebirthFailed(
+			player,
+			query.Count,
+			query.Reason
+		)
 		return snapshot(player, "Insufficient", query.Reason)
 	end
 
@@ -144,6 +160,11 @@ local function executeLocked(player: Player)
 		CycleId = eligibility.State.CycleId,
 	})
 	if not confirmed.Accepted then
+		PlayerJourneyAnalyticsCoordinator.RecordRebirthFailed(
+			player,
+			query.Count,
+			confirmed.Reason
+		)
 		return snapshot(player, "Failed", confirmed.Reason)
 	end
 
@@ -162,8 +183,17 @@ local function executeLocked(player: Player)
 				"重生存档正在安全恢复，请重新加入游戏。"
 			)
 		end
+		PlayerJourneyAnalyticsCoordinator.RecordRebirthFailed(
+			player,
+			query.Count,
+			committed.Reason
+		)
 		return snapshot(player, "Failed", committed.Reason)
 	end
+	PlayerJourneyAnalyticsCoordinator.RecordRebirthSaveCommitted(
+		player,
+		query.NextCount
+	)
 
 	local committedTransition = apply(player, {
 		Kind = "CommitSucceeded",
@@ -177,6 +207,11 @@ local function executeLocked(player: Player)
 			Reason = reloadReason,
 		})
 		recoverByRejoin(player, "重生已保存，请重新加入以完成场景重载。")
+		PlayerJourneyAnalyticsCoordinator.RecordRebirthFailed(
+			player,
+			query.Count,
+			reloadReason
+		)
 		return snapshot(player, "Failed", reloadReason)
 	end
 
@@ -184,6 +219,10 @@ local function executeLocked(player: Player)
 		Kind = "RuntimeReloadSucceeded",
 		CycleId = committedTransition.State.CycleId,
 	})
+	PlayerJourneyAnalyticsCoordinator.RecordRebirthCompleted(
+		player,
+		query.NextCount
+	)
 	return snapshot(player, nil, nil)
 end
 

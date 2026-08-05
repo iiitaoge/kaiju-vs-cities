@@ -29,6 +29,9 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local GameAnalyticsGateway = require(script.Parent.Analytics.GameAnalyticsGateway)
+local PlayerJourneyAnalyticsCoordinator = require(
+	script.Parent.Analytics.PlayerJourneyAnalyticsCoordinator
+)
 local HouseIncomeService = require(script.Parent.HouseIncomeService)
 local HouseInteractionConfigs = require(script.Parent.HouseInteractionConfigs)
 local HouseStateService = require(script.Parent.HouseStateService)
@@ -224,6 +227,11 @@ function HouseInteractionService.Enter(player: Player, houseId: string): Result
 		collection.Collected,
 		"Income",
 		"Manual-" .. houseId
+	)
+	PlayerJourneyAnalyticsCoordinator.RecordManualIncome(
+		player,
+		collection.Collected,
+		collection.Balance
 	)
 
 	return makeResult(

@@ -177,6 +177,49 @@ return {
 		MaxActivationDistance = 12,
 	},
 
+	["DM-R1-Button"] = {
+		InitialState = "Locked",
+		ActionId = "DMR1Build",
+		Scope = "PlayerPlot",
+		ZoneId = "R1",
+		MaxActivationDistance = 12,
+	},
+	["DM-R2-Button"] = {
+		InitialState = "Locked",
+		ActionId = "DMR2Build",
+		Scope = "PlayerPlot",
+		ZoneId = "R2",
+		MaxActivationDistance = 12,
+	},
+	["DM-R3-Button"] = {
+		InitialState = "Locked",
+		ActionId = "DMR3Build",
+		Scope = "PlayerPlot",
+		ZoneId = "R3",
+		MaxActivationDistance = 12,
+	},
+	["DM-R4-Button"] = {
+		InitialState = "Locked",
+		ActionId = "DMR4Build",
+		Scope = "PlayerPlot",
+		ZoneId = "R4",
+		MaxActivationDistance = 12,
+	},
+	["DM-R5-Button"] = {
+		InitialState = "Locked",
+		ActionId = "DMR5Build",
+		Scope = "PlayerPlot",
+		ZoneId = "R5",
+		MaxActivationDistance = 12,
+	},
+	["DM-R6-Button"] = {
+		InitialState = "Locked",
+		ActionId = "DMR6Build",
+		Scope = "PlayerPlot",
+		ZoneId = "R6",
+		MaxActivationDistance = 12,
+	},
+
 	["M1-S1-Button"] = {
 		InitialState = "Locked",
 		ActionId = "M1S1Build",

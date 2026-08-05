@@ -6,9 +6,11 @@ local MonsterRecoveryCoordinator = {}
 
 export type BeginOptions = {
 	RecoveryDuration: number,
-	ResolveTemplate: (string) -> Model?,
+	ResolveTemplate: (string) -> (Model?, number?),
 	PrepareRespawn: ((Player, string) -> { Succeeded: boolean, Reason: string? })?,
 	OnRespawned: ((Player, string, Model) -> ())?,
+	CanStartCountdown: ((Player, string) -> boolean)?,
+	PollInterval: number?,
 }
 
 local recoveryIds: { [Player]: { [string]: number } } = setmetatable({}, { __mode = "k" })
@@ -47,6 +49,12 @@ function MonsterRecoveryCoordinator.Begin(
 		options.PrepareRespawn == nil or type(options.PrepareRespawn) == "function",
 		"PrepareRespawn 必须是 function 或 nil"
 	)
+	assert(
+		options.CanStartCountdown == nil or type(options.CanStartCountdown) == "function",
+		"CanStartCountdown 必须是 function 或 nil"
+	)
+	local pollInterval = options.PollInterval or 0.25
+	assert(type(pollInterval) == "number" and pollInterval > 0, "PollInterval 必须大于 0")
 
 	local current = MonsterRosterCoordinator.Get(player, spawnPointId)
 	if not current then
@@ -73,11 +81,26 @@ function MonsterRecoveryCoordinator.Begin(
 		}
 	end
 
-	local respawnAt = workspace:GetServerTimeNow() + options.RecoveryDuration
-	MonsterRosterCoordinator.SetRespawnAt(player, spawnPointId, respawnAt)
 	local recoveryId = nextRecoveryId(player, spawnPointId)
+	local respawnAt: number? = nil
+	local function canStartCountdown(): boolean
+		if not options.CanStartCountdown then
+			return true
+		end
+		local succeeded, allowed = pcall(options.CanStartCountdown, player, spawnPointId)
+		if not succeeded then
+			warn("怪兽恢复占用查询失败：", allowed)
+			return false
+		end
+		return allowed == true
+	end
+	if canStartCountdown() then
+		respawnAt = workspace:GetServerTimeNow() + options.RecoveryDuration
+		MonsterRosterCoordinator.SetRespawnAt(player, spawnPointId, respawnAt)
+	end
 
-	task.delay(options.RecoveryDuration, function()
+	local monitorRecovery
+	monitorRecovery = function()
 		if not isCurrent(player, spawnPointId, recoveryId) then
 			return
 		end
@@ -86,6 +109,23 @@ function MonsterRecoveryCoordinator.Begin(
 		end
 		local latest = MonsterRosterCoordinator.Get(player, spawnPointId)
 		if not latest or latest.State ~= "Recovering" then
+			return
+		end
+		if not canStartCountdown() then
+			if respawnAt ~= nil then
+				respawnAt = nil
+				MonsterRosterCoordinator.SetRespawnAt(player, spawnPointId, nil)
+			end
+			task.delay(pollInterval, monitorRecovery)
+			return
+		end
+		if respawnAt == nil then
+			respawnAt = workspace:GetServerTimeNow() + options.RecoveryDuration
+			MonsterRosterCoordinator.SetRespawnAt(player, spawnPointId, respawnAt)
+		end
+		local remaining = respawnAt - workspace:GetServerTimeNow()
+		if remaining > 0 then
+			task.delay(math.min(pollInterval, remaining), monitorRecovery)
 			return
 		end
 		if options.PrepareRespawn then
@@ -107,12 +147,17 @@ function MonsterRecoveryCoordinator.Begin(
 			end
 		end
 
-		local template = options.ResolveTemplate(latest.MonsterKey)
-		if not template or not template:IsA("Model") then
+		local template, modelScale = options.ResolveTemplate(latest.MonsterKey)
+		if not template or not template:IsA("Model") or type(modelScale) ~= "number" then
 			warn("恢复怪兽失败，找不到模板：", latest.MonsterKey)
 			return
 		end
-		local result = MonsterRosterCoordinator.Respawn(player, spawnPointId, template)
+		local result = MonsterRosterCoordinator.Respawn(
+			player,
+			spawnPointId,
+			template,
+			modelScale
+		)
 		if not result.Succeeded then
 			warn("恢复怪兽失败：", result.Reason)
 			return
@@ -128,7 +173,8 @@ function MonsterRecoveryCoordinator.Begin(
 				warn("怪兽恢复回调失败：", callbackError)
 			end
 		end
-	end)
+	end
+	task.defer(monitorRecovery)
 
 	return {
 		Succeeded = true,

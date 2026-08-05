@@ -20,7 +20,6 @@ local movement = table.freeze({
 	TurnDuration = 0.2,
 	WalkAnimation = walkAnimation,
 })
-local defense = table.freeze({ DefenderDetectionRadius = 45 })
 local combatMovement = table.freeze({
 	DesiredGap = 2,
 	MaxGap = 5,
@@ -57,7 +56,6 @@ for _, definition in MonsterCatalog.GetAll() do
 			definition.Level
 		),
 		RecoveryDuration = 10,
-		Defense = defense,
 		Combat = combat,
 	})
 end

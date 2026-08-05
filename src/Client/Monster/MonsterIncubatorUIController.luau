@@ -12,6 +12,7 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
+local AnalyticsIntentClient = require(script.Parent.Parent.Analytics.AnalyticsIntentClient)
 local LocalMonsterBuildPresentationAccess = require(script.Parent.LocalMonsterBuildPresentationAccess)
 local LocalMonsterIncubatorUIAccess = require(script.Parent.LocalMonsterIncubatorUIAccess)
 local MonsterManagementCoordinator = require(script.Parent.MonsterManagementCoordinator)
@@ -27,6 +28,9 @@ local MonsterSpawnPointCatalog = require(
 	ReplicatedStorage.Shared.Monster.MonsterSpawnPointCatalog
 )
 local ResponsiveUIScale = require(ReplicatedStorage.Shared.UI.ResponsiveUIScale)
+local AnalyticsIntentProtocol = require(
+	ReplicatedStorage.Shared.Analytics.AnalyticsIntentProtocol
+)
 
 local MonsterIncubatorUIController = {}
 
@@ -127,6 +131,7 @@ function MonsterIncubatorUIController.Start()
 		local retryToken = 0
 		local refreshScheduled = false
 		local lastBindingRefresh = 0
+		local managementOpenReported = false
 
 		local function disconnectAll(connections: { RBXScriptConnection })
 			for _, connection in connections do
@@ -186,6 +191,25 @@ function MonsterIncubatorUIController.Start()
 				or state.Mode == "Upgrading"
 				or state.Mode == "SelectingAttack"
 			applyVisibility()
+			if state.Mode == "Managing" and snapshot and not managementOpenReported
+				and boundSpawnPointId
+			then
+				managementOpenReported = true
+				AnalyticsIntentClient.Record(
+					AnalyticsIntentProtocol.Intents.MonsterManagementOpened,
+					boundSpawnPointId
+				)
+			elseif (state.Mode == "Closed" or state.Mode == "Error")
+				and managementOpenReported
+				and boundSpawnPointId
+			then
+				AnalyticsIntentClient.Record(
+					AnalyticsIntentProtocol.Intents.MonsterManagementClosed,
+					boundSpawnPointId,
+					state.LastReason or state.Mode
+				)
+				managementOpenReported = false
+			end
 			refs.Robux.Visible = false
 			refs.StartValue.Text = if state.Mode == "SelectingAttack" then "Select Target" else "Start"
 
@@ -252,6 +276,7 @@ function MonsterIncubatorUIController.Start()
 			references = nil
 			boundIncubator = nil
 			boundSpawnPointId = nil
+			managementOpenReported = false
 		end
 
 		local function bindIncubator(
@@ -280,9 +305,17 @@ function MonsterIncubatorUIController.Start()
 			})
 			local session = management
 			table.insert(uiConnections, resolved.StartButton.Activated:Connect(function()
+				AnalyticsIntentClient.Record(
+					AnalyticsIntentProtocol.Intents.AttackStartClicked,
+					spawnPointId
+				)
 				session.ChooseAttack()
 			end))
 			table.insert(uiConnections, resolved.MoneyButton.Activated:Connect(function()
+				AnalyticsIntentClient.Record(
+					AnalyticsIntentProtocol.Intents.MonsterUpgradeClicked,
+					spawnPointId
+				)
 				session.ChooseUpgrade()
 			end))
 			session.Open(spawnPointId)

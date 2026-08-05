@@ -7,7 +7,7 @@ return {
 	Paths = {
 		HouseTemplate = "ReplicatedStorage/TestFixtures/MonsterAttackTest/HouseTemplates/TestHouse",
 		HousePoints = "Workspace/MonsterAttackTest/HousePoints",
-		MonsterTemplate = "ReplicatedStorage/Godzilla/level1/P1",
+		MonsterTemplate = "ReplicatedStorage/Godzilla/P1/Start",
 		MonsterSpawnPoint = "Workspace/MonsterAttackTest/MonsterSpawnPoint",
 		CameraTarget = "Workspace/MonsterAttackTest/CameraTarget",
 		Runtime = "Workspace/MonsterAttackTest/Runtime",

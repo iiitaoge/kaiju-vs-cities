@@ -8,15 +8,23 @@
 	不负责：Remote、GUI、目标玩家选择、攻击提交或相机。
 ]]
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local DefenseMonsterActionQuery = require(script.Parent.DefenseMonsterActionQuery)
 local MonsterSpawnPointActionQuery = require(script.Parent.MonsterSpawnPointActionQuery)
 local MonsterSpawnPointPurchaseCoordinator = require(
 	script.Parent.MonsterSpawnPointPurchaseCoordinator
+)
+local DefenseMonsterSlotCatalog = require(
+	ReplicatedStorage.Shared.Monster.DefenseMonsterSlotCatalog
 )
 
 local MonsterManagementCoordinator = {}
 
 local function getSnapshot(player: Player, spawnPointId: string)
-	local source = MonsterSpawnPointActionQuery.Get(player, spawnPointId)
+	local source = if DefenseMonsterSlotCatalog.Get(spawnPointId)
+		then DefenseMonsterActionQuery.Get(player, spawnPointId)
+		else MonsterSpawnPointActionQuery.Get(player, spawnPointId)
 	if not source then
 		return nil, "UnknownSpawnPoint"
 	end

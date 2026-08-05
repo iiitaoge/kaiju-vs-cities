@@ -8,15 +8,45 @@
 	不负责：实体按钮、管理 UI、攻击命令、价格计算或表现动画。
 ]]
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
 local GameAnalyticsGateway = require(script.Parent.Analytics.GameAnalyticsGateway)
+local PlayerJourneyAnalyticsCoordinator = require(
+	script.Parent.Analytics.PlayerJourneyAnalyticsCoordinator
+)
+local DefenseMonsterActionQuery = require(script.Parent.DefenseMonsterActionQuery)
 local MoneyService = require(script.Parent.MoneyService)
 local MonsterSpawnPointActionQuery = require(script.Parent.MonsterSpawnPointActionQuery)
 local PlayerMonsterRuntimeCoordinator = require(script.Parent.PlayerMonsterRuntimeCoordinator)
+local PlayerDefenseMonsterRuntimeCoordinator = require(
+	script.Parent.PlayerDefenseMonsterRuntimeCoordinator
+)
+local DefenseMonsterSlotCatalog = require(
+	ReplicatedStorage.Shared.Monster.DefenseMonsterSlotCatalog
+)
 
 local MonsterSpawnPointPurchaseCoordinator = {}
 
 local locks: { [Player]: { [string]: boolean } } = setmetatable({}, { __mode = "k" })
 local exclusiveLocks: { [Player]: boolean } = setmetatable({}, { __mode = "k" })
+
+local function getSnapshot(player: Player, spawnPointId: string)
+	return if DefenseMonsterSlotCatalog.Get(spawnPointId)
+		then DefenseMonsterActionQuery.Get(player, spawnPointId)
+		else MonsterSpawnPointActionQuery.Get(player, spawnPointId)
+end
+
+local function getPrimaryButtonState(player: Player, spawnPointId: string): string
+	return if DefenseMonsterSlotCatalog.Get(spawnPointId)
+		then DefenseMonsterActionQuery.GetPrimaryButtonState(player, spawnPointId)
+		else MonsterSpawnPointActionQuery.GetPrimaryButtonState(player, spawnPointId)
+end
+
+local function getBuildButtonState(player: Player, spawnPointId: string): string
+	return if DefenseMonsterSlotCatalog.Get(spawnPointId)
+		then DefenseMonsterActionQuery.GetBuildButtonState(player, spawnPointId)
+		else MonsterSpawnPointActionQuery.GetBuildButtonState(player, spawnPointId)
+end
 
 local function resultForSpawnPoint(
 	succeeded: boolean,
@@ -29,8 +59,8 @@ local function resultForSpawnPoint(
 )
 	-- 状态刷新属于返回值增强；不能让它把已经提交成功的购买误报为事务失败。
 	local stateQuery = if action == "Build"
-		then MonsterSpawnPointActionQuery.GetBuildButtonState
-		else MonsterSpawnPointActionQuery.GetPrimaryButtonState
+		then getBuildButtonState
+		else getPrimaryButtonState
 	local stateSucceeded, nextButtonState = pcall(
 		stateQuery,
 		player,
@@ -48,7 +78,7 @@ local function resultForSpawnPoint(
 end
 
 local function executeUnlocked(player: Player, spawnPointId: string, action: "Build" | "Upgrade")
-	local snapshot = MonsterSpawnPointActionQuery.Get(player, spawnPointId)
+	local snapshot = getSnapshot(player, spawnPointId)
 	if not snapshot then
 		return resultForSpawnPoint(false, "UnknownSpawnPoint", action, 0, player, spawnPointId, nil)
 	end
@@ -91,7 +121,17 @@ local function executeUnlocked(player: Player, spawnPointId: string, action: "Bu
 
 	local executed, runtimeResultOrError = pcall(function()
 		if action == "Build" then
+			if DefenseMonsterSlotCatalog.Get(spawnPointId) then
+				return PlayerDefenseMonsterRuntimeCoordinator.Build(player, spawnPointId)
+			end
 			return PlayerMonsterRuntimeCoordinator.Build(player, spawnPointId)
+		end
+		if DefenseMonsterSlotCatalog.Get(spawnPointId) then
+			return PlayerDefenseMonsterRuntimeCoordinator.Upgrade(
+				player,
+				spawnPointId,
+				assert(actionStatus.TargetLevel)
+			)
 		end
 		return PlayerMonsterRuntimeCoordinator.Upgrade(
 			player,
@@ -132,6 +172,14 @@ local function executeUnlocked(player: Player, spawnPointId: string, action: "Bu
 		actionStatus.Cost,
 		"Monster",
 		string.format("%s-%s-L%d", action, spawnPointId, targetLevel)
+	)
+	PlayerJourneyAnalyticsCoordinator.RecordMonsterPurchase(
+		player,
+		spawnPointId,
+		action,
+		targetLevel,
+		actionStatus.Cost,
+		MoneyService.Get(player)
 	)
 
 	return resultForSpawnPoint(
@@ -203,7 +251,7 @@ function MonsterSpawnPointPurchaseCoordinator.Upgrade(player: Player, spawnPoint
 end
 
 function MonsterSpawnPointPurchaseCoordinator.ExecutePrimary(player: Player, spawnPointId: string)
-	local snapshot = MonsterSpawnPointActionQuery.Get(player, spawnPointId)
+	local snapshot = getSnapshot(player, spawnPointId)
 	if not snapshot then
 		return resultForSpawnPoint(false, "UnknownSpawnPoint", "Build", 0, player, spawnPointId, nil)
 	end

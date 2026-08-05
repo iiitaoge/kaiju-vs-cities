@@ -4,6 +4,7 @@ local ServerScriptService = game:GetService("ServerScriptService")
 
 local Server = ServerScriptService.Server
 local HouseStateService = require(Server.HouseStateService)
+local DefenseMonsterSpawnPointStateService = require(Server.DefenseMonsterSpawnPointStateService)
 local MoneyService = require(Server.MoneyService)
 local MonsterSpawnPointStateService = require(Server.MonsterSpawnPointStateService)
 local MonsterStateService = require(Server.MonsterStateService)
@@ -91,6 +92,8 @@ function PlayerSaveStateAdapterSpec.Run(player: Player?): boolean
 	local restoredSpawnPoint = MonsterSpawnPointStateService.Get(testPlayer, "M1-S1")
 	expect(restoredSpawnPoint.Built and restoredSpawnPoint.Level == 2, "出生点资产恢复错误")
 	expect(restoredSpawnPoint.MonsterKey == levelTwoMonsterKey, "最新等级怪兽恢复错误")
+	local restoredDefense = DefenseMonsterSpawnPointStateService.Get(testPlayer, "DM-R1")
+	expect(not restoredDefense.Built and restoredDefense.Level == 0, "已解锁区域不得自动建造防守怪兽")
 	return true
 end
 

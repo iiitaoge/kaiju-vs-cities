@@ -20,8 +20,10 @@
 	- IncomeZoneUnlock：需要 RegionId。
 	- IncomeZoneBoost：需要 RegionId。
 	- MonsterSpawnPointBuild：需要 SpawnPointId。
+	- DefenseMonsterBuild：需要 SpawnPointId。
 ]]
 
+local DefenseMonsterActionQuery = require(script.Parent.Parent.DefenseMonsterActionQuery)
 local IncomeZoneActionQuery = require(script.Parent.Parent.IncomeZoneActionQuery)
 local IncomeZoneBoostCoordinator = require(script.Parent.Parent.IncomeZoneBoostCoordinator)
 local IncomeZoneBoostQuery = require(script.Parent.Parent.IncomeZoneBoostQuery)
@@ -55,6 +57,14 @@ local handlers = {
 		)
 		return nil, outcome.NextButtonState
 	end,
+
+	DefenseMonsterBuild = function(player, action)
+		local outcome = MonsterSpawnPointPurchaseCoordinator.Build(
+			player,
+			action.SpawnPointId
+		)
+		return nil, outcome.NextButtonState
+	end,
 }
 
 local stateHandlers = {
@@ -72,6 +82,10 @@ local stateHandlers = {
 
 	MonsterSpawnPointBuild = function(player, action)
 		return MonsterSpawnPointActionQuery.GetBuildButtonState(player, action.SpawnPointId)
+	end,
+
+	DefenseMonsterBuild = function(player, action)
+		return DefenseMonsterActionQuery.GetBuildButtonState(player, action.SpawnPointId)
 	end,
 }
 

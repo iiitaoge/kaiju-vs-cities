@@ -24,6 +24,7 @@
 	- IncomeZonePrimary：RegionId；只负责建造或升级。
 	- IncomeZoneBoost：RegionId；一次性开启收入/生命翻倍和自动收入。
 	- MonsterSpawnPointBuild：SpawnPointId；只负责首次建造，升级由培养罐 UI 请求。
+	- DefenseMonsterBuild：SpawnPointId；只负责首次建造，升级由怪兽 UI 请求。
 ]]
 
 -- 配置键是 ButtonConfigs 中引用的 ActionId，与 Studio Model 名称无关。
@@ -88,6 +89,25 @@ return {
 	},
 	R6Boost = {
 		{ RunOn = "Server", Kind = "IncomeZoneBoost", RegionId = "R6", Repeat = true },
+	},
+
+	DMR1Build = {
+		{ RunOn = "Server", Kind = "DefenseMonsterBuild", SpawnPointId = "DM-R1", Repeat = true },
+	},
+	DMR2Build = {
+		{ RunOn = "Server", Kind = "DefenseMonsterBuild", SpawnPointId = "DM-R2", Repeat = true },
+	},
+	DMR3Build = {
+		{ RunOn = "Server", Kind = "DefenseMonsterBuild", SpawnPointId = "DM-R3", Repeat = true },
+	},
+	DMR4Build = {
+		{ RunOn = "Server", Kind = "DefenseMonsterBuild", SpawnPointId = "DM-R4", Repeat = true },
+	},
+	DMR5Build = {
+		{ RunOn = "Server", Kind = "DefenseMonsterBuild", SpawnPointId = "DM-R5", Repeat = true },
+	},
+	DMR6Build = {
+		{ RunOn = "Server", Kind = "DefenseMonsterBuild", SpawnPointId = "DM-R6", Repeat = true },
 	},
 
 	M1S1Build = {

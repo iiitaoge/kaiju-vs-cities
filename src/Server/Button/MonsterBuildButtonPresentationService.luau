@@ -1,15 +1,22 @@
 --[[
-	职责：按玩家四个怪兽槽的建造顺序显示一个可用的实体建造按钮。
+	职责：显示玩家当前可建造的进攻与防守怪兽实体按钮。
 	输入：已分配给玩家的 Plot。
-	输出：已建按钮和尚未轮到的按钮隐藏并禁用；当前下一个按钮恢复 Studio 原属性。
-	内部算法：S1～S4 按 Catalog 前置关系读取状态，再从 BasePart 持久 Attribute 恢复可见/碰撞/触摸属性。
+	输出：已建按钮和尚未轮到的按钮隐藏并禁用；可建按钮恢复 Studio 原属性。
+	内部算法：进攻按钮遵循 S1～S4 前置关系；已解锁收入区的防守按钮按独立建造状态显示。
 	不负责：执行购买、修改出生点状态、管理培养罐 UI 或真正销毁静态按钮。
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local DefenseMonsterSpawnPointStateService = require(
+	script.Parent.Parent.DefenseMonsterSpawnPointStateService
+)
 local MonsterSpawnPointStateService = require(script.Parent.Parent.MonsterSpawnPointStateService)
 local PlotButtonAccess = require(script.Parent.PlotButtonAccess)
+local ZoneStateService = require(script.Parent.Parent.ZoneStateService)
+local DefenseMonsterSlotCatalog = require(
+	ReplicatedStorage.Shared.Monster.DefenseMonsterSlotCatalog
+)
 local MonsterSpawnPointCatalog = require(
 	ReplicatedStorage.Shared.Monster.MonsterSpawnPointCatalog
 )
@@ -124,6 +131,30 @@ function MonsterBuildButtonPresentationService.RefreshAll(
 			button,
 			not state.Built and prerequisiteBuilt
 		)
+		if not updated then
+			return false, updateReason or "ButtonPresentationUnavailable"
+		end
+	end
+
+	for _, definition in DefenseMonsterSlotCatalog.GetAll() do
+		-- 锁定区域由 ZoneSceneVisibility 管理；这里不覆盖它保存的恢复属性。
+		if not ZoneStateService.GetUnlocked(player, definition.RegionId) then
+			continue
+		end
+		local buttonName = definition.SpawnPointId .. "-Button"
+		local button, _, reason = PlotButtonAccess.Get(
+			plot,
+			definition.RegionId,
+			buttonName
+		)
+		if not button then
+			return false, (reason or "ButtonUnavailable") .. ":" .. buttonName
+		end
+		local state = DefenseMonsterSpawnPointStateService.Get(
+			player,
+			definition.SpawnPointId
+		)
+		local updated, updateReason = setVisible(button, not state.Built)
 		if not updated then
 			return false, updateReason or "ButtonPresentationUnavailable"
 		end

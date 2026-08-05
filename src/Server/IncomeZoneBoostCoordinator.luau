@@ -9,6 +9,9 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local GameAnalyticsGateway = require(script.Parent.Analytics.GameAnalyticsGateway)
+local PlayerJourneyAnalyticsCoordinator = require(
+	script.Parent.Analytics.PlayerJourneyAnalyticsCoordinator
+)
 local HouseHealthStateService = require(script.Parent.HouseHealthStateService)
 local HouseIncomeService = require(script.Parent.HouseIncomeService)
 local HouseWorldUIPresentationService = require(script.Parent.HouseWorldUIPresentationService)
@@ -176,6 +179,13 @@ local function executeUnlocked(player: Player, regionId: string)
 			permission.Cost,
 			"Boost",
 			string.format("%s-%s", transactionKind, regionId)
+		)
+		PlayerJourneyAnalyticsCoordinator.RecordBoostPurchased(
+			player,
+			regionId,
+			transactionKind,
+			permission.Cost,
+			after
 		)
 	end
 	return result(

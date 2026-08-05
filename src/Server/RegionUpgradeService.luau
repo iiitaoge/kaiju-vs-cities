@@ -28,6 +28,9 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local GameAnalyticsGateway = require(script.Parent.Analytics.GameAnalyticsGateway)
+local PlayerJourneyAnalyticsCoordinator = require(
+	script.Parent.Analytics.PlayerJourneyAnalyticsCoordinator
+)
 local EconomyMath = require(script.Parent.EconomyMath)
 local HouseIncomeService = require(script.Parent.HouseIncomeService)
 local HouseStateService = require(script.Parent.HouseStateService)
@@ -114,6 +117,12 @@ function RegionUpgradeService.Unlock(player: Player, regionId: string)
 		"Region",
 		"Unlock-" .. regionId
 	)
+	PlayerJourneyAnalyticsCoordinator.RecordRegionUnlocked(
+		player,
+		regionId,
+		economyConfig.UnlockCost,
+		spendResult.Balance
+	)
 	return nil, "Locked"
 end
 
@@ -161,6 +170,14 @@ function RegionUpgradeService.Upgrade(player: Player, regionId: string)
 		cost,
 		"Region",
 		string.format("%s-%s-L%d", action, regionId, nextLevel)
+	)
+	PlayerJourneyAnalyticsCoordinator.RecordRegionLevel(
+		player,
+		regionId,
+		action,
+		nextLevel,
+		cost,
+		spendResult.Balance
 	)
 
 	local nextButtonState = if levels[nextLevel + 1] then "Ready" else "Special"

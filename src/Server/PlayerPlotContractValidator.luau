@@ -19,6 +19,12 @@ local MonsterIncubatorConfigs = require(
 local MonsterSpawnPointCatalog = require(
 	ReplicatedStorage.Shared.Monster.MonsterSpawnPointCatalog
 )
+local DefenseMonsterSlotCatalog = require(
+	ReplicatedStorage.Shared.Monster.DefenseMonsterSlotCatalog
+)
+local RebirthProgressionConfigs = require(
+	ReplicatedStorage.Shared.Progression.RebirthProgressionConfigs
+)
 local EightPlayerCapacityAcceptanceProtocol = require(
 	ReplicatedStorage.Shared.Test.EightPlayerCapacityAcceptanceProtocol
 )
@@ -137,16 +143,61 @@ local function validateMonsterSlots(errors: { string }, zones: Folder)
 	end
 end
 
+-- 防守槽位尚由美术从 Plot01 复制到其他 Plot；存在时严格验证，缺失交给运行时返回稳定错误。
+local function validatePresentDefenseMonsterSlots(errors: { string }, zones: Folder)
+	for _, definition in DefenseMonsterSlotCatalog.GetAll() do
+		local zone = zones:FindFirstChild(definition.RegionId)
+		if not zone then
+			continue
+		end
+		local slot, duplicated = UniqueNamedChildAccess.Find(zone, definition.SlotName)
+		if duplicated then
+			table.insert(errors, zone:GetFullName() .. "/" .. definition.SlotName .. " 存在同名重复项")
+			continue
+		end
+		if slot then
+			add(errors, slot:IsA("BasePart"), slot:GetFullName() .. " 必须是 BasePart")
+			if slot:IsA("BasePart") then
+				add(errors, slot.Anchored, slot:GetFullName() .. " 必须 Anchored")
+			end
+		end
+	end
+end
+
+local function validateRebirthButton(errors: { string }, plot: Model)
+	local buttons = uniqueChild(errors, plot, "Buttons", "Folder")
+	if not buttons then
+		return
+	end
+	local button = uniqueChild(
+		errors,
+		buttons,
+		RebirthProgressionConfigs.Button.ButtonName,
+		"Model"
+	)
+	if not button then
+		return
+	end
+	uniqueChild(errors, button, "Pull", "BasePart")
+	add(
+		errors,
+		AnchoredPartRules.HasOnlyAnchoredParts(button),
+		button:GetFullName() .. " 必须只包含 Anchored 的 BasePart"
+	)
+end
+
 function PlayerPlotContractValidator.ValidatePlot(plot: Model): { string }
 	assert(typeof(plot) == "Instance" and plot:IsA("Model"), "plot 必须是 Model")
 	local errors = IncomePlotContractValidator.ValidatePlot(plot)
 	anchoredPart(errors, plot, "Origin")
 	anchoredPart(errors, plot, "AttackViewBounds")
 	anchoredPart(errors, plot, "PlayerSpawn")
+	validateRebirthButton(errors, plot)
 	local zones = uniqueChild(errors, plot, "Zones", "Folder")
 	uniqueChild(errors, plot, "Runtime", "Folder")
 	if zones then
 		validateMonsterSlots(errors, zones :: Folder)
+		validatePresentDefenseMonsterSlots(errors, zones :: Folder)
 	end
 	return errors
 end

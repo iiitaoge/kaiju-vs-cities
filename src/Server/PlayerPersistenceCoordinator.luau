@@ -12,6 +12,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
+local GameAnalyticsGateway = require(script.Parent.Analytics.GameAnalyticsGateway)
 local PlayerDataReadyService = require(script.Parent.PlayerDataReadyService)
 local PlayerDataStoreAccess = require(script.Parent.PlayerDataStoreAccess)
 local PlayerPersistenceConfigs = require(script.Parent.PlayerPersistenceConfigs)
@@ -50,6 +51,26 @@ local serverIdentity = if game.JobId ~= ""
 	then game.JobId
 	else "Studio-" .. HttpService:GenerateGUID(false)
 
+local function analyticsReason(reason: string?): string
+	if type(reason) ~= "string" or reason == "" then
+		return "Unknown"
+	end
+	local category = string.match(reason, "^[^:]+") or "Unknown"
+	category = string.gsub(category, "[^A-Za-z0-9%-_%.%(%)!? ]", "_")
+	return string.sub(category, 1, 32)
+end
+
+local function logPersistenceFailure(player: Player?, phase: string, reason: string?)
+	if player and player.Parent == Players then
+		GameAnalyticsGateway.LogDesign(
+			player,
+			"Technical:Persistence:" .. phase .. ":Fail",
+			nil,
+			{ reason = analyticsReason(reason) }
+		)
+	end
+end
+
 local function retry(operation, attempts: number)
 	local lastResult = nil
 	for attempt = 1, attempts do
@@ -84,6 +105,7 @@ local function kickMessage(reason: string): string
 end
 
 local function rejectPlayer(player: Player, reason: string, detail: string?)
+	logPersistenceFailure(player, "Load", reason)
 	PlayerPersistenceDiagnostics.MarkFailed(player.UserId, reason)
 	PlayerDataReadyService.Cancel(player, reason)
 	warn(string.format(
@@ -175,6 +197,7 @@ runSaveQueue = function(userId: number, record: SessionRecord)
 			)
 		end, PlayerPersistenceConfigs.SaveAttempts)
 		if not saved.Succeeded then
+			logPersistenceFailure(record.Player, "Save", saved.Reason)
 			PlayerPersistenceDiagnostics.MarkFailed(userId, saved.Reason)
 			warn(string.format(
 				"玩家 %d 存档保存失败：%s%s",
@@ -253,6 +276,7 @@ local function queuePlayer(player: Player, releaseSession: boolean): (boolean, s
 	end
 	local data, reason = capture(player)
 	if not data then
+		logPersistenceFailure(player, "Snapshot", reason)
 		return false, reason
 	end
 	local queued, queueReason = queueSnapshot(record, data, releaseSession)
@@ -412,6 +436,7 @@ function PlayerPersistenceCoordinator.CommitReplacement(player: Player, data)
 	end, PlayerPersistenceConfigs.SaveAttempts)
 
 	if not saved.Succeeded then
+		logPersistenceFailure(player, "Replacement", saved.Reason)
 		PlayerPersistenceDiagnostics.MarkFailed(player.UserId, saved.Reason)
 		record.Running = false
 		if saved.Retryable and sessionsByUserId[player.UserId] == record then

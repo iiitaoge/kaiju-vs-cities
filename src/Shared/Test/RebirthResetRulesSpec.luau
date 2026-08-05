@@ -15,6 +15,7 @@ function Spec.Run(): boolean
 	assert(next(reset.Zones) == nil, "区域没有重置")
 	assert(next(reset.Houses) == nil, "房屋没有重置")
 	assert(next(reset.Monsters.SpawnPoints) == nil, "怪兽出生点没有重置")
+	assert(next(reset.DefenseMonsters.SpawnPoints) == nil, "防守怪兽没有重置")
 	return true
 end
 

@@ -13,11 +13,11 @@ export type Candidate = {
 
 export type SelectOptions = {
 	TargetOwnerUserId: number,
-	MaxDistance: number,
+	MaxDistance: number?,
 }
 
 -- 输入：搜索原点、候选目标和指定敌方玩家。
--- 输出：水平范围内最近的有效敌方目标；等距时按 TargetId 稳定选择。
+-- 输出：最近的有效敌方目标；提供 MaxDistance 时额外限制水平范围，等距时按 TargetId 稳定选择。
 -- 内部算法：只计算 X/Z 距离和身份过滤，不查询 Workspace 或玩家状态。
 function EnemyTargetSelector.Select(
 	origin: Vector3,
@@ -27,9 +27,10 @@ function EnemyTargetSelector.Select(
 	assert(typeof(origin) == "Vector3", "origin 必须是 Vector3")
 	assert(type(candidates) == "table", "candidates 必须是 table")
 	assert(type(options) == "table", "options 必须是 table")
+	local maxDistance = options.MaxDistance
 	assert(
-		ValueValidation.IsFiniteNumber(options.MaxDistance)
-			and options.MaxDistance >= 0,
+		maxDistance == nil
+			or (ValueValidation.IsFiniteNumber(maxDistance) and maxDistance >= 0),
 		"MaxDistance 无效"
 	)
 
@@ -50,7 +51,7 @@ function EnemyTargetSelector.Select(
 			Vector2.new(candidate.Position.X, candidate.Position.Z)
 			- Vector2.new(origin.X, origin.Z)
 		).Magnitude
-		if distance > options.MaxDistance + EPSILON then
+		if maxDistance ~= nil and distance > maxDistance + EPSILON then
 			continue
 		end
 		if distance < bestDistance - EPSILON

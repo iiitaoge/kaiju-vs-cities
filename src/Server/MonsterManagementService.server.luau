@@ -10,6 +10,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local MonsterManagementCoordinator = require(script.Parent.MonsterManagementCoordinator)
 local PlayerDataReadyService = require(script.Parent.PlayerDataReadyService)
+local PlayerJourneyAnalyticsCoordinator = require(
+	script.Parent.Analytics.PlayerJourneyAnalyticsCoordinator
+)
 local SecurityAnalyticsAggregator = require(
 	script.Parent.Analytics.SecurityAnalyticsAggregator
 )
@@ -49,6 +52,15 @@ remote.OnServerInvoke = function(player, requestKind, spawnPointId)
 			tostring(responseOrError)
 		))
 		return { Succeeded = false, Reason = "ServerError", Snapshot = nil }
+	end
+	if requestKind == MonsterManagementProtocol.Upgrade
+		and not responseOrError.Succeeded
+	then
+		PlayerJourneyAnalyticsCoordinator.RecordMonsterUpgradeRejected(
+			player,
+			spawnPointId,
+			responseOrError.Reason
+		)
 	end
 	return responseOrError
 end

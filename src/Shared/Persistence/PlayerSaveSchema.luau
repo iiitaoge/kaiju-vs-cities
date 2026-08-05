@@ -11,7 +11,7 @@ local ValueValidation = require(script.Parent.Parent.ValueValidation)
 local PlayerSaveSchema = {}
 
 PlayerSaveSchema.CurrentVersion = 1
-PlayerSaveSchema.ContentRevision = 6
+PlayerSaveSchema.ContentRevision = 7
 
 local function nonNegative(value, fallback: number): number
 	return if ValueValidation.IsFiniteNumber(value) and value >= 0
@@ -109,6 +109,9 @@ function PlayerSaveSchema.Default()
 			Capacity = 1,
 			SpawnPoints = {},
 		},
+		DefenseMonsters = {
+			SpawnPoints = {},
+		},
 	}
 end
 
@@ -126,6 +129,7 @@ local function migrateV0(raw)
 			Capacity = raw.MonsterCapacity,
 			SpawnPoints = raw.MonsterSpawnPoints,
 		},
+		DefenseMonsters = raw.DefenseMonsters,
 	}
 end
 
@@ -159,6 +163,7 @@ function PlayerSaveSchema.Normalize(raw)
 	local rebirth = if type(raw.Rebirth) == "table" then raw.Rebirth else {}
 	local tutorial = if type(raw.Tutorial) == "table" then raw.Tutorial else {}
 	local monsters = if type(raw.Monsters) == "table" then raw.Monsters else {}
+	local defenseMonsters = if type(raw.DefenseMonsters) == "table" then raw.DefenseMonsters else {}
 	return {
 		Version = 1,
 		ContentRevision = nonNegativeInteger(raw.ContentRevision, 0),
@@ -178,6 +183,9 @@ function PlayerSaveSchema.Normalize(raw)
 		Monsters = {
 			Capacity = math.max(1, nonNegativeInteger(monsters.Capacity, 1)),
 			SpawnPoints = normalizeSpawnPoints(monsters.SpawnPoints),
+		},
+		DefenseMonsters = {
+			SpawnPoints = normalizeSpawnPoints(defenseMonsters.SpawnPoints),
 		},
 	}, nil
 end

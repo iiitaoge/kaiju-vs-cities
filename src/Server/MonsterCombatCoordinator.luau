@@ -6,7 +6,11 @@ local GodzillaMoveService = require(script.Parent.GodzillaMoveService)
 local GodzillaService = require(script.Parent.GodzillaService)
 local MonsterDamageCoordinator = require(script.Parent.MonsterDamageCoordinator)
 local MonsterRosterCoordinator = require(script.Parent.MonsterRosterCoordinator)
+local MonsterCatalog = require(ReplicatedStorage.Shared.Monster.MonsterCatalog)
 local MonsterCombatGeometry = require(ReplicatedStorage.Shared.Monster.MonsterCombatGeometry)
+local MonsterDuelOutcomeRules = require(
+	ReplicatedStorage.Shared.Monster.MonsterDuelOutcomeRules
+)
 
 local MonsterCombatCoordinator = {}
 
@@ -45,6 +49,8 @@ export type ExecuteOptions = {
 	IsCancelled: (() -> boolean)?,
 	OnDefeated: ((Player, string, MonsterDamageCoordinator.DamageSource) -> ())?,
 	SetMoving: ((Model, boolean, number?) -> ())?,
+	ResolutionDuration: number,
+	WatchdogDuration: number,
 }
 
 export type CombatResult = {
@@ -237,11 +243,12 @@ local function playAttack(
 		warn("怪兽对战动画失败：", playbackOrError)
 		return false, "AttackAnimationFailed"
 	end
-	if playbackOrError.Cancelled then
-		return false, "CombatCancelled"
-	end
+	-- 命中结算优先于动画的后续取消。致死伤害会立即销毁目标模型，
+	-- 从而主动停止剩余动画，但已经提交的这一击仍然是有效攻击。
 	if not playbackOrError.HitTriggered then
-		return false, "AttackInterrupted"
+		return false, if playbackOrError.Cancelled
+			then "CombatCancelled"
+			else "AttackInterrupted"
 	end
 	if not damageResult or not damageResult.Succeeded then
 		return false, if damageResult then damageResult.Reason else "DamageNotApplied"
@@ -266,6 +273,46 @@ function MonsterCombatCoordinator.Execute(
 	)
 	validateConfig(options.AttackerConfig)
 	validateConfig(options.DefenderConfig)
+	assert(isPositive(options.ResolutionDuration), "ResolutionDuration 必须大于 0")
+	assert(
+		isPositive(options.WatchdogDuration)
+			and options.WatchdogDuration > options.ResolutionDuration,
+		"WatchdogDuration 必须大于 ResolutionDuration"
+	)
+
+	local finished = false
+	local resolutionRequested = false
+	local watchdogRequested = false
+	local function finish(result: CombatResult): CombatResult
+		finished = true
+		return result
+	end
+	local function cancelMotion(combatant: Combatant)
+		local record = MonsterRosterCoordinator.Get(combatant.Player, combatant.SpawnPointId)
+		if record and record.Model then
+			GodzillaMoveService.Cancel(record.Model)
+			if options.SetMoving then
+				options.SetMoving(record.Model, false, nil)
+			else
+				GodzillaService.StopMoving(record.Model)
+			end
+		end
+	end
+	local function requestResolution(watchdog: boolean)
+		if finished then
+			return
+		end
+		resolutionRequested = true
+		watchdogRequested = watchdogRequested or watchdog
+		cancelMotion(attacker)
+		cancelMotion(defender)
+	end
+	task.delay(options.ResolutionDuration, function()
+		requestResolution(false)
+	end)
+	task.delay(options.WatchdogDuration, function()
+		requestResolution(true)
+	end)
 
 	local attackerTransition = MonsterRosterCoordinator.Transition(
 		attacker.Player,
@@ -273,7 +320,7 @@ function MonsterCombatCoordinator.Execute(
 		"FightingMonster"
 	)
 	if not attackerTransition.Succeeded then
-		return makeResult(false, attackerTransition.Reason, nil, false, false)
+		return finish(makeResult(false, attackerTransition.Reason, nil, false, false))
 	end
 	local defenderTransition = MonsterRosterCoordinator.Transition(
 		defender.Player,
@@ -282,7 +329,7 @@ function MonsterCombatCoordinator.Execute(
 	)
 	if not defenderTransition.Succeeded then
 		restoreState(attacker, options.AttackerResumeState)
-		return makeResult(false, defenderTransition.Reason, nil, false, false)
+		return finish(makeResult(false, defenderTransition.Reason, nil, false, false))
 	end
 	for _, combatant in { attacker, defender } do
 		local record = MonsterRosterCoordinator.Get(
@@ -299,11 +346,66 @@ function MonsterCombatCoordinator.Execute(
 		end
 	end
 
+	local function resolveByLevel(): CombatResult
+		local attackerRecord = MonsterRosterCoordinator.Get(attacker.Player, attacker.SpawnPointId)
+		local defenderRecord = MonsterRosterCoordinator.Get(defender.Player, defender.SpawnPointId)
+		if not attackerRecord or not defenderRecord then
+			return finish(makeResult(false, "CombatantUnavailable", nil, isDefeated(attacker), isDefeated(defender)))
+		end
+		local attackerDefinition = MonsterCatalog.Get(attackerRecord.MonsterKey)
+		local defenderDefinition = MonsterCatalog.Get(defenderRecord.MonsterKey)
+		if not attackerDefinition or not defenderDefinition then
+			return finish(makeResult(false, "MonsterLevelUnavailable", nil, false, false))
+		end
+		local winner = MonsterDuelOutcomeRules.Resolve(
+			attackerDefinition.Level,
+			defenderDefinition.Level
+		)
+		local winnerCombatant = if winner == "Attacker" then attacker else defender
+		local loserCombatant = if winner == "Attacker" then defender else attacker
+		local loserRecord = MonsterRosterCoordinator.Get(loserCombatant.Player, loserCombatant.SpawnPointId)
+		if not loserRecord then
+			return finish(makeResult(false, "CombatantUnavailable", nil, isDefeated(attacker), isDefeated(defender)))
+		end
+		local damage = math.max(loserRecord.Health, 1)
+		local damageResult = MonsterDamageCoordinator.ApplyDamage(
+			loserCombatant.Player,
+			loserCombatant.SpawnPointId,
+			{
+				OwnerUserId = winnerCombatant.Player.UserId,
+				SourceId = winnerCombatant.SpawnPointId,
+				Kind = "Monster",
+			},
+			damage,
+			{ OnDefeated = options.OnDefeated }
+		)
+		if not damageResult.Succeeded or not damageResult.Defeated then
+			restoreState(attacker, options.AttackerResumeState)
+			restoreState(defender, options.DefenderResumeState)
+			return finish(makeResult(false, damageResult.Reason or "LevelResolutionFailed", nil, isDefeated(attacker), isDefeated(defender)))
+		end
+		if winner == "Attacker" then
+			restoreState(attacker, options.AttackerResumeState)
+		else
+			restoreState(defender, options.DefenderResumeState)
+		end
+		return finish(makeResult(
+			true,
+			if watchdogRequested then "DuelWatchdogResolved" else nil,
+			winner,
+			winner == "Defender",
+			winner == "Attacker"
+		))
+	end
+
 	local positioned, positionReason = positionCombatants(attacker, defender, options)
 	if not positioned then
+		if resolutionRequested then
+			return resolveByLevel()
+		end
 		restoreState(attacker, options.AttackerResumeState)
 		restoreState(defender, options.DefenderResumeState)
-		return makeResult(false, positionReason, nil, isDefeated(attacker), isDefeated(defender))
+		return finish(makeResult(false, positionReason, nil, isDefeated(attacker), isDefeated(defender)))
 	end
 
 	local now = workspace:GetServerTimeNow()
@@ -317,7 +419,7 @@ function MonsterCombatCoordinator.Execute(
 		if options.IsCancelled and options.IsCancelled() then
 			restoreState(attacker, options.AttackerResumeState)
 			restoreState(defender, options.DefenderResumeState)
-			return makeResult(false, "CombatCancelled", nil, isDefeated(attacker), isDefeated(defender))
+			return finish(makeResult(false, "CombatCancelled", nil, isDefeated(attacker), isDefeated(defender)))
 		end
 
 		local attackerDefeated = isDefeated(attacker)
@@ -330,7 +432,11 @@ function MonsterCombatCoordinator.Execute(
 			if not defenderDefeated then
 				restoreState(defender, options.DefenderResumeState)
 			end
-			return makeResult(true, nil, winner, attackerDefeated, defenderDefeated)
+			return finish(makeResult(true, nil, winner, attackerDefeated, defenderDefeated))
+		end
+		-- 已经发生的致死命中优先于同一帧到达的等级判胜计时点。
+		if resolutionRequested then
+			return resolveByLevel()
 		end
 
 		now = workspace:GetServerTimeNow()
@@ -348,11 +454,18 @@ function MonsterCombatCoordinator.Execute(
 			continue
 		end
 
-		local attacked, attackReason = playAttack(source, target, config, options)
+		local combatOptions = table.clone(options)
+		combatOptions.IsCancelled = function()
+			return resolutionRequested or (options.IsCancelled and options.IsCancelled()) or false
+		end
+		local attacked, attackReason = playAttack(source, target, config, combatOptions)
 		if not attacked and attackReason ~= "TargetUnavailable" then
+			if resolutionRequested then
+				return resolveByLevel()
+			end
 			restoreState(attacker, options.AttackerResumeState)
 			restoreState(defender, options.DefenderResumeState)
-			return makeResult(false, attackReason, nil, isDefeated(attacker), isDefeated(defender))
+			return finish(makeResult(false, attackReason, nil, isDefeated(attacker), isDefeated(defender)))
 		end
 		local nextTime = workspace:GetServerTimeNow() + config.AttackInterval
 		if source == attacker then

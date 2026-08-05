@@ -1,3 +1,6 @@
+local AnalyticsIntentClient = require(
+	script.Parent.Analytics.AnalyticsIntentClient
+)
 local GameAnalyticsClientService = require(
 	script.Parent.Analytics.GameAnalyticsClientService
 )
@@ -9,6 +12,9 @@ local CityBuildingPresentationController = require(
 	script.Parent.Building.CityBuildingPresentationController
 )
 local EconomyHUDController = require(script.Parent.UI.EconomyHUDController)
+local DefenseMonsterUIController = require(
+	script.Parent.Monster.DefenseMonsterUIController
+)
 local LocalPlayerBuildingInteractionCoordinator = require(
 	script.Parent.Building.LocalPlayerBuildingInteractionCoordinator
 )
@@ -35,6 +41,7 @@ local function rejectLegacyClientAction(action)
 end
 
 GameAnalyticsClientService.Start()
+AnalyticsIntentClient.Start()
 StudioSaveResetController.Start()
 TutorialController.Start()
 AttackSelectionHUDController.Start()
@@ -42,6 +49,7 @@ EconomyHUDController.Start()
 CityBuildingPresentationController.Start()
 MonsterBuildPresentationController.Start()
 MonsterIncubatorUIController.Start()
+DefenseMonsterUIController.Start()
 task.spawn(RebirthButtonController.Start)
 LocalPlayerBuildingInteractionCoordinator.Start()
 IncomeHouseWorldUIController.Start()

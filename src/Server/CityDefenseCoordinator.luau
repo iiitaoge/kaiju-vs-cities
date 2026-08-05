@@ -3,13 +3,17 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DefenseTowerAccess = require(script.Parent.DefenseTowerAccess)
 local MonsterDamageCoordinator = require(script.Parent.MonsterDamageCoordinator)
 local MonsterRosterCoordinator = require(script.Parent.MonsterRosterCoordinator)
+local WorkspacePlayerWorldAccess = require(script.Parent.WorkspacePlayerWorldAccess)
+local DefenseMonsterSlotCatalog = require(
+	ReplicatedStorage.Shared.Monster.DefenseMonsterSlotCatalog
+)
 local EnemyTargetSelector = require(ReplicatedStorage.Shared.Monster.EnemyTargetSelector)
+local TerritoryPointRules = require(ReplicatedStorage.Shared.Monster.TerritoryPointRules)
 
 local CityDefenseCoordinator = {}
 
 export type SessionOptions = {
 	TowerAccess: DefenseTowerAccess.Access,
-	DefenderDetectionRadius: number,
 	OnDefeated: ((Player, string, MonsterDamageCoordinator.DamageSource) -> ())?,
 	OnTowerHit: ((string, number) -> ())?,
 }
@@ -28,9 +32,21 @@ local function horizontalDistance(a: Vector3, b: Vector3): number
 	return (Vector2.new(a.X, a.Z) - Vector2.new(b.X, b.Z)).Magnitude
 end
 
+local function isInsideDefenseRegion(defender: Player, regionId: string, position: Vector3): boolean
+	for _, territory in WorkspacePlayerWorldAccess.Territory.ListUnlockedTerritories(defender) do
+		if territory.ZoneId == regionId
+			and TerritoryPointRules.Check(territory.CFrame, territory.Size, position).Allowed
+		then
+			return true
+		end
+	end
+	return false
+end
+
 -- 输入：唯一防守玩家、唯一进攻怪兽和防御访问接口。
 -- 输出：可轮询的防御会话；塔防在独立循环持续结算，Poll 最多预约一只守城怪兽。
--- 内部算法：防御塔独立按冷却攻击；空闲守城怪兽按距离和稳定 ID 选择并切换为 Defending。
+-- 内部算法：防御塔独立按冷却攻击；进攻怪兽进入对应区域 Bounds 后，
+-- 选择该区域最近的空闲守城怪兽并切换为 Defending，不再限制守城槽位距离。
 function CityDefenseCoordinator.Begin(
 	defender: Player,
 	attacker: Player,
@@ -42,11 +58,6 @@ function CityDefenseCoordinator.Begin(
 	assert(type(options) == "table", "options 必须是 table")
 	assert(type(options.TowerAccess) == "table", "TowerAccess 必须是 table")
 	assert(type(options.TowerAccess.ListAliveTowers) == "function", "ListAliveTowers 必须是 function")
-	assert(
-		type(options.DefenderDetectionRadius) == "number"
-			and options.DefenderDetectionRadius >= 0,
-		"DefenderDetectionRadius 无效"
-	)
 	assert(options.OnTowerHit == nil or type(options.OnTowerHit) == "function", "OnTowerHit 无效")
 
 	local closed = false
@@ -139,7 +150,12 @@ function CityDefenseCoordinator.Begin(
 
 		local candidates = {}
 		for _, record in MonsterRosterCoordinator.List(defender) do
-			if record.State == "IdleAtSpawn" and record.Model then
+			local definition = DefenseMonsterSlotCatalog.Get(record.SpawnPointId)
+			if definition
+				and record.State == "IdleAtSpawn"
+				and record.Model
+				and isInsideDefenseRegion(defender, definition.RegionId, attackerPosition)
+			then
 				table.insert(candidates, {
 					TargetId = record.SpawnPointId,
 					OwnerUserId = defender.UserId,
@@ -150,7 +166,6 @@ function CityDefenseCoordinator.Begin(
 		end
 		local selected = EnemyTargetSelector.Select(attackerPosition, candidates, {
 			TargetOwnerUserId = defender.UserId,
-			MaxDistance = options.DefenderDetectionRadius,
 		})
 		if not selected then
 			return { Kind = "None", DefenderSpawnPointId = nil }

@@ -9,7 +9,9 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local IncomeZoneBoostConfigs = require(script.Parent.IncomeZoneBoostConfigs)
+local DefenseMonsterTemplateResolver = require(script.Parent.DefenseMonsterTemplateResolver)
 local MonsterIncubatorTemplateAccess = require(script.Parent.MonsterIncubatorTemplateAccess)
+local MonsterTemplateResolver = require(script.Parent.MonsterTemplateResolver)
 local RegionEconomyConfigs = require(script.Parent.RegionEconomyConfigs)
 local RegionUpgradeConfigs = require(script.Parent.RegionUpgradeConfigs)
 local HouseCatalog = require(ReplicatedStorage.Shared.Building.HouseCatalog)
@@ -24,6 +26,12 @@ local StructureDurabilityConfigs = require(
 	ReplicatedStorage.Shared.Building.StructureDurabilityConfigs
 )
 local MonsterCatalog = require(ReplicatedStorage.Shared.Monster.MonsterCatalog)
+local DefenseMonsterSlotCatalog = require(
+	ReplicatedStorage.Shared.Monster.DefenseMonsterSlotCatalog
+)
+local DefenseMonsterEconomyConfigs = require(
+	ReplicatedStorage.Shared.Monster.DefenseMonsterEconomyConfigs
+)
 local MonsterIncubatorConfigs = require(
 	ReplicatedStorage.Shared.Monster.MonsterIncubatorConfigs
 )
@@ -192,15 +200,52 @@ function ContentContractValidator.Validate()
 				local monster = MonsterCatalog.Get(monsterKey)
 				add(errors, monster ~= nil, spawnPoint.SpawnPointId .. " 引用了未知 MonsterKey " .. monsterKey)
 				if monster then
-					local template = InstancePath.Find(monster.TemplatePath)
+					local template, _, modelScale, templateReason =
+						MonsterTemplateResolver.Resolve(monsterKey)
 					add(
 						errors,
-						template ~= nil and template:IsA("Model") and template.PrimaryPart ~= nil,
-						monsterKey .. " 模板无效：" .. monster.TemplatePath
+						template ~= nil and modelScale ~= nil,
+						monsterKey .. " 模板无效：" .. (templateReason or "Unknown")
 					)
 				end
 			end
 		end
+	end
+
+	local defenseProgressions = {}
+	for _, defenseMonster in DefenseMonsterSlotCatalog.GetAll() do
+		local zone = ZoneCatalog.Get(defenseMonster.RegionId)
+		add(
+			errors,
+			zone ~= nil and zone.Kind == "Income",
+			defenseMonster.SpawnPointId .. " 未指向 Income Zone"
+		)
+		local maxLevel = DefenseMonsterSlotCatalog.GetMaxLevel(defenseMonster.SpawnPointId) or 0
+		add(errors, maxLevel >= 1, defenseMonster.SpawnPointId .. " 缺少怪兽成长等级")
+		local economy = DefenseMonsterEconomyConfigs[defenseMonster.SpawnPointId]
+		add(errors, economy ~= nil, defenseMonster.SpawnPointId .. " 缺少防守怪兽经济配置")
+		if economy then
+			add(
+				errors,
+				type(economy.BuildCost) == "number"
+					and economy.BuildCost >= 0
+					and economy.BuildCost < math.huge,
+				defenseMonster.SpawnPointId .. " 防守怪兽建造价格无效"
+			)
+		end
+		defenseProgressions[defenseMonster.ProgressionId] = true
+	end
+	for _, monster in MonsterCatalog.GetAll() do
+		if not defenseProgressions[monster.ProgressionId] then
+			continue
+		end
+		local template, _, modelScale, reason =
+			DefenseMonsterTemplateResolver.Resolve(monster.MonsterKey)
+		add(
+			errors,
+			template ~= nil and modelScale ~= nil,
+			monster.MonsterKey .. " 防守模板无效：" .. (reason or "Unknown")
+		)
 	end
 
 	return { Valid = #errors == 0, Errors = errors }

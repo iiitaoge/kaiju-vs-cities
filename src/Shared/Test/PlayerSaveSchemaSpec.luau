@@ -14,6 +14,7 @@ function PlayerSaveSchemaSpec.Run(): boolean
 	expect(default.Rebirth.Count == 0, "默认重生次数必须为 0")
 	expect(default.Rebirth.RunEarnings == 0, "默认本轮累计收入必须为 0")
 	expect(default.Tutorial.Version == 0, "默认引导版本必须为 0")
+	expect(next(default.DefenseMonsters.SpawnPoints) == nil, "默认防守怪兽资产必须为空")
 
 	local migrated = PlayerSaveSchema.Normalize({
 		Money = 75,

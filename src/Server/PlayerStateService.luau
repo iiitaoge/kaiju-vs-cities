@@ -45,7 +45,8 @@ export type SectionName =
 	| "Houses"
 	| "Monsters"
 	| "MonsterSpawnPoints"
-export type EntitySectionName = "Zones" | "Houses" | "Monsters" | "MonsterSpawnPoints"
+	| "DefenseMonsterSpawnPoints"
+export type EntitySectionName = "Zones" | "Houses" | "Monsters" | "MonsterSpawnPoints" | "DefenseMonsterSpawnPoints"
 
 -- 权威数据属于下方 Instance 树，而不属于当前 ModuleScript 的执行缓存。
 local ROOT_NAME = "RuntimePlayerStates"
@@ -57,6 +58,7 @@ local VALID_SECTIONS = {
 	Houses = true,
 	Monsters = true,
 	MonsterSpawnPoints = true,
+	DefenseMonsterSpawnPoints = true,
 }
 
 local started = false
@@ -186,7 +188,8 @@ function PlayerStateService.GetEntity(
 		sectionName == "Zones"
 			or sectionName == "Houses"
 			or sectionName == "Monsters"
-			or sectionName == "MonsterSpawnPoints",
+			or sectionName == "MonsterSpawnPoints"
+			or sectionName == "DefenseMonsterSpawnPoints",
 		"未知实体状态分区"
 	)
 	assert(type(entityId) == "string" and entityId ~= "", "entityId 必须是非空字符串")
