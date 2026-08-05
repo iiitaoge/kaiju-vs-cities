@@ -22,10 +22,12 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RuntimeBuildingIdentity = require(ReplicatedStorage.Shared.Building.RuntimeBuildingIdentity)
 local LocalBuildingInteractionController = require(script.Parent.LocalBuildingInteractionController)
 local LocalPlayerCityRuntimeAccess = require(script.Parent.LocalPlayerCityRuntimeAccess)
+local LocalRuntimeBuildingReadiness = require(script.Parent.LocalRuntimeBuildingReadiness)
 
 local LocalPlayerBuildingInteractionCoordinator = {}
 
 local activeHandles: { [Model]: any } = setmetatable({}, { __mode = "k" })
+local pendingModels: { [Model]: boolean } = setmetatable({}, { __mode = "k" })
 local started = false
 
 local function unbind(model: Model)
@@ -36,21 +38,36 @@ local function unbind(model: Model)
 	end
 end
 
-local function bind(model: Model)
+local function bindReady(model: Model, identity: RuntimeBuildingIdentity.Identity)
 	if activeHandles[model] then
 		return
 	end
-
-	local identity, reason = RuntimeBuildingIdentity.Read(model)
-	if not identity then
-		warn(string.format("忽略身份无效的运行时建筑：%s (%s)", model:GetFullName(), reason or "Unknown"))
-		return
-	end
-	if identity.OwnerUserId ~= Players.LocalPlayer.UserId then
-		return
-	end
-
 	activeHandles[model] = LocalBuildingInteractionController.Bind(identity.HouseId, model)
+end
+
+local function scheduleBind(model: Model)
+	if activeHandles[model] or pendingModels[model] then
+		return
+	end
+	pendingModels[model] = true
+	task.spawn(function()
+		local ready, reason = LocalRuntimeBuildingReadiness.Wait(
+			model,
+			Players.LocalPlayer.UserId
+		)
+		pendingModels[model] = nil
+		if not ready then
+			if reason ~= "ModelRemoved" and reason ~= "OwnerMismatch" then
+				warn(string.format(
+					"运行时房屋触碰绑定等待失败：%s (%s)",
+					model:GetFullName(),
+					reason or "Unknown"
+				))
+			end
+			return
+		end
+		bindReady(model, ready.Identity)
+	end)
 end
 
 local function waitForOwnPlot(): Model?
@@ -76,12 +93,12 @@ local function attach()
 
 	for _, child in buildings:GetChildren() do
 		if child:IsA("Model") then
-			bind(child)
+			scheduleBind(child)
 		end
 	end
 	buildings.ChildAdded:Connect(function(child)
 		if child:IsA("Model") then
-			bind(child)
+			scheduleBind(child)
 		end
 	end)
 	buildings.ChildRemoved:Connect(function(child)

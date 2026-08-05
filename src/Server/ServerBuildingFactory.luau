@@ -24,6 +24,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local BuildPresentationVisibility = require(
 	ReplicatedStorage.Shared.Building.BuildPresentationVisibility
 )
+local RuntimeBuildingReplicationProtocol = require(
+	ReplicatedStorage.Shared.Building.RuntimeBuildingReplicationProtocol
+)
 
 local ServerBuildingFactory = {}
 
@@ -79,14 +82,21 @@ function ServerBuildingFactory.Create(
 	model:SetAttribute("BuildingSlotId", identity.SlotId)
 	model:SetAttribute("BuildingLevel", identity.Level)
 
+	local basePartCount = 0
 	for _, descendant in model:GetDescendants() do
 		if descendant:IsA("BasePart") then
+			basePartCount += 1
 			descendant.Anchored = true
 			descendant.CanCollide = false
 			descendant.CanTouch = false
 			descendant.CanQuery = false
 		end
 	end
+	assert(basePartCount > 0, "建筑模板必须至少包含一个 BasePart")
+	model:SetAttribute(
+		RuntimeBuildingReplicationProtocol.ExpectedBasePartCountAttributeName,
+		basePartCount
+	)
 
 	model:PivotTo(targetPivot)
 	if hideForPresentation == true then

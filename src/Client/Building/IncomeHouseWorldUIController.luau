@@ -16,18 +16,17 @@ local IncomeHouseUIPresentationRules = require(
 local IncomeHouseWorldUIProtocol = require(
 	ReplicatedStorage.Shared.Building.IncomeHouseWorldUIProtocol
 )
-local RuntimeBuildingIdentity = require(
-	ReplicatedStorage.Shared.Building.RuntimeBuildingIdentity
-)
 local WorldObjectUIPlacement = require(
 	ReplicatedStorage.Shared.UI.WorldObjectUIPlacement
 )
 local LocalPlayerCityRuntimeAccess = require(script.Parent.LocalPlayerCityRuntimeAccess)
+local LocalRuntimeBuildingReadiness = require(script.Parent.LocalRuntimeBuildingReadiness)
 local LocalWorldObjectUI = require(script.Parent.Parent.UI.LocalWorldObjectUI)
 
 local IncomeHouseWorldUIController = {}
 
 local activeHandles: { [Model]: any } = setmetatable({}, { __mode = "k" })
+local pendingModels: { [Model]: boolean } = setmetatable({}, { __mode = "k" })
 local started = false
 
 local observedAttributes = {
@@ -48,12 +47,8 @@ local function unbind(model: Model)
 	end
 end
 
-local function bind(model: Model)
+local function bindReady(model: Model)
 	if activeHandles[model] then
-		return
-	end
-	local identity = RuntimeBuildingIdentity.Read(model)
-	if not identity or identity.OwnerUserId ~= Players.LocalPlayer.UserId then
 		return
 	end
 
@@ -112,6 +107,31 @@ local function bind(model: Model)
 	refresh()
 end
 
+local function scheduleBind(model: Model)
+	if activeHandles[model] or pendingModels[model] then
+		return
+	end
+	pendingModels[model] = true
+	task.spawn(function()
+		local ready, reason = LocalRuntimeBuildingReadiness.Wait(
+			model,
+			Players.LocalPlayer.UserId
+		)
+		pendingModels[model] = nil
+		if not ready then
+			if reason ~= "ModelRemoved" and reason ~= "OwnerMismatch" then
+				warn(string.format(
+					"房屋世界 UI 等待复制失败：%s (%s)",
+					model:GetFullName(),
+					reason or "Unknown"
+				))
+			end
+			return
+		end
+		bindReady(model)
+	end)
+end
+
 local function attach()
 	local plot
 	repeat
@@ -130,12 +150,12 @@ local function attach()
 
 	for _, child in buildings:GetChildren() do
 		if child:IsA("Model") then
-			bind(child)
+			scheduleBind(child)
 		end
 	end
 	buildings.ChildAdded:Connect(function(child)
 		if child:IsA("Model") then
-			bind(child)
+			scheduleBind(child)
 		end
 	end)
 	buildings.ChildRemoved:Connect(function(child)

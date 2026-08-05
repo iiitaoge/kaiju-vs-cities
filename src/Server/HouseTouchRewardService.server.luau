@@ -15,14 +15,6 @@ local log = DebugLog.Create("HouseInteractionService")
 
 houseEntered.OnServerEvent:Connect(function(player, action, houseId)
 	if PlayerDataReadyService.Get(player).Status ~= "Ready" then
-		houseEntered:FireClient(player, {
-			Action = action,
-			HouseId = houseId,
-			Accepted = false,
-			Reward = 0,
-			Balance = nil,
-			Reason = "PlayerDataNotReady",
-		})
 		return
 	end
 	if action ~= "Enter" and action ~= "Exit" then
@@ -41,5 +33,4 @@ houseEntered.OnServerEvent:Connect(function(player, action, houseId)
 		result.Reward,
 		result.Balance
 	)
-	houseEntered:FireClient(player, result)
 end)
