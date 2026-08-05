@@ -1,28 +1,35 @@
 --[[
-	职责：解析唯一全局重生按钮并验证服务端激活距离。
+	职责：解析玩家所属 Plot 的重生按钮并验证服务端激活距离。
 	输入：在线 Player。
 	输出：允许状态和稳定失败原因。
-	内部算法：按配置路径找到 Model/Pull，比较 HumanoidRootPart 到 Pull 的距离。
+	内部算法：先定位玩家 Plot，再从 Plot/Buttons 按配置名找到 Model/Pull，并校验距离。
 	不负责：UI 显示、资格、重生、存档或按钮动画。
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local InstancePath = require(ReplicatedStorage.Shared.InstancePath)
 local RebirthProgressionConfigs = require(
 	ReplicatedStorage.Shared.Progression.RebirthProgressionConfigs
 )
+local PlayerPlotAssignmentService = require(script.Parent.PlayerPlotAssignmentService)
+local PlotButtonAccess = require(script.Parent.Button.PlotButtonAccess)
 
 local RebirthButtonAccess = {}
 
 function RebirthButtonAccess.CheckActivation(player: Player): (boolean, string?)
-	local button = InstancePath.Find(RebirthProgressionConfigs.Button.ModelPath)
-	if not button or not button:IsA("Model") then
-		return false, "RebirthButtonUnavailable"
+	local plot, plotReason = PlayerPlotAssignmentService.GetPlot(player)
+	if not plot then
+		return false, plotReason or "PlayerHasNoPlot"
 	end
-	local pull = button:FindFirstChild("Pull")
-	if not pull or not pull:IsA("BasePart") then
-		return false, "RebirthButtonPullUnavailable"
+	local _, pull, buttonReason = PlotButtonAccess.GetRoot(
+		plot,
+		RebirthProgressionConfigs.Button.ButtonName
+	)
+	if not pull then
+		if buttonReason == "ButtonPullUnavailable" then
+			return false, "RebirthButtonPullUnavailable"
+		end
+		return false, "RebirthButtonUnavailable"
 	end
 	local character = player.Character
 	local root = character and character:FindFirstChild("HumanoidRootPart")

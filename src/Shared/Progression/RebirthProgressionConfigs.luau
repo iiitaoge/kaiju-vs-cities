@@ -14,7 +14,7 @@
 
 local config = {
 	Button = {
-		ModelPath = "Workspace/Buttons/Rebirth-Button",
+		ButtonName = "Rebirth-Button",
 		MaxActivationDistance = 12,
 		RefreshIntervalSeconds = 0.5,
 		-- BillboardGui 的底边与整个按钮模型顶面之间保留的世界高度。

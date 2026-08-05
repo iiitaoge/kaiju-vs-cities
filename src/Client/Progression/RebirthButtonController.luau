@@ -1,6 +1,6 @@
 --[[
-	职责：让玩家踩到唯一全局按钮时显示本地重生 UI，并只通过 UI 点击请求重生。
-	输入：固定 Rebirth-Button 场景合同和服务器状态快照。
+	职责：让玩家踩到所属 Plot 的重生按钮时显示本地 UI，并只通过 UI 点击请求重生。
+	输入：玩家 Plot 下的 Rebirth-Button 场景合同和服务器状态快照。
 	输出：本地 BillboardGui 显隐、文本更新和 Execute Remote 请求。
 	内部算法：追踪本地角色触碰 → 周期刷新状态；UI Button.Activated 才执行重生。
 	不负责：物理按钮下压动画、资格、距离授权、存档或运行时重载。
@@ -9,8 +9,9 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local AnalyticsIntentClient = require(script.Parent.Parent.Analytics.AnalyticsIntentClient)
 local LocalRebirthButtonAccess = require(script.Parent.LocalRebirthButtonAccess)
-local InstancePath = require(ReplicatedStorage.Shared.InstancePath)
+local LocalPlotButtonAccess = require(script.Parent.Parent.Button.LocalPlotButtonAccess)
 local RebirthProgressionConfigs = require(
 	ReplicatedStorage.Shared.Progression.RebirthProgressionConfigs
 )
@@ -19,6 +20,9 @@ local RebirthProtocol = require(
 )
 local RebirthUIPresentationRules = require(
 	ReplicatedStorage.Shared.UI.RebirthUIPresentationRules
+)
+local AnalyticsIntentProtocol = require(
+	ReplicatedStorage.Shared.Analytics.AnalyticsIntentProtocol
 )
 
 local RebirthButtonController = {}
@@ -55,15 +59,16 @@ local function waitForRemote(): RemoteFunction?
 end
 
 local function waitForButton(): Model?
-	local succeeded, value = pcall(
-		InstancePath.Wait,
-		RebirthProgressionConfigs.Button.ModelPath
+	local button = LocalPlotButtonAccess.WaitForRoot(
+		Players.LocalPlayer.UserId,
+		RebirthProgressionConfigs.Button.ButtonName,
+		10
 	)
-	if not succeeded or not value:IsA("Model") then
-		warn("重生按钮不可用：" .. tostring(value))
+	if not button then
+		warn("玩家 Plot 的重生按钮不可用：" .. RebirthProgressionConfigs.Button.ButtonName)
 		return nil
 	end
-	return value
+	return button
 end
 
 function RebirthButtonController.Start()
@@ -142,6 +147,9 @@ function RebirthButtonController.Start()
 		if not visible then
 			return
 		end
+		AnalyticsIntentClient.Record(
+			AnalyticsIntentProtocol.Intents.RebirthOpened
+		)
 
 		local generation = refreshGeneration
 		task.spawn(function()
@@ -185,6 +193,9 @@ function RebirthButtonController.Start()
 		end
 
 		busy = true
+		AnalyticsIntentClient.Record(
+			AnalyticsIntentProtocol.Intents.RebirthExecuteClicked
+		)
 		ui.ActionButton.Active = false
 		ui.ActionButton.Selectable = false
 		ui.ActionValue.Text = "Processing..."
