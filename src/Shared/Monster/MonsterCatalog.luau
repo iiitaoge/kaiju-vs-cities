@@ -14,8 +14,9 @@ export type Definition = {
 	DisplayName: string,
 	Level: number,
 	FormIndex: number,
-	VisualLevel: number,
-	TemplatePath: string,
+	FormLevel: number,
+	GrowthAlpha: number,
+	TemplateRoot: string,
 	MaxHealth: number,
 }
 
@@ -25,16 +26,14 @@ local maxLevelByProgression: { [string]: number } = {}
 
 for progressionId, config in pairs(MonsterProgressionConfigs) do
 	local maxLevel = MonsterLevelProgressionRules.GetMaxLevel(
-		config.LevelsPerAppearance,
-		config.VisualLevelCount,
+		config.LevelsPerForm,
 		config.FormCount
 	)
 	local keysByLevel = {}
 	for level = 1, maxLevel do
 		local appearance = assert(MonsterLevelProgressionRules.ResolveAppearance(
 			level,
-			config.LevelsPerAppearance,
-			config.VisualLevelCount,
+			config.LevelsPerForm,
 			config.FormCount
 		))
 		local monsterKey = MonsterLevelProgressionRules.MakeMonsterKey(config.MonsterKeyPrefix, level)
@@ -44,13 +43,9 @@ for progressionId, config in pairs(MonsterProgressionConfigs) do
 			DisplayName = config.DisplayName,
 			Level = level,
 			FormIndex = appearance.FormIndex,
-			VisualLevel = appearance.VisualLevel,
-			TemplatePath = string.format(
-				"%s/level%d/P%d",
-				config.TemplateRoot,
-				appearance.VisualLevel,
-				appearance.FormIndex
-			),
+			FormLevel = appearance.FormLevel,
+			GrowthAlpha = appearance.GrowthAlpha,
+			TemplateRoot = config.TemplateRoot,
 			MaxHealth = MonsterLevelProgressionRules.ScaleIntegerByStages(
 				config.MaxHealthBase,
 				config.MaxHealthGrowthStages,
@@ -66,7 +61,7 @@ end
 local sortedDefinitions = {}
 for monsterKey, definition in pairs(definitions) do
 	assert(definition.MonsterKey == monsterKey, "MonsterKey 与配置键不一致：" .. monsterKey)
-	assert(type(definition.TemplatePath) == "string" and definition.TemplatePath ~= "", "TemplatePath 无效")
+	assert(type(definition.TemplateRoot) == "string" and definition.TemplateRoot ~= "", "TemplateRoot 无效")
 	assert(
 		type(definition.MaxHealth) == "number"
 			and definition.MaxHealth == definition.MaxHealth
@@ -102,8 +97,8 @@ function MonsterCatalog.GetMaxLevel(progressionId: string): number?
 end
 
 -- 输入：升级前后的 MonsterKey。
--- 输出：两者模板路径是否变化；任一身份未知时返回 nil。
--- 内部算法：只比较目录中已验证的 TemplatePath，不读取 Instance。
+-- 输出：两者实际 Start 模板是否变化；任一身份未知时返回 nil。
+-- 内部算法：只比较目录中的 FormIndex，不读取 Instance；同形态升级只改变缩放。
 function MonsterCatalog.HasTemplateChanged(
 	previousMonsterKey: string,
 	newMonsterKey: string
@@ -113,7 +108,8 @@ function MonsterCatalog.HasTemplateChanged(
 	if not previousDefinition or not newDefinition then
 		return nil
 	end
-	return previousDefinition.TemplatePath ~= newDefinition.TemplatePath
+	return previousDefinition.TemplateRoot ~= newDefinition.TemplateRoot
+		or previousDefinition.FormIndex ~= newDefinition.FormIndex
 end
 
 return MonsterCatalog

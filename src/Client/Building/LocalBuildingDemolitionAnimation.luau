@@ -1,6 +1,6 @@
 --[[
 	职责：播放单个临时建筑从高到低沉入地下的拆除动画。
-	输入：模板、最终 Pivot、地面 Y 和拆除参数。
+	输入：模板、最终 Pivot、地面 Y、拆除参数和可选绝对模型 Scale。
 	输出：动画结束后销毁临时 Clone，无持久 Model 输出。
 	不负责：不隐藏或销毁服务器权威建筑，不解析模板。
 ]]
@@ -17,13 +17,25 @@ function LocalBuildingDemolitionAnimation.Play(
 	template: Model,
 	targetPivot: CFrame,
 	groundY: number,
-	config
+	config,
+	modelScale: number?
 )
 	assert(template:IsA("Model"), "template 必须是 Model")
 	assert(typeof(targetPivot) == "CFrame", "targetPivot 必须是 CFrame")
 	assert(type(groundY) == "number", "groundY 必须是 number")
+	assert(
+		modelScale == nil
+			or (type(modelScale) == "number"
+				and modelScale == modelScale
+				and modelScale < math.huge
+				and modelScale > 0),
+		"modelScale 必须是有限正数或 nil"
+	)
 
 	local visual = template:Clone()
+	if modelScale then
+		visual:ScaleTo(modelScale)
+	end
 	visual.Name = template.Name .. "_Demolishing"
 	visual:PivotTo(targetPivot)
 	visual.Parent = workspace

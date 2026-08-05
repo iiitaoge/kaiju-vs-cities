@@ -1,6 +1,6 @@
 --[[
 	职责：播放单个临时建筑从地下由低到高升起的建造动画。
-	输入：模板、最终 Pivot、地面 Y 和升起参数。
+	输入：模板、最终 Pivot、地面 Y、升起参数和可选绝对模型 Scale。
 	输出：动画结束后销毁临时 Clone，无持久 Model 输出。
 	不负责：不显示服务器权威建筑，不解析模板。
 ]]
@@ -17,13 +17,25 @@ function LocalBuildingRiseAnimation.Play(
 	template: Model,
 	targetPivot: CFrame,
 	groundY: number,
-	config
+	config,
+	modelScale: number?
 )
 	assert(template:IsA("Model"), "template 必须是 Model")
 	assert(typeof(targetPivot) == "CFrame", "targetPivot 必须是 CFrame")
 	assert(type(groundY) == "number", "groundY 必须是 number")
+	assert(
+		modelScale == nil
+			or (type(modelScale) == "number"
+				and modelScale == modelScale
+				and modelScale < math.huge
+				and modelScale > 0),
+		"modelScale 必须是有限正数或 nil"
+	)
 
 	local visual = template:Clone()
+	if modelScale then
+		visual:ScaleTo(modelScale)
+	end
 	visual.Name = template.Name .. "_Rising"
 	visual:PivotTo(targetPivot)
 

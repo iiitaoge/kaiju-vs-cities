@@ -1,6 +1,6 @@
 --[[
-	职责：把怪兽实际等级映射为形态编号、外观等级和稳定 MonsterKey。
-	输入：实际等级，以及配置中的每外观等级数、外观数、形态数和 Key 前缀。
+	职责：把怪兽实际等级映射为形态编号、形态内等级、成长进度和稳定 MonsterKey。
+	输入：实际等级，以及配置中的每形态等级数、形态数和 Key 前缀。
 	输出：纯数据映射或 nil；不读取实例、不修改玩家状态。
 ]]
 
@@ -8,7 +8,8 @@ local MonsterLevelProgressionRules = {}
 
 export type Appearance = {
 	FormIndex: number,
-	VisualLevel: number,
+	FormLevel: number,
+	GrowthAlpha: number,
 }
 
 local function assertPositiveInteger(value: number, name: string)
@@ -16,36 +17,36 @@ local function assertPositiveInteger(value: number, name: string)
 end
 
 function MonsterLevelProgressionRules.GetMaxLevel(
-	levelsPerAppearance: number,
-	visualLevelCount: number,
+	levelsPerForm: number,
 	formCount: number
 ): number
-	assertPositiveInteger(levelsPerAppearance, "levelsPerAppearance")
-	assertPositiveInteger(visualLevelCount, "visualLevelCount")
+	assertPositiveInteger(levelsPerForm, "levelsPerForm")
 	assertPositiveInteger(formCount, "formCount")
-	return levelsPerAppearance * visualLevelCount * formCount
+	return levelsPerForm * formCount
 end
 
 function MonsterLevelProgressionRules.ResolveAppearance(
 	level: number,
-	levelsPerAppearance: number,
-	visualLevelCount: number,
+	levelsPerForm: number,
 	formCount: number
 ): Appearance?
-	assertPositiveInteger(levelsPerAppearance, "levelsPerAppearance")
-	assertPositiveInteger(visualLevelCount, "visualLevelCount")
+	assertPositiveInteger(levelsPerForm, "levelsPerForm")
 	assertPositiveInteger(formCount, "formCount")
 	if type(level) ~= "number" or level < 1 or level % 1 ~= 0 then
 		return nil
 	end
-	if level > MonsterLevelProgressionRules.GetMaxLevel(levelsPerAppearance, visualLevelCount, formCount) then
+	if level > MonsterLevelProgressionRules.GetMaxLevel(levelsPerForm, formCount) then
 		return nil
 	end
 
-	local appearanceIndex = math.floor((level - 1) / levelsPerAppearance)
+	local zeroBasedLevel = level - 1
+	local formLevel = zeroBasedLevel % levelsPerForm + 1
 	return {
-		FormIndex = math.floor(appearanceIndex / visualLevelCount) + 1,
-		VisualLevel = appearanceIndex % visualLevelCount + 1,
+		FormIndex = math.floor(zeroBasedLevel / levelsPerForm) + 1,
+		FormLevel = formLevel,
+		GrowthAlpha = if levelsPerForm == 1
+			then 1
+			else (formLevel - 1) / (levelsPerForm - 1),
 	}
 end
 

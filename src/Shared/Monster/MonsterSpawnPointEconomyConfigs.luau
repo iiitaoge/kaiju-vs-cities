@@ -3,27 +3,15 @@
 	价格只作为服务器购买事务和未来 UI 的输入，不执行扣款。
 ]]
 
-local MonsterLevelProgressionRules = require(script.Parent.MonsterLevelProgressionRules)
-local MonsterProgressionConfigs = require(script.Parent.MonsterProgressionConfigs)
 local MonsterSpawnPointCatalog = require(script.Parent.MonsterSpawnPointCatalog)
+local MonsterUpgradeEconomyConfigs = require(script.Parent.MonsterUpgradeEconomyConfigs)
 
-local progression = MonsterProgressionConfigs.Godzilla
 local buildCosts = table.freeze({
 	["M1-S1"] = 2_500,
 	["M1-S2"] = 500_000,
 	["M1-S3"] = 12_000_000,
 	["M1-S4"] = 150_000_000,
 })
-local upgradeCosts = {}
-for targetLevel = 2, assert(MonsterSpawnPointCatalog.GetMaxLevel("M1-S1")) do
-	upgradeCosts[targetLevel] = MonsterLevelProgressionRules.ScaleIntegerByStages(
-		progression.UpgradeBaseCost,
-		progression.UpgradeCostGrowthStages,
-		targetLevel - 1
-	)
-end
-table.freeze(upgradeCosts)
-
 local configs = {}
 for _, definition in MonsterSpawnPointCatalog.GetAll() do
 	configs[definition.SpawnPointId] = {
@@ -31,7 +19,10 @@ for _, definition in MonsterSpawnPointCatalog.GetAll() do
 			buildCosts[definition.SpawnPointId],
 			definition.SpawnPointId .. " 缺少建造价格"
 		),
-		UpgradeCostByTargetLevel = upgradeCosts,
+		UpgradeCostByTargetLevel = assert(
+			MonsterUpgradeEconomyConfigs[definition.ProgressionId],
+			definition.ProgressionId .. " 缺少升级价格"
+		),
 	}
 end
 

@@ -27,11 +27,13 @@ local BuildingPresentationConfigs = require(
 local BuildPresentationTiming = require(
 	ReplicatedStorage.Shared.Building.BuildPresentationTiming
 )
-local InstancePath = require(ReplicatedStorage.Shared.InstancePath)
 local MonsterBuildPresentationProtocol = require(
 	ReplicatedStorage.Shared.Monster.MonsterBuildPresentationProtocol
 )
 local MonsterCatalog = require(ReplicatedStorage.Shared.Monster.MonsterCatalog)
+local MonsterFormTemplateAccess = require(
+	ReplicatedStorage.Shared.Monster.MonsterFormTemplateAccess
+)
 local MonsterIncubatorConfigs = require(
 	ReplicatedStorage.Shared.Monster.MonsterIncubatorConfigs
 )
@@ -43,11 +45,18 @@ local MonsterBuildPresentationController = {}
 
 local started = false
 
-local function resolveMonsterTemplate(monsterKey: string): Model
+local function resolveMonsterTemplate(monsterKey: string): (Model, number)
 	local definition = assert(MonsterCatalog.Get(monsterKey), "未知 MonsterKey：" .. monsterKey)
-	local template = InstancePath.Get(definition.TemplatePath)
-	assert(template:IsA("Model"), "怪兽模板必须是 Model：" .. monsterKey)
-	return template
+	local template, modelScale, reason = MonsterFormTemplateAccess.Resolve(
+		definition.TemplateRoot,
+		definition.FormIndex,
+		definition.GrowthAlpha
+	)
+	assert(
+		template and modelScale,
+		string.format("怪兽模板不可用：%s (%s)", monsterKey, reason or "Unknown")
+	)
+	return template, modelScale
 end
 
 local function resolveCommon(command)
@@ -152,14 +161,15 @@ end
 
 local function presentMonsterBuild(command)
 	local presentation, slot, authoritative = resolveMonsterPresentation(command)
-	local template = resolveMonsterTemplate(command.MonsterKey)
+	local template, modelScale = resolveMonsterTemplate(command.MonsterKey)
 	local snapshot = LocalBuildingVisibility.Hide(authoritative)
 	local succeeded, message = xpcall(function()
 		LocalBuildingRiseAnimation.Play(
 			template,
 			authoritative:GetPivot(),
 			slot.Position.Y,
-			presentation.Rise
+			presentation.Rise,
+			modelScale
 		)
 	end, debug.traceback)
 	LocalBuildingVisibility.Restore(snapshot)
@@ -170,8 +180,8 @@ end
 
 local function presentMonsterUpgrade(command)
 	local presentation, slot, authoritative = resolveMonsterPresentation(command)
-	local oldTemplate = resolveMonsterTemplate(command.PreviousMonsterKey)
-	local newTemplate = resolveMonsterTemplate(command.MonsterKey)
+	local oldTemplate, oldModelScale = resolveMonsterTemplate(command.PreviousMonsterKey)
+	local newTemplate, newModelScale = resolveMonsterTemplate(command.MonsterKey)
 	local targetPivot = authoritative:GetPivot()
 	local snapshot = LocalBuildingVisibility.Hide(authoritative)
 	local succeeded, message = xpcall(function()
@@ -179,13 +189,15 @@ local function presentMonsterUpgrade(command)
 			oldTemplate,
 			targetPivot,
 			slot.Position.Y,
-			presentation.Demolish
+			presentation.Demolish,
+			oldModelScale
 		)
 		LocalBuildingRiseAnimation.Play(
 			newTemplate,
 			targetPivot,
 			slot.Position.Y,
-			presentation.Rise
+			presentation.Rise,
+			newModelScale
 		)
 	end, debug.traceback)
 	LocalBuildingVisibility.Restore(snapshot)

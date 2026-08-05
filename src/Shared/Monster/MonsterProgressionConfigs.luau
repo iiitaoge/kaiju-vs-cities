@@ -20,8 +20,7 @@ local configs = {
 		DisplayName = "Godzilla",
 		MonsterKeyPrefix = "Godzilla-L",
 		TemplateRoot = "ReplicatedStorage/Godzilla",
-		LevelsPerAppearance = 5,
-		VisualLevelCount = 3,
+		LevelsPerForm = 15,
 		FormCount = 5,
 
 		-- 同等级怪兽互殴约十次命中分胜负；后段放缓，避免 75 级指数失控。

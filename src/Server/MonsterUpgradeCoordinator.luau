@@ -5,15 +5,16 @@ local MonsterStateRules = require(ReplicatedStorage.Shared.Monster.MonsterStateR
 
 local MonsterUpgradeCoordinator = {}
 
--- 输入：升级逻辑已确定的新怪兽身份、模板、最大生命和模板是否变化。
+-- 输入：升级逻辑已确定的新怪兽身份、Start 模板、绝对 Scale、最大生命和模板是否变化。
 -- 输出：是否完成升级，以及升级后的记录。
--- 内部算法：同外观保留原 Model 并满血更新身份；换外观才预隐藏替换 Model。
+-- 内部算法：同形态保留原 Model、缩放并满血更新身份；换形态才预隐藏替换 Model。
 -- 不负责：价格、建筑等级、升级条件和配置映射。
 function MonsterUpgradeCoordinator.Execute(
 	player: Player,
 	spawnPointId: string,
 	newMonsterKey: string,
 	template: Model,
+	modelScale: number,
 	spawnPoint: BasePart,
 	maxHealth: number,
 	templateChanged: boolean
@@ -41,6 +42,7 @@ function MonsterUpgradeCoordinator.Execute(
 			player,
 			spawnPointId,
 			newMonsterKey,
+			modelScale,
 			spawnPoint,
 			maxHealth
 		)
@@ -51,6 +53,7 @@ function MonsterUpgradeCoordinator.Execute(
 		spawnPointId,
 		newMonsterKey,
 		template,
+		modelScale,
 		spawnPoint,
 		maxHealth,
 		true

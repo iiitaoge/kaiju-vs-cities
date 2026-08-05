@@ -6,6 +6,16 @@ local BuildPresentationVisibility = require(
 
 local MonsterModelFactory = {}
 
+local function assertModelScale(modelScale: number)
+	assert(
+		type(modelScale) == "number"
+			and modelScale == modelScale
+			and modelScale < math.huge
+			and modelScale > 0,
+		"modelScale 必须是有限正数"
+	)
+end
+
 export type Identity = {
 	OwnerUserId: number,
 	SpawnPointId: string,
@@ -40,6 +50,16 @@ function MonsterModelFactory.UpdateIdentity(model: Model, identity: Identity): M
 	return model
 end
 
+-- 输入：运行时怪兽 Model 和目标绝对 Scale。
+-- 输出：同一 Model；同步写入可复制的 MonsterModelScale Attribute。
+function MonsterModelFactory.ApplyScale(model: Model, modelScale: number): Model
+	assert(typeof(model) == "Instance" and model:IsA("Model"), "model 必须是 Model")
+	assertModelScale(modelScale)
+	model:ScaleTo(modelScale)
+	model:SetAttribute("MonsterModelScale", modelScale)
+	return model
+end
+
 -- 输入：模板、生成位置、运行时父级、完整身份快照，以及可选的建造表现预隐藏标记。
 -- 输出：已经放入父级的服务器怪兽模型。
 -- 内部算法：克隆模板、解除部件锚定、锚定 PrimaryPart、写入身份；可选预隐藏后再放置。
@@ -48,7 +68,8 @@ function MonsterModelFactory.Create(
 	spawnCFrame: CFrame,
 	parent: Instance,
 	identity: Identity,
-	hideForPresentation: boolean?
+	hideForPresentation: boolean?,
+	modelScale: number?
 ): Model
 	assert(template:IsA("Model"), "template 必须是 Model")
 	assert(typeof(spawnCFrame) == "CFrame", "spawnCFrame 必须是 CFrame")
@@ -59,7 +80,10 @@ function MonsterModelFactory.Create(
 		"hideForPresentation 必须是 boolean 或 nil"
 	)
 
+	local resolvedScale = modelScale or template:GetScale()
+	assertModelScale(resolvedScale)
 	local model = template:Clone()
+	MonsterModelFactory.ApplyScale(model, resolvedScale)
 	local primaryPart = assert(model.PrimaryPart, "怪兽模板必须设置 PrimaryPart")
 	for _, descendant in model:GetDescendants() do
 		if descendant:IsA("BasePart") then
@@ -85,14 +109,16 @@ function MonsterModelFactory.Replace(
 	spawnCFrame: CFrame,
 	parent: Instance,
 	identity: Identity,
-	hideForPresentation: boolean?
+	hideForPresentation: boolean?,
+	modelScale: number?
 ): Model
 	local replacement = MonsterModelFactory.Create(
 		template,
 		spawnCFrame,
 		parent,
 		identity,
-		hideForPresentation
+		hideForPresentation,
+		modelScale
 	)
 	if previous and previous.Parent then
 		previous:Destroy()

@@ -78,6 +78,7 @@ type PlanItem = {
 	SpawnPointId: string,
 	MonsterKey: string,
 	Template: Model,
+	ModelScale: number,
 	MaxHealth: number,
 	Point: BasePart,
 }
@@ -88,6 +89,7 @@ type RuntimeActionPlan = {
 	TargetLevel: number,
 	MonsterKey: string,
 	Template: Model,
+	ModelScale: number,
 	MaxHealth: number,
 	Point: BasePart,
 	RuntimeRoot: Folder,
@@ -179,16 +181,17 @@ end
 local function resolveDefinition(spawnPointId: string, level: number)
 	local monsterKey = MonsterSpawnPointCatalog.GetMonsterKey(spawnPointId, level)
 	if not monsterKey then
-		return nil, nil, nil, "MonsterLevelNotConfigured"
+		return nil, nil, nil, nil, "MonsterLevelNotConfigured"
 	end
-	local template, monsterDefinition, templateReason = MonsterTemplateResolver.Resolve(monsterKey)
-	if not template then
-		return nil, nil, monsterDefinition, templateReason
+	local template, monsterDefinition, modelScale, templateReason =
+		MonsterTemplateResolver.Resolve(monsterKey)
+	if not template or not modelScale then
+		return nil, nil, monsterDefinition, nil, templateReason
 	end
 	if not template.PrimaryPart then
-		return nil, nil, monsterDefinition, "MonsterTemplateMissingPrimaryPart"
+		return nil, nil, monsterDefinition, nil, "MonsterTemplateMissingPrimaryPart"
 	end
-	return monsterKey, template, monsterDefinition, nil
+	return monsterKey, template, monsterDefinition, modelScale, nil
 end
 
 local function resolvePresentation(spawnPointId: string)
@@ -228,11 +231,11 @@ local function createLoadPlan(player: Player, plot: Model): ({ PlanItem }?, stri
 			return nil, "MissingMonsterSpawnPoint:" .. definition.SlotId
 		end
 
-		local monsterKey, template, monsterDefinition, resolveReason = resolveDefinition(
+		local monsterKey, template, monsterDefinition, modelScale, resolveReason = resolveDefinition(
 			state.SpawnPointId,
 			state.Level
 		)
-		if not monsterKey or not template or not monsterDefinition then
+		if not monsterKey or not template or not monsterDefinition or not modelScale then
 			return nil, (resolveReason or "MonsterResolveFailed") .. ":" .. state.SpawnPointId
 		end
 		if state.MonsterKey ~= monsterKey then
@@ -252,6 +255,7 @@ local function createLoadPlan(player: Player, plot: Model): ({ PlanItem }?, stri
 			SpawnPointId = state.SpawnPointId,
 			MonsterKey = monsterKey,
 			Template = template,
+			ModelScale = modelScale,
 			MaxHealth = monsterDefinition.MaxHealth * healthMultiplier,
 			Point = point,
 		})
@@ -292,11 +296,11 @@ local function prepareBuild(player: Player, spawnPointId: string): (RuntimeActio
 	if not point then
 		return nil, pointReason or "MonsterSpawnPointUnavailable"
 	end
-	local monsterKey, template, monsterDefinition, resolveReason = resolveDefinition(
+	local monsterKey, template, monsterDefinition, modelScale, resolveReason = resolveDefinition(
 		spawnPointId,
 		INITIAL_LEVEL
 	)
-	if not monsterKey or not template or not monsterDefinition then
+	if not monsterKey or not template or not monsterDefinition or not modelScale then
 		return nil, resolveReason or "MonsterResolveFailed"
 	end
 	local incubatorCheck = MonsterIncubatorBuildCoordinator.Validate(plot, spawnPointId)
@@ -318,6 +322,7 @@ local function prepareBuild(player: Player, spawnPointId: string): (RuntimeActio
 		TargetLevel = INITIAL_LEVEL,
 		MonsterKey = monsterKey,
 		Template = template,
+		ModelScale = modelScale,
 		MaxHealth = monsterDefinition.MaxHealth * bonuses.MonsterHealthMultiplier,
 		Point = point,
 		RuntimeRoot = runtimeRoot,
@@ -372,11 +377,11 @@ local function prepareUpgrade(
 	if not point then
 		return nil, pointReason or "MonsterSpawnPointUnavailable"
 	end
-	local monsterKey, template, monsterDefinition, resolveReason = resolveDefinition(
+	local monsterKey, template, monsterDefinition, modelScale, resolveReason = resolveDefinition(
 		spawnPointId,
 		targetLevel
 	)
-	if not monsterKey or not template or not monsterDefinition then
+	if not monsterKey or not template or not monsterDefinition or not modelScale then
 		return nil, resolveReason or "MonsterResolveFailed"
 	end
 	local templateChanged = MonsterCatalog.HasTemplateChanged(record.MonsterKey, monsterKey)
@@ -398,6 +403,7 @@ local function prepareUpgrade(
 		TargetLevel = targetLevel,
 		MonsterKey = monsterKey,
 		Template = template,
+		ModelScale = modelScale,
 		MaxHealth = monsterDefinition.MaxHealth * bonuses.MonsterHealthMultiplier,
 		Point = point,
 		RuntimeRoot = runtimeRoot,
@@ -478,6 +484,7 @@ function PlayerMonsterRuntimeCoordinator.Load(player: Player): Result
 			item.SpawnPointId,
 			item.MonsterKey,
 			item.Template,
+			item.ModelScale,
 			item.Point,
 			item.MaxHealth,
 			runtimeRoot
@@ -528,6 +535,7 @@ function PlayerMonsterRuntimeCoordinator.Build(player: Player, spawnPointId: str
 		spawnPointId,
 		plan.MonsterKey,
 		plan.Template,
+		plan.ModelScale,
 		plan.Point,
 		plan.MaxHealth,
 		plan.RuntimeRoot,
@@ -623,6 +631,7 @@ function PlayerMonsterRuntimeCoordinator.Upgrade(
 		spawnPointId,
 		plan.MonsterKey,
 		plan.Template,
+		plan.ModelScale,
 		plan.Point,
 		plan.MaxHealth,
 		plan.TemplateChanged
@@ -682,11 +691,22 @@ local function unload(player: Player, clearMonsterState: boolean): number
 	end
 	loadedPoints[player] = nil
 
-	local removedCount = MonsterRosterCoordinator.UnloadRuntime(player, clearMonsterState)
+	local removedCount = 0
+	if points then
+		for spawnPointId in pairs(points) do
+			if MonsterRosterCoordinator.UnloadForSpawnPoint(
+				player,
+				spawnPointId,
+				clearMonsterState
+			) then
+				removedCount += 1
+			end
+		end
+	end
 	local plot = loadedPlots[player]
 	loadedPlots[player] = nil
 	local runtimeRoot = plot and PlotMonsterRuntimeAccess.Get(plot)
-	if runtimeRoot then
+	if runtimeRoot and #runtimeRoot:GetChildren() == 0 then
 		runtimeRoot:Destroy()
 	end
 	local incubatorRoot = plot and WorkspaceMonsterIncubatorAccess.GetRoot(plot)
