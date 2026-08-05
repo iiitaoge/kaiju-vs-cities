@@ -97,8 +97,9 @@ function AttackSelectionHUDController.Open(spawnPointId: string, callbacks)
 			if closed then
 				return
 			end
-			refs.BrowseControls.Visible = true
-			refs.Title.Text = target.Player.Name
+			local solo = target.Kind == "Solo"
+			refs.BrowseControls.Visible = not solo
+			refs.Title.Text = if solo then target.DisplayName else target.Player.Name
 			refs.Root.Visible = true
 			if callbacks.OnTargetChanged then
 				callbacks.OnTargetChanged(target)

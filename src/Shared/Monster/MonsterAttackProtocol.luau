@@ -6,4 +6,5 @@
 return table.freeze({
 	TargetQueryRemoteName = "MonsterAttackTargets",
 	CommandRemoteName = "MonsterAttackCommand",
+	SoloCommandRemoteName = "SoloMonsterAttackCommand",
 })

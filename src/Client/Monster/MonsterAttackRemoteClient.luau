@@ -1,6 +1,6 @@
 --[[
-	职责：把正式攻击的两个 RemoteFunction 适配为稳定客户端函数。
-	输入：QueryTargets 无业务参数；RequestAttack 接收 SpawnPointId、目标 Player 和落点。
+	职责：把目标查询、玩家攻击和单人空地攻击 RemoteFunction 适配为稳定客户端函数。
+	输入：QueryTargets 无业务参数；玩家攻击接收目标 Player；单人攻击只接收 SpawnPointId 和落点。
 	输出：稳定成功/失败响应；网络或响应外形异常转换为明确 Reason。
 	不负责：状态机、目标缓存、相机、输入监听或本地领地校验。
 ]]
@@ -55,6 +55,49 @@ function MonsterAttackRemoteClient.RequestAttack(
 	end)
 	if not succeeded then
 		warn("提交怪兽攻击 Remote 失败：", responseOrError)
+		return { Succeeded = false, Reason = "RequestFailed", CommandId = nil, Monster = nil }
+	end
+	if type(responseOrError) ~= "table" or type(responseOrError.Succeeded) ~= "boolean" then
+		return {
+			Succeeded = false,
+			Reason = "InvalidServerResponse",
+			CommandId = nil,
+			Monster = nil,
+		}
+	end
+	if responseOrError.CommandId ~= nil and type(responseOrError.CommandId) ~= "number" then
+		return {
+			Succeeded = false,
+			Reason = "InvalidServerResponse",
+			CommandId = nil,
+			Monster = nil,
+		}
+	end
+	if responseOrError.Monster ~= nil
+		and (typeof(responseOrError.Monster) ~= "Instance"
+			or not responseOrError.Monster:IsA("Model")) then
+		return {
+			Succeeded = false,
+			Reason = "InvalidServerResponse",
+			CommandId = nil,
+			Monster = nil,
+		}
+	end
+	return responseOrError
+end
+
+function MonsterAttackRemoteClient.RequestSoloAttack(
+	spawnPointId: string,
+	entryPoint: Vector3
+)
+	local succeeded, responseOrError = pcall(function()
+		return getRemote(MonsterAttackProtocol.SoloCommandRemoteName):InvokeServer(
+			spawnPointId,
+			entryPoint
+		)
+	end)
+	if not succeeded then
+		warn("提交单人怪兽攻击 Remote 失败：", responseOrError)
 		return { Succeeded = false, Reason = "RequestFailed", CommandId = nil, Monster = nil }
 	end
 	if type(responseOrError) ~= "table" or type(responseOrError.Succeeded) ~= "boolean" then

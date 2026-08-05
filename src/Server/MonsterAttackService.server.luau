@@ -1,6 +1,6 @@
 --[[
-	职责：把两个正式攻击 RemoteFunction 适配到目标查询和攻击应用模块。
-	输入：目标查询只接收 Player；命令接收 SpawnPointId、TargetPlayerId、EntryPoint。
+	职责：把目标查询、玩家攻击和单人空地攻击 RemoteFunction 适配到权威应用模块。
+	输入：目标查询只接收 Player；玩家命令接收目标 UserId；单人命令只接收 SpawnPointId 和 EntryPoint。
 	输出：稳定的 Succeeded/Reason/Targets 或 Succeeded/Reason/CommandId/Monster。
 	内部算法：先做网络边界类型校验，再保护调用服务器权威业务模块。
 ]]
@@ -10,7 +10,13 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local PlayerAttackTargetQuery = require(script.Parent.PlayerAttackTargetQuery)
 local PlayerDataReadyService = require(script.Parent.PlayerDataReadyService)
 local PlayerMonsterAttackApplication = require(script.Parent.PlayerMonsterAttackApplication)
+local PlayerSoloMonsterAttackApplication = require(
+	script.Parent.PlayerSoloMonsterAttackApplication
+)
 local GameAnalyticsGateway = require(script.Parent.Analytics.GameAnalyticsGateway)
+local PlayerJourneyAnalyticsCoordinator = require(
+	script.Parent.Analytics.PlayerJourneyAnalyticsCoordinator
+)
 local SecurityAnalyticsAggregator = require(
 	script.Parent.Analytics.SecurityAnalyticsAggregator
 )
@@ -23,6 +29,9 @@ local targetQueryRemote = ServerRemoteAccess.EnsureFunction(
 	MonsterAttackProtocol.TargetQueryRemoteName
 )
 local commandRemote = ServerRemoteAccess.EnsureFunction(MonsterAttackProtocol.CommandRemoteName)
+local soloCommandRemote = ServerRemoteAccess.EnsureFunction(
+	MonsterAttackProtocol.SoloCommandRemoteName
+)
 
 targetQueryRemote.OnServerInvoke = function(player)
 	if PlayerDataReadyService.Get(player).Status ~= "Ready" then
@@ -34,6 +43,12 @@ targetQueryRemote.OnServerInvoke = function(player)
 	if not succeeded then
 		warn(string.format("查询攻击目标异常：%s (%s)", player.Name, tostring(responseOrError)))
 		return { Succeeded = false, Reason = "ServerError", Targets = {} }
+	end
+	if responseOrError.Succeeded then
+		PlayerJourneyAnalyticsCoordinator.RecordAttackTargetsLoaded(
+			player,
+			#responseOrError.Targets
+		)
 	end
 	return responseOrError
 end
@@ -58,6 +73,7 @@ commandRemote.OnServerInvoke = function(player, spawnPointId, targetPlayerId, en
 		SecurityAnalyticsAggregator.Record(player, "MonsterAttack", "InvalidEntryPoint")
 		return { Succeeded = false, Reason = "InvalidEntryPoint", CommandId = nil, Monster = nil }
 	end
+	PlayerJourneyAnalyticsCoordinator.RecordAttackRequested(player, spawnPointId)
 
 	local succeeded, responseOrError = xpcall(function()
 		return PlayerMonsterAttackApplication.Execute(
@@ -78,13 +94,71 @@ commandRemote.OnServerInvoke = function(player, spawnPointId, targetPlayerId, en
 		return { Succeeded = false, Reason = "ServerError", CommandId = nil, Monster = nil }
 	end
 	if responseOrError.Succeeded then
+		PlayerJourneyAnalyticsCoordinator.RecordAttackAccepted(player, spawnPointId)
 		TutorialProgressStateService.Complete(player)
 	else
 		local reason = responseOrError.Reason or "Unknown"
+		PlayerJourneyAnalyticsCoordinator.RecordAttackRejected(
+			player,
+			spawnPointId,
+			reason
+		)
 		reason = string.match(reason, "^[^:]+") or "Unknown"
 		GameAnalyticsGateway.LogDesign(
 			player,
 			"Gameplay:Attack:Rejected:" .. string.sub(reason, 1, 32)
+		)
+	end
+	return responseOrError
+end
+
+soloCommandRemote.OnServerInvoke = function(player, spawnPointId, entryPoint)
+	if PlayerDataReadyService.Get(player).Status ~= "Ready" then
+		return { Succeeded = false, Reason = "PlayerDataNotReady", CommandId = nil, Monster = nil }
+	end
+	if type(spawnPointId) ~= "string" or spawnPointId == "" then
+		SecurityAnalyticsAggregator.Record(player, "SoloMonsterAttack", "InvalidSpawnPointId")
+		return { Succeeded = false, Reason = "InvalidSpawnPointId", CommandId = nil, Monster = nil }
+	end
+	if not ValueValidation.IsFiniteVector3(entryPoint) then
+		SecurityAnalyticsAggregator.Record(player, "SoloMonsterAttack", "InvalidEntryPoint")
+		return { Succeeded = false, Reason = "InvalidEntryPoint", CommandId = nil, Monster = nil }
+	end
+	PlayerJourneyAnalyticsCoordinator.RecordAttackRequested(player, spawnPointId)
+
+	local succeeded, responseOrError = xpcall(function()
+		return PlayerSoloMonsterAttackApplication.Execute(
+			player,
+			spawnPointId,
+			entryPoint
+		)
+	end, debug.traceback)
+	if not succeeded then
+		warn(string.format(
+			"提交单人怪兽攻击异常：%s/%s (%s)",
+			player.Name,
+			spawnPointId,
+			tostring(responseOrError)
+		))
+		return { Succeeded = false, Reason = "ServerError", CommandId = nil, Monster = nil }
+	end
+	if responseOrError.Succeeded then
+		PlayerJourneyAnalyticsCoordinator.RecordAttackAccepted(player, spawnPointId)
+		TutorialProgressStateService.Complete(player)
+		GameAnalyticsGateway.LogDesign(
+			player,
+			"Gameplay:SoloAttack:Accepted:" .. spawnPointId
+		)
+	else
+		local reason = responseOrError.Reason or "Unknown"
+		PlayerJourneyAnalyticsCoordinator.RecordAttackRejected(
+			player,
+			spawnPointId,
+			reason
+		)
+		GameAnalyticsGateway.LogDesign(
+			player,
+			"Gameplay:SoloAttack:Rejected:" .. string.sub(reason, 1, 32)
 		)
 	end
 	return responseOrError

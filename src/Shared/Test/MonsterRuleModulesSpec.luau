@@ -11,6 +11,9 @@ local MonsterHealthRules = require(ReplicatedStorage.Shared.Monster.MonsterHealt
 local MonsterMovementRules = require(
 	ReplicatedStorage.Shared.Monster.MonsterMovementRules
 )
+local SoloMonsterAttackConfigs = require(
+	ReplicatedStorage.Shared.Monster.SoloMonsterAttackConfigs
+)
 local MonsterStateRules = require(ReplicatedStorage.Shared.Monster.MonsterStateRules)
 local TerritoryPointRules = require(ReplicatedStorage.Shared.Monster.TerritoryPointRules)
 
@@ -37,6 +40,12 @@ end
 -- 输出：全部独立规则通过时返回 true；任一契约变化时 assert 失败。
 -- 内部算法：覆盖容量边界、状态权限、伤害归零、旋转地盘、稳定选敌和包围盒距离。
 function MonsterRuleModulesSpec.Run(): boolean
+	expect(SoloMonsterAttackConfigs.AttackDuration == 3, "单人攻击表演时长必须为 3 秒")
+	expect(
+		type(SoloMonsterAttackConfigs.BoundsPartName) == "string"
+			and SoloMonsterAttackConfigs.BoundsPartName ~= "",
+		"单人攻击范围名称无效"
+	)
 	expect(
 		MonsterAttackProtocol.TargetQueryRemoteName ~= MonsterAttackProtocol.CommandRemoteName,
 		"目标查询和攻击命令必须使用独立 Remote"
@@ -158,6 +167,20 @@ function MonsterRuleModulesSpec.Run(): boolean
 		MaxDistance = 10,
 	})
 	expect(selected ~= nil and selected.TargetId == "A", "选敌必须过滤玩家并稳定处理等距")
+	local unboundedSelected = EnemyTargetSelector.Select(Vector3.zero, {
+		{
+			TargetId = "SameRegionDefender",
+			OwnerUserId = 2,
+			Position = Vector3.new(1_000, 0, 0),
+			Active = true,
+		},
+	}, {
+		TargetOwnerUserId = 2,
+	})
+	expect(
+		unboundedSelected ~= nil and unboundedSelected.TargetId == "SameRegionDefender",
+		"未提供距离上限时，同区域候选不应因槽位距离失效"
+	)
 
 	local attacker = makeBoxModel("Attacker", CFrame.new(0, 0, 0), Vector3.new(4, 4, 4))
 	local target = makeBoxModel("Target", CFrame.new(10, 0, 0), Vector3.new(4, 4, 4))

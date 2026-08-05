@@ -1,10 +1,10 @@
 --[[
-	职责：组装正式的客户端攻击目标选择会话。
+	职责：组装玩家城市攻击与无其他玩家时的单人空地攻击选择会话。
 
 	输入：自己的 SpawnPointId、管理状态机回调，以及可选表现回调。
 	输出：切换/刷新目标、提交世界点、取消和恢复跟随视角的会话。
-	内部算法：查询一次目标快照并建立缓存，复用 AttackPanelCoordinator 管理选择状态；
-	目标变化时切换总领地视角和准星合法范围，监听屏幕世界点击，服务器接受后跟随出征怪兽。
+	内部算法：查询一次目标快照；有玩家时复用正式 AttackPanelCoordinator，
+	没有其他玩家时使用 SoloAttackPanelCoordinator；两者共享俯视相机、准星、世界点击和跟随视角。
 
 	不负责：创建 GUI、美术布局、服务器权威校验或执行战斗。
 ]]
@@ -12,6 +12,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local AnalyticsIntentClient = require(script.Parent.Parent.Analytics.AnalyticsIntentClient)
 local AttackBrowseCamera = require(script.Parent.Parent.Camera.AttackBrowseCamera)
 local MonsterFollowCamera = require(script.Parent.Parent.Camera.MonsterFollowCamera)
 local WorldPointInputController = require(script.Parent.Parent.Camera.WorldPointInputController)
@@ -19,17 +20,26 @@ local AttackPanelCoordinator = require(script.Parent.AttackPanelCoordinator)
 local AttackTargetSnapshotMapper = require(script.Parent.AttackTargetSnapshotMapper)
 local LocalAttackCrosshairPresenter = require(script.Parent.LocalAttackCrosshairPresenter)
 local MonsterAttackRemoteClient = require(script.Parent.MonsterAttackRemoteClient)
+local SoloAttackPanelCoordinator = require(script.Parent.SoloAttackPanelCoordinator)
+local SoloAttackTargetSnapshotMapper = require(
+	script.Parent.SoloAttackTargetSnapshotMapper
+)
 local MonsterAttackSelectionConfig = require(
 	ReplicatedStorage.Shared.Monster.MonsterAttackSelectionConfig
 )
+local AnalyticsIntentProtocol = require(
+	ReplicatedStorage.Shared.Analytics.AnalyticsIntentProtocol
+)
 
 local PlayerMonsterAttackSelectionCoordinator = {}
+
+export type Target = AttackPanelCoordinator.Target | SoloAttackPanelCoordinator.Target
 
 export type Callbacks = {
 	OnAccepted: () -> (),
 	OnCancelled: () -> (),
 	OnUnavailable: (string?) -> (),
-	OnTargetChanged: ((AttackPanelCoordinator.Target) -> ())?,
+	OnTargetChanged: ((Target) -> ())?,
 	OnValidationFailed: ((string) -> ())?,
 	OnClosed: ((string) -> ())?,
 	OnFollowStarted: ((Model) -> ())?,
@@ -37,13 +47,13 @@ export type Callbacks = {
 }
 
 export type Session = {
-	NextTarget: () -> AttackPanelCoordinator.Target?,
-	PreviousTarget: () -> AttackPanelCoordinator.Target?,
-	RefreshTargets: () -> AttackPanelCoordinator.Target?,
+	NextTarget: () -> Target?,
+	PreviousTarget: () -> Target?,
+	RefreshTargets: () -> Target?,
 	SubmitWorldPoint: (Vector3) -> AttackPanelCoordinator.RequestResult,
 	Cancel: () -> (),
 	RestoreCamera: () -> boolean,
-	GetCurrentTarget: () -> AttackPanelCoordinator.Target?,
+	GetCurrentTarget: () -> Target?,
 	IsOpen: () -> boolean,
 }
 
@@ -65,13 +75,28 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 
 	local query = MonsterAttackRemoteClient.QueryTargets()
 	if not query.Succeeded then
+		AnalyticsIntentClient.Record(
+			AnalyticsIntentProtocol.Intents.AttackUnavailable,
+			spawnPointId,
+			query.Reason or "TargetQueryFailed"
+		)
 		callbacks.OnUnavailable(query.Reason or "TargetQueryFailed")
 		return nil
 	end
 	local targetCache = mapTargets(query.Targets)
+	local soloTarget = nil
 	if #targetCache == 0 then
-		callbacks.OnUnavailable("TargetUnavailable")
-		return nil
+		soloTarget = SoloAttackTargetSnapshotMapper.Map(query.SoloTarget)
+		if not soloTarget then
+			local reason = query.SoloReason or "TargetUnavailable"
+			AnalyticsIntentClient.Record(
+				AnalyticsIntentProtocol.Intents.AttackUnavailable,
+				spawnPointId,
+				reason
+			)
+			callbacks.OnUnavailable(reason)
+			return nil
+		end
 	end
 
 	local browseSession = nil
@@ -79,6 +104,22 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 	local inputSession = nil
 	local panelSession = nil
 	local crosshairSession = nil
+
+	-- 输入：当前 LocalPlayer 的实时 Character 与 CurrentCamera。
+	-- 输出：成功把相机交还给当前 Humanoid 时返回 true；角色暂不可用时返回 false。
+	-- 内部算法：先设置 CameraSubject，再切回 Custom，让默认相机控制器继续逐帧更新。
+	local function restoreLocalPlayerCamera(): boolean
+		local camera = workspace.CurrentCamera
+		local character = Players.LocalPlayer.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if not camera or not humanoid then
+			return false
+		end
+
+		camera.CameraSubject = humanoid
+		camera.CameraType = Enum.CameraType.Custom
+		return true
+	end
 
 	local function restoreBrowseCamera()
 		local session = browseSession
@@ -120,75 +161,112 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 		warn("找不到攻击准星模板：ReplicatedStorage/" .. crosshairConfig.TemplateName)
 	end
 
-	panelSession = AttackPanelCoordinator.Open(spawnPointId, {
-		LocalPlayer = Players.LocalPlayer,
-		GetTargets = function()
-			return targetCache
-		end,
-		RequestAttack = MonsterAttackRemoteClient.RequestAttack,
-		OnTargetChanged = function(target)
-			if crosshairSession then
-				crosshairSession.SetTerritories(target.UnlockedTerritories)
+	local function onTargetChanged(target: Target)
+		AnalyticsIntentClient.Record(
+			AnalyticsIntentProtocol.Intents.AttackTargetSelected,
+			spawnPointId
+		)
+		if crosshairSession then
+			crosshairSession.SetTerritories(target.UnlockedTerritories)
+		end
+		if browseSession then
+			browseSession.SetTarget(target.AttackView)
+		else
+			browseSession = AttackBrowseCamera.Open(
+				target.AttackView,
+				MonsterAttackSelectionConfig.BrowseCamera
+			)
+		end
+		if callbacks.OnTargetChanged then
+			callbacks.OnTargetChanged(target)
+		end
+	end
+
+	local function onValidationFailed(reason)
+		AnalyticsIntentClient.Record(
+			AnalyticsIntentProtocol.Intents.AttackValidationFailed,
+			spawnPointId,
+			reason
+		)
+		if callbacks.OnValidationFailed then
+			callbacks.OnValidationFailed(reason)
+		end
+	end
+
+	local function onAccepted(result)
+		local monster = result.Monster
+		if monster and monster:IsDescendantOf(workspace) then
+			local followConfig = MonsterAttackSelectionConfig.FollowCamera
+			followSession = MonsterFollowCamera.Start(
+				monster,
+				{
+					Offset = followConfig.Offset,
+					FieldOfView = followConfig.FieldOfView,
+					Responsiveness = followConfig.Responsiveness,
+					OnStopped = function(reason)
+						followSession = nil
+						restoreLocalPlayerCamera()
+						if callbacks.OnFollowStopped then
+							callbacks.OnFollowStopped(reason)
+						end
+					end,
+				}
+			)
+			if callbacks.OnFollowStarted then
+				callbacks.OnFollowStarted(monster)
 			end
-			if browseSession then
-				browseSession.SetTarget(target.AttackView)
-			else
-				browseSession = AttackBrowseCamera.Open(
-					target.AttackView,
-					MonsterAttackSelectionConfig.BrowseCamera
-				)
-			end
-			if callbacks.OnTargetChanged then
-				callbacks.OnTargetChanged(target)
-			end
-		end,
-		OnTargetUnavailable = function()
-			if crosshairSession then
-				crosshairSession.SetTerritories({})
-			end
-			callbacks.OnUnavailable("TargetUnavailable")
-		end,
-		OnValidationFailed = function(reason)
-			if callbacks.OnValidationFailed then
-				callbacks.OnValidationFailed(reason)
-			end
-		end,
-		OnAccepted = function(result, _target)
-			local monster = result.Monster
-			if monster and monster:IsDescendantOf(workspace) then
-				local followConfig = MonsterAttackSelectionConfig.FollowCamera
-				followSession = MonsterFollowCamera.Start(
-					monster,
-					{
-						Offset = followConfig.Offset,
-						FieldOfView = followConfig.FieldOfView,
-						Responsiveness = followConfig.Responsiveness,
-						OnStopped = function(reason)
-							followSession = nil
-							if callbacks.OnFollowStopped then
-								callbacks.OnFollowStopped(reason)
-							end
-						end,
-					}
-				)
-				if callbacks.OnFollowStarted then
-					callbacks.OnFollowStarted(monster)
+		end
+		callbacks.OnAccepted()
+	end
+
+	local function onClosed(reason)
+		stopInput()
+		stopCrosshair()
+		restoreBrowseCamera()
+		if reason == "Cancelled" then
+			AnalyticsIntentClient.Record(
+				AnalyticsIntentProtocol.Intents.AttackCancelled,
+				spawnPointId,
+				reason
+			)
+			callbacks.OnCancelled()
+		end
+		if callbacks.OnClosed then
+			callbacks.OnClosed(reason)
+		end
+	end
+
+	if soloTarget then
+		panelSession = SoloAttackPanelCoordinator.Open(spawnPointId, soloTarget, {
+			RequestAttack = MonsterAttackRemoteClient.RequestSoloAttack,
+			OnValidationFailed = onValidationFailed,
+			OnAccepted = function(result, _target)
+				onAccepted(result)
+			end,
+			OnClosed = onClosed,
+		})
+		onTargetChanged(soloTarget)
+	else
+		panelSession = AttackPanelCoordinator.Open(spawnPointId, {
+			LocalPlayer = Players.LocalPlayer,
+			GetTargets = function()
+				return targetCache
+			end,
+			RequestAttack = MonsterAttackRemoteClient.RequestAttack,
+			OnTargetChanged = onTargetChanged,
+			OnTargetUnavailable = function()
+				if crosshairSession then
+					crosshairSession.SetTerritories({})
 				end
-			end
-			callbacks.OnAccepted()
-		end,
-		OnClosed = function(reason)
-			stopInput()
-			stopCrosshair()
-			restoreBrowseCamera()
-			if reason == "Cancelled" then
-				callbacks.OnCancelled()
-			end
-			if callbacks.OnClosed then
-				callbacks.OnClosed(reason)
-			end
-		end,
-	})
+				callbacks.OnUnavailable("TargetUnavailable")
+			end,
+			OnValidationFailed = onValidationFailed,
+			OnAccepted = function(result, _target)
+				onAccepted(result)
+			end,
+			OnClosed = onClosed,
+		})
+	end
 
 	inputSession = WorldPointInputController.Start(function(worldPoint)
 		if panelSession and panelSession.IsOpen() then
@@ -213,6 +291,9 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 		NextTarget = panelSession.NextTarget,
 		PreviousTarget = panelSession.PreviousTarget,
 		RefreshTargets = function()
+			if soloTarget then
+				return panelSession.RefreshTargets()
+			end
 			local response = MonsterAttackRemoteClient.QueryTargets()
 			if not response.Succeeded then
 				callbacks.OnUnavailable(response.Reason or "TargetQueryFailed")
