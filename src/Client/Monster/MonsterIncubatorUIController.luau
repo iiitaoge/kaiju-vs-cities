@@ -1,6 +1,6 @@
 --[[
 	职责：把本地玩家最近的已建培养罐 MonsterUI 以近距离屏幕面板接到现有怪兽管理与攻击选择链。
-	输入：本地玩家 M1-S1 至 M1-S4 的运行时培养罐、玩家位置和服务器管理快照。
+	输入：本地玩家 M1-S1 至 M1-S4 的运行时培养罐、玩家位置、余额镜像和服务器管理快照。
 	输出：安全区内固定显示的标题、现金升级价格、Start/升级按钮状态及点击请求。
 	内部算法：在显示范围内选择水平距离最近的培养罐，将其 Panel 挂到独立 ScreenGui，组合管理状态机；怪兽回到 IdleAtSpawn 时重新打开。
 	不负责：创建 UI、美术布局、扣款、升级模型、选择攻击目标或 Robux 购买。
@@ -18,6 +18,7 @@ local LocalMonsterIncubatorUIAccess = require(script.Parent.LocalMonsterIncubato
 local MonsterManagementCoordinator = require(script.Parent.MonsterManagementCoordinator)
 local AttackSelectionHUDController = require(script.Parent.AttackSelectionHUDController)
 local MonsterCatalog = require(ReplicatedStorage.Shared.Monster.MonsterCatalog)
+local MoneyProtocol = require(ReplicatedStorage.Shared.Economy.MoneyProtocol)
 local MonsterIncubatorUIPresentationConfig = require(
 	ReplicatedStorage.Shared.Monster.MonsterIncubatorUIPresentationConfig
 )
@@ -26,6 +27,9 @@ local MonsterIncubatorUIPlacement = require(
 )
 local MonsterSpawnPointCatalog = require(
 	ReplicatedStorage.Shared.Monster.MonsterSpawnPointCatalog
+)
+local CompactNumberFormatter = require(
+	ReplicatedStorage.Shared.UI.CompactNumberFormatter
 )
 local ResponsiveUIScale = require(ReplicatedStorage.Shared.UI.ResponsiveUIScale)
 local UIModeVisibilityRules = require(
@@ -226,7 +230,7 @@ function MonsterIncubatorUIController.Start()
 				refs.Title.Text = string.format("%s · Lv %d", displayName, snapshot.Level)
 				refs.MoneyValue.Text = if snapshot.Upgrade.Reason == "MaxLevel"
 					then "MAX"
-					else tostring(snapshot.Upgrade.Cost)
+					else CompactNumberFormatter.Format(snapshot.Upgrade.Cost)
 			else
 				refs.Title.Text = "Godzilla"
 				refs.MoneyValue.Text = "..."
@@ -463,6 +467,12 @@ function MonsterIncubatorUIController.Start()
 
 		plot.DescendantAdded:Connect(scheduleRefresh)
 		plot.DescendantRemoving:Connect(scheduleRefresh)
+		player:GetAttributeChangedSignal(MoneyProtocol.BalanceAttributeName):Connect(function()
+			local balance = player:GetAttribute(MoneyProtocol.BalanceAttributeName)
+			if management and type(balance) == "number" then
+				management.UpdateBalance(balance)
+			end
+		end)
 		RunService.RenderStepped:Connect(function()
 			local now = os.clock()
 			if now - lastBindingRefresh >= BINDING_REFRESH_SECONDS then

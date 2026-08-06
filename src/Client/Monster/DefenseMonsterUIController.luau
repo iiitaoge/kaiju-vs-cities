@@ -1,6 +1,6 @@
 --[[
 	职责：靠近本地玩家的防守怪兽时打开与培养罐一致的升级面板。
-	输入：己方运行时防守怪兽、玩家位置和管理服务器快照。
+	输入：己方运行时防守怪兽、玩家位置、余额镜像和管理服务器快照。
 	输出：范围内最近怪兽的等级/价格与现金升级入口；离开后关闭面板，并隐藏 Start/Robux。
 	内部算法：复用 PetriDish-3 UI，周期扫描 MonsterRole=Defense 的己方空闲模型并选择 20 studs 内最近目标。
 	不负责：生成怪兽、攻击选择、价格、扣款、升级或战斗。
@@ -17,11 +17,15 @@ local LocalMonsterBuildPresentationAccess = require(script.Parent.LocalMonsterBu
 local LocalMonsterIncubatorUIAccess = require(script.Parent.LocalMonsterIncubatorUIAccess)
 local MonsterManagementCoordinator = require(script.Parent.MonsterManagementCoordinator)
 local MonsterCatalog = require(ReplicatedStorage.Shared.Monster.MonsterCatalog)
+local MoneyProtocol = require(ReplicatedStorage.Shared.Economy.MoneyProtocol)
 local MonsterIncubatorUIPresentationConfig = require(
 	ReplicatedStorage.Shared.Monster.MonsterIncubatorUIPresentationConfig
 )
 local MonsterIncubatorUIPlacement = require(
 	ReplicatedStorage.Shared.Monster.MonsterIncubatorUIPlacement
+)
+local CompactNumberFormatter = require(
+	ReplicatedStorage.Shared.UI.CompactNumberFormatter
 )
 local ResponsiveUIScale = require(ReplicatedStorage.Shared.UI.ResponsiveUIScale)
 local UIModeVisibilityRules = require(
@@ -168,7 +172,7 @@ function DefenseMonsterUIController.Start()
 				)
 				refs.MoneyValue.Text = if snapshot.Upgrade.Reason == "MaxLevel"
 					then "MAX"
-					else tostring(snapshot.Upgrade.Cost)
+					else CompactNumberFormatter.Format(snapshot.Upgrade.Cost)
 			else
 				refs.Title.Text = "Godzilla"
 				refs.MoneyValue.Text = "..."
@@ -276,6 +280,12 @@ function DefenseMonsterUIController.Start()
 		end
 
 		local lastRefresh = 0
+		player:GetAttributeChangedSignal(MoneyProtocol.BalanceAttributeName):Connect(function()
+			local balance = player:GetAttribute(MoneyProtocol.BalanceAttributeName)
+			if type(balance) == "number" then
+				management.UpdateBalance(balance)
+			end
+		end)
 		RunService.RenderStepped:Connect(function()
 			local now = os.clock()
 			if now - lastRefresh >= BINDING_REFRESH_SECONDS then

@@ -1,8 +1,8 @@
 --[[
 	职责：组装怪兽管理状态机、服务器请求和未来 GUI/攻击面板适配器。
 
-	输入：Render、可选 Query/Upgrade，以及 OpenAttackSelection 回调。
-	输出：Open、ChooseUpgrade、ChooseAttack、Retry、Close、GetState 会话接口。
+	输入：Render、可选 Query/Upgrade、OpenAttackSelection 回调，以及会话期余额变化。
+	输出：Open、ChooseUpgrade、ChooseAttack、UpdateBalance、Retry、Close、GetState 会话接口。
 	内部算法：应用纯状态机 → 立即 Render → 异步执行 Effect → 把结果重新送回状态机。
 
 	不负责：创建 ScreenGui、决定美术样式、选择目标玩家或提交攻击坐标。
@@ -38,6 +38,7 @@ export type Session = {
 	Open: (string) -> MonsterManagementStateMachine.TransitionResult,
 	ChooseUpgrade: () -> MonsterManagementStateMachine.TransitionResult,
 	ChooseAttack: () -> MonsterManagementStateMachine.TransitionResult,
+	UpdateBalance: (number) -> MonsterManagementStateMachine.TransitionResult,
 	Retry: () -> MonsterManagementStateMachine.TransitionResult,
 	Close: () -> MonsterManagementStateMachine.TransitionResult,
 	GetState: () -> MonsterManagementStateMachine.State,
@@ -187,6 +188,9 @@ function MonsterManagementCoordinator.Create(options: Options): Session
 		end,
 		ChooseAttack = function()
 			return dispatch({ Kind = "ChooseAttack" })
+		end,
+		UpdateBalance = function(balance: number)
+			return dispatch({ Kind = "BalanceChanged", Balance = balance })
 		end,
 		Retry = function()
 			return dispatch({ Kind = "Retry" })

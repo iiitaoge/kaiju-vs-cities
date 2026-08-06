@@ -56,15 +56,18 @@ function MonsterManagementStateMachineSpec.Run(): boolean
 	expect(not insufficient.Accepted, "余额不足时不应进入 Upgrading")
 	expect(insufficient.Reason == "InsufficientMoney", "余额不足原因错误")
 
-	local refreshed = MonsterManagementStateMachine.Apply(insufficient.State, {
-		Kind = "Open",
-		SpawnPointId = "M1-S1",
+	local balanceChanged = MonsterManagementStateMachine.Apply(insufficient.State, {
+		Kind = "BalanceChanged",
+		Balance = 1000,
 	})
-	local ready = MonsterManagementStateMachine.Apply(refreshed.State, {
-		Kind = "SnapshotLoaded",
-		Snapshot = snapshot(true, true, true),
-	})
-	local upgrading = MonsterManagementStateMachine.Apply(ready.State, {
+	expect(balanceChanged.State.Mode == "Managing", "余额变化不应关闭管理面板")
+	expect(balanceChanged.State.Snapshot.Balance == 1000, "余额快照没有更新")
+	expect(balanceChanged.State.Snapshot.Upgrade.Affordable, "余额足够后升级没有变为可用")
+	expect(
+		not insufficient.State.Snapshot.Upgrade.Affordable,
+		"余额变化不应修改旧快照"
+	)
+	local upgrading = MonsterManagementStateMachine.Apply(balanceChanged.State, {
 		Kind = "ChooseUpgrade",
 	})
 	expect(upgrading.State.Mode == "Upgrading", "允许升级时应进入 Upgrading")

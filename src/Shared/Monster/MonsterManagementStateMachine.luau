@@ -1,9 +1,9 @@
 --[[
 	职责：描述无 GUI 依赖的怪兽管理面板交互状态。
 
-	输入：当前 State 和一个 Event。
+	输入：当前 State，以及面板交互或余额变化 Event。
 	输出：Accepted、Reason、新 State，以及最多一个待协调 Effect。
-	内部算法：只按显式状态转换表处理加载、升级和进入/退出进攻选择。
+	内部算法：按显式状态转换表处理加载、升级和进攻选择；余额变化只重算快照中的可负担状态。
 
 	不负责：Remote、扣款、怪兽状态写入、目标玩家选择、相机或 GUI 表现。
 ]]
@@ -112,7 +112,7 @@ function MonsterManagementStateMachine.New(): State
 	return state("Closed", nil, nil, nil)
 end
 
--- 支持的 Event.Kind：Open、Close、SnapshotLoaded、SnapshotFailed、Retry、
+-- 支持的 Event.Kind：Open、Close、SnapshotLoaded、SnapshotFailed、Retry、BalanceChanged、
 -- ChooseUpgrade、UpgradeResolved、ChooseAttack、AttackCancelled、AttackAccepted、AttackUnavailable。
 function MonsterManagementStateMachine.Apply(current: State, event): TransitionResult
 	if type(current) ~= "table" or type(event) ~= "table" or type(event.Kind) ~= "string" then
@@ -141,6 +141,35 @@ function MonsterManagementStateMachine.Apply(current: State, event): TransitionR
 			Kind = "QuerySnapshot",
 			SpawnPointId = event.SpawnPointId,
 		})
+	end
+
+	if event.Kind == "BalanceChanged" then
+		local balance = event.Balance
+		if type(balance) ~= "number" or balance ~= balance
+			or balance < 0 or balance >= math.huge
+		then
+			return rejected(current, "InvalidBalance")
+		end
+		if not current.Snapshot then
+			return result(true, nil, current, nil)
+		end
+
+		local snapshot = table.clone(current.Snapshot)
+		snapshot.Balance = balance
+		snapshot.Upgrade = table.clone(current.Snapshot.Upgrade)
+		snapshot.Upgrade.Affordable = balance >= snapshot.Upgrade.Cost
+		snapshot.Attack = table.clone(current.Snapshot.Attack)
+		snapshot.Attack.Affordable = balance >= snapshot.Attack.Cost
+		local lastReason = if snapshot.Upgrade.Affordable
+			and current.LastReason == "InsufficientMoney"
+			then nil
+			else current.LastReason
+		return result(
+			true,
+			nil,
+			state(current.Mode, current.SpawnPointId, snapshot, lastReason),
+			nil
+		)
 	end
 
 	local spawnPointId = current.SpawnPointId
