@@ -2,14 +2,18 @@
 	职责：在攻击选择期间显示并移动本地世界准星。
 	输入：准星模板、旋转动画 ID、表面高度偏移；会话接收当前目标的合法领地。
 	输出：可切换合法领地并停止的本地表现会话。
-	内部算法：每帧解析鼠标世界命中点，复用 TerritoryPointRules 判定；合法时移动并显示 Clone。
+	内部算法：每帧把 GetMouseLocation 的 DeviceSafe viewport 坐标直接解析为世界点，复用 TerritoryPointRules 判定；合法时移动并显示 Clone。
 	不负责：提交攻击、切换目标、相机、服务器校验、触摸输入或修改源模板。
 ]]
 
+local GuiService = game:GetService("GuiService")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
 local WorldPointResolver = require(script.Parent.Parent.WorldPointResolver)
+local AttackSelectionCoordinateDiagnostics = require(
+	script.Parent.AttackSelectionCoordinateDiagnostics
+)
 local TerritoryPointRules = require(
 	game:GetService("ReplicatedStorage").Shared.Monster.TerritoryPointRules
 )
@@ -25,6 +29,7 @@ export type Options = {
 	Template: Model,
 	AnimationAssetId: number,
 	SurfaceOffset: number,
+	Diagnostics: AttackSelectionCoordinateDiagnostics.Session?,
 }
 
 export type Session = {
@@ -45,13 +50,20 @@ local function validOptions(options: Options): boolean
 		and math.abs(options.SurfaceOffset) < math.huge
 end
 
-local function isAllowed(territories: { Territory }, point: Vector3): boolean
-	for _, territory in territories do
-		if TerritoryPointRules.Check(territory.CFrame, territory.Size, point).Allowed then
-			return true
-		end
+-- 输入：当前鼠标状态。
+-- 输出：DeviceSafe viewport 坐标、左上 GUI inset 和已计入 CoreUI inset 的 screen 坐标。
+local function getMouseCoordinates(): (Vector2, Vector2, Vector2)
+	local rawMouseViewport = UserInputService:GetMouseLocation()
+	local topLeftInset = GuiService:GetGuiInset()
+	return rawMouseViewport, topLeftInset, rawMouseViewport - topLeftInset
+end
+
+local function project(camera: Camera?, worldPosition: Vector3?): Vector2?
+	if not camera or not worldPosition then
+		return nil
 	end
-	return false
+	local viewportPoint = camera:WorldToViewportPoint(worldPosition)
+	return Vector2.new(viewportPoint.X, viewportPoint.Y)
 end
 
 local function playAnimation(model: Model, animationAssetId: number): AnimationTrack?
@@ -121,13 +133,21 @@ function LocalAttackCrosshairPresenter.Start(
 	end
 
 	local baseRotation = visual:GetPivot().Rotation
+	local visualAnchor = visual:FindFirstChild("Union", true)
+	if visualAnchor and not visualAnchor:IsA("BasePart") then
+		visualAnchor = nil
+	end
 	visual:PivotTo(CFrame.new(0, -10_000, 0) * baseRotation)
 	visual.Parent = workspace
 	local animationTrack = playAnimation(visual, options.AnimationAssetId)
 	local territories: { Territory } = {}
 	local visible = false
 	local active = true
+	local frame = 0
 	local renderConnection: RBXScriptConnection? = nil
+	if options.Diagnostics then
+		options.Diagnostics.RecordCrosshair("Started", nil)
+	end
 
 	local function setVisible(nextVisible: boolean)
 		if visible == nextVisible then
@@ -156,23 +176,81 @@ function LocalAttackCrosshairPresenter.Start(
 			animationTrack = nil
 		end
 		visual:Destroy()
+		if options.Diagnostics then
+			options.Diagnostics.RecordCrosshair("Stopped", nil)
+		end
 	end
 
 	renderConnection = RunService.RenderStepped:Connect(function()
+		frame += 1
+		local rawMouseViewport, guiInset, mouseScreen = getMouseCoordinates()
+		local resolverViewport = rawMouseViewport
+		local camera = workspace.CurrentCamera
+		local point = nil
+		local allowed = false
+		local matchedTerritoryIndex = nil
+		local reason = "Ready"
 		if not active or not UserInputService.MouseEnabled or #territories == 0 then
 			setVisible(false)
-			return
-		end
-		local point = WorldPointResolver.Resolve(UserInputService:GetMouseLocation())
-		if not point or not isAllowed(territories, point) then
-			setVisible(false)
-			return
+			reason = if not active
+				then "Inactive"
+				else if not UserInputService.MouseEnabled then "MouseDisabled" else "NoTerritory"
+		else
+			point = WorldPointResolver.Resolve(resolverViewport)
+			if not point then
+				setVisible(false)
+				reason = "NoWorldPoint"
+			else
+				for territoryIndex, territory in territories do
+					if TerritoryPointRules.Check(territory.CFrame, territory.Size, point).Allowed then
+						allowed = true
+						matchedTerritoryIndex = territoryIndex
+						break
+					end
+				end
+				if allowed then
+					visual:PivotTo(
+						CFrame.new(point + Vector3.new(0, options.SurfaceOffset, 0)) * baseRotation
+					)
+					setVisible(true)
+					reason = "Allowed"
+				else
+					setVisible(false)
+					reason = "OutsideTerritory"
+				end
+			end
 		end
 
-		visual:PivotTo(
-			CFrame.new(point + Vector3.new(0, options.SurfaceOffset, 0)) * baseRotation
-		)
-		setVisible(true)
+		if options.Diagnostics then
+			local pivotWorld = if visible then visual:GetPivot().Position else nil
+			local rootWorld = if visible and root.Parent then root.Position else nil
+			local anchorWorld = if visible and visualAnchor then visualAnchor.Position else nil
+			options.Diagnostics.RecordPreview({
+				OccurredAt = os.clock(),
+				ServerTime = workspace:GetServerTimeNow(),
+				Frame = frame,
+				Reason = reason,
+				RawMouseViewport = rawMouseViewport,
+				GuiInset = guiInset,
+				MouseScreen = mouseScreen,
+				ResolverViewport = resolverViewport,
+				MouseIconEnabled = UserInputService.MouseIconEnabled,
+				MouseBehavior = UserInputService.MouseBehavior,
+				WorldPoint = point,
+				Allowed = allowed,
+				MatchedTerritoryIndex = matchedTerritoryIndex,
+				Visible = visible,
+				CameraCFrame = if camera then camera.CFrame else nil,
+				CameraFieldOfView = if camera then camera.FieldOfView else nil,
+				CameraViewportSize = if camera then camera.ViewportSize else nil,
+				VisualPivotWorld = pivotWorld,
+				VisualPivotViewport = project(camera, pivotWorld),
+				VisualRootWorld = rootWorld,
+				VisualRootViewport = project(camera, rootWorld),
+				VisualAnchorWorld = anchorWorld,
+				VisualAnchorViewport = project(camera, anchorWorld),
+			})
+		end
 	end)
 
 	return {

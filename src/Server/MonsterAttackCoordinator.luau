@@ -1,9 +1,9 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local AttackAnimationPlayer = require(script.Parent.AttackAnimationPlayer)
 local AttackAnimationSelector = require(script.Parent.AttackAnimationSelector)
 local GodzillaMoveService = require(script.Parent.GodzillaMoveService)
 local GodzillaService = require(script.Parent.GodzillaService)
+local HouseAttackActivityService = require(script.Parent.HouseAttackActivityService)
 local HouseAttackCommitter = require(script.Parent.HouseAttackCommitter)
 local HouseAttackGeometry = require(script.Parent.HouseAttackGeometry)
 local HouseAttackTargetAccess = require(script.Parent.HouseAttackTargetAccess)
@@ -11,6 +11,9 @@ local NearbyHouseTargetSelector = require(script.Parent.NearbyHouseTargetSelecto
 local HouseTargetReservationService = require(script.Parent.HouseTargetReservationService)
 local MonsterMovementRules = require(
 	ReplicatedStorage.Shared.Monster.MonsterMovementRules
+)
+local MonsterAttackPresentationPlayer = require(
+	script.Parent.MonsterAttackPresentationPlayer
 )
 local ValueValidation = require(ReplicatedStorage.Shared.ValueValidation)
 
@@ -21,6 +24,7 @@ local DETECTION_INTERVAL = 0.1
 export type ModelAnimationConfig = {
 	Animations: { [string]: number },
 	AttackSequence: { string },
+	AttackEffects: { [string]: string },
 }
 
 export type MonsterAttackConfig = {
@@ -93,6 +97,7 @@ local function makeResult(
 end
 
 local function releaseCurrentReservation(model: Model)
+	HouseAttackActivityService.End(model)
 	local reservation = activeReservations[model]
 	if reservation then
 		HouseTargetReservationService.Release(reservation)
@@ -134,6 +139,10 @@ function MonsterAttackCoordinator.Execute(
 	assert(type(options) == "table", "options 必须是 table")
 	assert(type(options.HouseAccess) == "table", "HouseAccess 必须是 table")
 	assert(type(options.ModelAnimationConfig) == "table", "ModelAnimationConfig 必须是 table")
+	assert(
+		type(options.ModelAnimationConfig.AttackEffects) == "table",
+		"ModelAnimationConfig.AttackEffects 必须是 table"
+	)
 	assert(type(options.MonsterAttackConfig) == "table", "MonsterAttackConfig 必须是 table")
 	assert(
 		type(options.MonsterAttackConfig.StructureDamage) == "number"
@@ -194,6 +203,11 @@ function MonsterAttackCoordinator.Execute(
 		return latestCommandIds[monster] == commandId and monster:IsDescendantOf(workspace)
 	end
 
+	local function finish(result: CommandResult): CommandResult
+		HouseAttackActivityService.End(monster)
+		return result
+	end
+
 	local function releaseOwnedReservation()
 		local reservation = ownedReservation
 		if not reservation then
@@ -246,6 +260,7 @@ function MonsterAttackCoordinator.Execute(
 	end
 
 	local function handleInterruption(value): (boolean, string?)
+		HouseAttackActivityService.End(monster)
 		GodzillaMoveService.Cancel(monster)
 		setMoving(false, nil)
 		if not options.HandleInterruption then
@@ -320,6 +335,7 @@ function MonsterAttackCoordinator.Execute(
 		if currentCandidate then
 			return false, currentCandidate, nil, nil
 		end
+		HouseAttackActivityService.End(monster)
 
 		local pivotPosition = monster:GetPivot().Position
 		local horizontalOffset = Vector2.new(
@@ -384,40 +400,40 @@ function MonsterAttackCoordinator.Execute(
 			if shouldContinue then
 				continue
 			end
-			return makeResult(
+			return finish(makeResult(
 				false,
 				interruptionReason or "Interrupted",
 				false,
 				destroyedHouseIds,
 				rewardGranted
-			)
+			))
 		end
 		if not candidate then
 			if reachedDestination then
-				return makeResult(
+				return finish(makeResult(
 					true,
 					nil,
 					true,
 					destroyedHouseIds,
 					rewardGranted
-				)
+				))
 			end
-			return makeResult(
+			return finish(makeResult(
 				false,
 				moveReason or "MoveToDestinationFailed",
 				false,
 				destroyedHouseIds,
 				rewardGranted
-			)
+			))
 		end
 		if not isCurrent() then
-			return makeResult(
+			return finish(makeResult(
 				false,
 				"Cancelled",
 				false,
 				destroyedHouseIds,
 				rewardGranted
-			)
+			))
 		end
 
 		local latestTarget = options.HouseAccess.ResolveAliveTarget(
@@ -426,6 +442,7 @@ function MonsterAttackCoordinator.Execute(
 		)
 		if not latestTarget then
 			releaseOwnedReservation()
+			HouseAttackActivityService.End(monster)
 			ignoredHouseIds[candidate.HouseId] = true
 			continue
 		end
@@ -442,6 +459,7 @@ function MonsterAttackCoordinator.Execute(
 		end
 		ownedReservation = reservation
 		activeReservations[monster] = reservation
+		HouseAttackActivityService.Begin(monster, defender, candidate.HouseId)
 
 		local pose = HouseAttackGeometry.ResolvePose(
 			monster,
@@ -452,23 +470,23 @@ function MonsterAttackCoordinator.Execute(
 		local movedToAttackPosition = moveTo(pose.Position)
 		if not movedToAttackPosition then
 			releaseOwnedReservation()
-			return makeResult(
+			return finish(makeResult(
 				false,
 				if isCurrent() then "MoveToAttackPositionFailed" else "Cancelled",
 				false,
 				destroyedHouseIds,
 				rewardGranted
-			)
+			))
 		end
 		if not isCurrent() then
 			releaseOwnedReservation()
-			return makeResult(
+			return finish(makeResult(
 				false,
 				"Cancelled",
 				false,
 				destroyedHouseIds,
 				rewardGranted
-			)
+			))
 		end
 
 		local faced = GodzillaMoveService.FaceTo(
@@ -478,13 +496,13 @@ function MonsterAttackCoordinator.Execute(
 		)
 		if not faced then
 			releaseOwnedReservation()
-			return makeResult(
+			return finish(makeResult(
 				false,
 				if isCurrent() then "FaceHouseFailed" else "Cancelled",
 				false,
 				destroyedHouseIds,
 				rewardGranted
-			)
+			))
 		end
 
 		local choice = AttackAnimationSelector.Next(
@@ -498,10 +516,14 @@ function MonsterAttackCoordinator.Execute(
 		local commitResult: HouseAttackCommitter.CommitResult? = nil
 		local pendingInterruption = nil
 		local animationSucceeded, playbackOrError = pcall(
-			AttackAnimationPlayer.Play,
+			MonsterAttackPresentationPlayer.Play,
 			monster,
 			choice.AssetId,
 			{
+				EffectName = options.ModelAnimationConfig.AttackEffects[choice.Name],
+				ResolveTargetPosition = function()
+					return pose.LookAtPosition
+				end,
 				HitProgress = options.MonsterAttackConfig.Animation.HitProgress,
 				Speed = options.MonsterAttackConfig.Animation.Speed,
 				Priority = Enum.AnimationPriority.Action,
@@ -535,6 +557,9 @@ function MonsterAttackCoordinator.Execute(
 				if ownedReservation == reservation then
 					ownedReservation = nil
 				end
+				if commitResult.Succeeded and commitResult.Destroyed then
+					HouseAttackActivityService.EndHouse(defender, commitResult.HouseId)
+				end
 
 				if commitResult.Succeeded
 					and commitResult.Destroyed
@@ -554,13 +579,13 @@ function MonsterAttackCoordinator.Execute(
 		if not animationSucceeded then
 			releaseOwnedReservation()
 			warn("攻击动画播放失败：", playbackOrError)
-			return makeResult(
+			return finish(makeResult(
 				false,
 				"AttackAnimationFailed",
 				false,
 				destroyedHouseIds,
 				rewardGranted
-			)
+			))
 		end
 		local playback = playbackOrError
 
@@ -576,50 +601,51 @@ function MonsterAttackCoordinator.Execute(
 			if shouldContinue then
 				continue
 			end
-			return makeResult(
+			return finish(makeResult(
 				false,
 				interruptionReason or "Interrupted",
 				false,
 				destroyedHouseIds,
 				rewardGranted
-			)
+			))
 		end
 
 		if playback.Cancelled or not isCurrent() then
 			releaseOwnedReservation()
-			return makeResult(
+			return finish(makeResult(
 				false,
 				"Cancelled",
 				false,
 				destroyedHouseIds,
 				rewardGranted
-			)
+			))
 		end
 		if not playback.HitTriggered then
 			releaseOwnedReservation()
-			return makeResult(
+			return finish(makeResult(
 				false,
 				"AttackInterrupted",
 				false,
 				destroyedHouseIds,
 				rewardGranted
-			)
+			))
 		end
 
 		if not commitResult or not commitResult.Succeeded then
 			releaseOwnedReservation()
+			HouseAttackActivityService.End(monster)
 			ignoredHouseIds[candidate.HouseId] = true
 		end
 	end
 
 	releaseOwnedReservation()
-	return makeResult(
+	return finish(makeResult(
 		false,
 		"Cancelled",
 		false,
 		destroyedHouseIds,
 		rewardGranted
-	)
+	))
 end
 
 return MonsterAttackCoordinator

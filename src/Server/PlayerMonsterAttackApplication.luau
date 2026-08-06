@@ -107,7 +107,8 @@ local function resolveCombatConfig(player: Player, spawnPointId: string)
 		),
 		Animation = {
 			Animations = configs.Animation.Animations,
-			AttackSequence = configs.Animation.AttackSequence,
+			AttackSequence = configs.Animation.MeleeAttackSequence,
+			AttackEffects = configs.Animation.AttackEffects,
 			SelectionMode = combat.Animation.SelectionMode,
 			HitProgress = combat.Animation.HitProgress,
 			Speed = combat.Animation.Speed,
@@ -328,6 +329,12 @@ function PlayerMonsterAttackApplication.Execute(
 		{
 			TerritoryAccess = WorkspacePlayerWorldAccess.Territory,
 			StartExpedition = function(commandContext, isCancelled)
+				local traceId = string.format(
+					"%d:%s:%d",
+					commandContext.Attacker.UserId,
+					commandContext.AttackerSpawnPointId,
+					commandContext.CommandId
+				)
 				local latest = MonsterRosterCoordinator.Get(
 					commandContext.Attacker,
 					commandContext.AttackerSpawnPointId
@@ -364,6 +371,8 @@ function PlayerMonsterAttackApplication.Execute(
 					commandContext.AttackerSpawnPointId,
 					commandContext.EntryPoint,
 					{
+						TraceId = traceId,
+						TargetRegionId = commandContext.TargetRegionId,
 						HouseAccess = PlayerRuntimeHouseAttackAccess,
 						ModelAnimationConfig = configs.Animation,
 						MonsterAttackConfig = scaleStructureAttack(
@@ -378,7 +387,6 @@ function PlayerMonsterAttackApplication.Execute(
 						WalkAnimation = configs.Expedition.Movement.WalkAnimation,
 						RewardAmount = configs.Expedition.RewardAmount,
 						MaxExpeditionDuration = MonsterExpeditionTimingConfigs.ExpeditionDuration,
-						MaxBuildingDuration = MonsterExpeditionTimingConfigs.BuildingDuration,
 						DuelResolutionDuration = MonsterExpeditionTimingConfigs.DuelResolutionDuration,
 						DuelWatchdogDuration = MonsterExpeditionTimingConfigs.DuelWatchdogDuration,
 						Defense = {

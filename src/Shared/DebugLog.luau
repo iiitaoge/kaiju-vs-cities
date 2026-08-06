@@ -2,8 +2,9 @@ local DebugLog = {}
 
 local ENABLED = true
 local MODULES = {
-	HouseInteractionService = true,
-	MoneyService = true,
+	AttackSelectionCoordinates = true,
+	HouseInteractionService = false,
+	MoneyService = false,
 }
 
 function DebugLog.Create(moduleName: string)

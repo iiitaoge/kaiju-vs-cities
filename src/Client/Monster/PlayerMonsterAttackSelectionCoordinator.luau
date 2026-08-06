@@ -17,6 +17,9 @@ local AttackBrowseCamera = require(script.Parent.Parent.Camera.AttackBrowseCamer
 local MonsterFollowCamera = require(script.Parent.Parent.Camera.MonsterFollowCamera)
 local WorldPointInputController = require(script.Parent.Parent.Camera.WorldPointInputController)
 local AttackPanelCoordinator = require(script.Parent.AttackPanelCoordinator)
+local AttackSelectionCoordinateDiagnostics = require(
+	script.Parent.AttackSelectionCoordinateDiagnostics
+)
 local AttackTargetSnapshotMapper = require(script.Parent.AttackTargetSnapshotMapper)
 local LocalAttackCrosshairPresenter = require(script.Parent.LocalAttackCrosshairPresenter)
 local MonsterAttackRemoteClient = require(script.Parent.MonsterAttackRemoteClient)
@@ -72,6 +75,7 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 	assert(type(callbacks.OnAccepted) == "function", "OnAccepted 必须是 function")
 	assert(type(callbacks.OnCancelled) == "function", "OnCancelled 必须是 function")
 	assert(type(callbacks.OnUnavailable) == "function", "OnUnavailable 必须是 function")
+	local diagnostics = AttackSelectionCoordinateDiagnostics.Start(spawnPointId)
 
 	local query = MonsterAttackRemoteClient.QueryTargets()
 	if not query.Succeeded then
@@ -80,6 +84,7 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 			spawnPointId,
 			query.Reason or "TargetQueryFailed"
 		)
+		diagnostics.End(query.Reason or "TargetQueryFailed")
 		callbacks.OnUnavailable(query.Reason or "TargetQueryFailed")
 		return nil
 	end
@@ -94,6 +99,7 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 				spawnPointId,
 				reason
 			)
+			diagnostics.End(reason)
 			callbacks.OnUnavailable(reason)
 			return nil
 		end
@@ -134,6 +140,7 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 		inputSession = nil
 		if session then
 			session.Stop()
+			diagnostics.RecordInputController("Stopped")
 		end
 	end
 
@@ -153,15 +160,36 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 			Template = crosshairTemplate,
 			AnimationAssetId = crosshairConfig.AnimationAssetId,
 			SurfaceOffset = crosshairConfig.SurfaceOffset,
+			Diagnostics = diagnostics,
 		})
 		if not crosshairSession then
+			diagnostics.RecordCrosshair("Failed", crosshairReason)
 			warn("攻击准星启动失败：" .. tostring(crosshairReason))
 		end
 	else
+		diagnostics.RecordCrosshair("MissingTemplate", crosshairConfig.TemplateName)
 		warn("找不到攻击准星模板：ReplicatedStorage/" .. crosshairConfig.TemplateName)
 	end
 
 	local function onTargetChanged(target: Target)
+		local targetLabel
+		if target.Player then
+			targetLabel = string.format(
+				"Player:%s:%d",
+				target.Player.Name,
+				target.Player.UserId
+			)
+		else
+			targetLabel = "Solo"
+		end
+		local territoryLabels = {}
+		for _, territory in target.UnlockedTerritories do
+			table.insert(
+				territoryLabels,
+				string.format("%s/%s", territory.ZoneId, territory.BoundsId)
+			)
+		end
+		diagnostics.RecordTarget(targetLabel, territoryLabels)
 		AnalyticsIntentClient.Record(
 			AnalyticsIntentProtocol.Intents.AttackTargetSelected,
 			spawnPointId
@@ -169,6 +197,7 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 		if crosshairSession then
 			crosshairSession.SetTerritories(target.UnlockedTerritories)
 		end
+		diagnostics.RecordCamera("BEFORE_TARGET")
 		if browseSession then
 			browseSession.SetTarget(target.AttackView)
 		else
@@ -177,6 +206,7 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 				MonsterAttackSelectionConfig.BrowseCamera
 			)
 		end
+		diagnostics.RecordCamera("AFTER_TARGET")
 		if callbacks.OnTargetChanged then
 			callbacks.OnTargetChanged(target)
 		end
@@ -223,6 +253,7 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 		stopInput()
 		stopCrosshair()
 		restoreBrowseCamera()
+		diagnostics.End(reason)
 		if reason == "Cancelled" then
 			AnalyticsIntentClient.Record(
 				AnalyticsIntentProtocol.Intents.AttackCancelled,
@@ -268,11 +299,18 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 		})
 	end
 
-	inputSession = WorldPointInputController.Start(function(worldPoint)
-		if panelSession and panelSession.IsOpen() then
-			panelSession.SubmitWorldPoint(worldPoint)
+	inputSession = WorldPointInputController.Start(
+		function(worldPoint)
+			if panelSession and panelSession.IsOpen() then
+				local result = panelSession.SubmitWorldPoint(worldPoint)
+				diagnostics.RecordResult(result)
+			end
+		end,
+		function(snapshot)
+			diagnostics.RecordInput(snapshot)
 		end
-	end)
+	)
+	diagnostics.RecordInputController("Started")
 
 	local function restoreCamera(): boolean
 		if followSession and followSession.IsActive() then

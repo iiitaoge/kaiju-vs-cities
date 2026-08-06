@@ -2,9 +2,12 @@ local HouseAttackTargetAccess = {}
 
 export type HouseTarget = {
 	HouseId: string,
+	RegionId: string,
 	CFrame: CFrame,
 	Size: Vector3,
 	HealthGeneration: number,
+	CurrentHealth: number,
+	MaxHealth: number,
 }
 
 export type DamageResult = {

@@ -51,9 +51,12 @@ function HouseFocusFireCommitSpec.Run(player: Player): boolean
 		local health = assert(HouseHealthStateService.Get(player, HOUSE_ID))
 		return {
 			HouseId = HOUSE_ID,
+			RegionId = "Spec",
 			CFrame = CFrame.new(0, 2, 0),
 			Size = Vector3.new(4, 4, 4),
 			HealthGeneration = health.Generation,
+			CurrentHealth = health.CurrentHealth,
+			MaxHealth = health.MaxHealth,
 		}, nil
 	end
 	function access.ListAliveTargets(_player: Player)

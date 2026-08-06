@@ -46,9 +46,12 @@ function MonsterAttackTestHouseAccess.ListAliveTargets(
 			)
 			table.insert(targets, {
 				HouseId = definition.HouseId,
+				RegionId = "Test",
 				CFrame = definition.CFrame,
 				Size = definition.Size,
 				HealthGeneration = health.Generation,
+				CurrentHealth = health.CurrentHealth,
+				MaxHealth = health.MaxHealth,
 			})
 		end
 	end
@@ -78,9 +81,12 @@ function MonsterAttackTestHouseAccess.ResolveAliveTarget(
 
 	return {
 		HouseId = houseId,
+		RegionId = "Test",
 		CFrame = definition.CFrame,
 		Size = definition.Size,
 		HealthGeneration = health.Generation,
+		CurrentHealth = health.CurrentHealth,
+		MaxHealth = health.MaxHealth,
 	}, nil
 end
 

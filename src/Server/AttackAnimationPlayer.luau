@@ -1,12 +1,12 @@
 local RunService = game:GetService("RunService")
 
 local AnimationPlayer = require(script.Parent.AnimationPlayer)
+local AnimationTrackRelease = require(script.Parent.AnimationTrackRelease)
 
 local AttackAnimationPlayer = {}
 
 local DEFAULT_HIT_PROGRESS = 0.65
 local DEFAULT_SPEED = 1
-local COMPLETION_EPSILON = 1 / 30
 
 export type PlayOptions = {
 	-- 0 到 1 的归一化命中进度；nil 时使用 0.65。
@@ -17,6 +17,8 @@ export type PlayOptions = {
 	Priority: Enum.AnimationPriority?,
 	-- 每帧调用；返回 true 时立即停止动画且不再触发尚未发生的命中。
 	IsCancelled: (() -> boolean)?,
+	-- 动画开始时以 0 调用，随后按播放进度调用；只负责同步表现。
+	OnProgress: ((number) -> ())?,
 }
 
 export type PlaybackResult = {
@@ -56,6 +58,12 @@ function AttackAnimationPlayer.Play(
 			or type(options.IsCancelled) == "function",
 		"IsCancelled 必须是 function 或 nil"
 	)
+	assert(
+		not options
+			or options.OnProgress == nil
+			or type(options.OnProgress) == "function",
+		"OnProgress 必须是 function 或 nil"
+	)
 
 	local hitProgress = if options and options.HitProgress ~= nil
 		then options.HitProgress
@@ -79,6 +87,26 @@ function AttackAnimationPlayer.Play(
 	local hitTriggered = false
 	local completed = false
 	local cancelled = false
+	local released = false
+
+	local function releaseTrack()
+		if released then
+			return
+		end
+		released = true
+		AnimationTrackRelease.Release(track)
+	end
+
+	local function notifyProgress(progress: number)
+		if not options or not options.OnProgress then
+			return
+		end
+		local succeeded, message = pcall(options.OnProgress, progress)
+		if not succeeded then
+			releaseTrack()
+			error(message, 0)
+		end
+	end
 
 	local function checkCancelled(): boolean
 		if not options or not options.IsCancelled then
@@ -87,13 +115,12 @@ function AttackAnimationPlayer.Play(
 
 		local succeeded, result = pcall(options.IsCancelled)
 		if not succeeded then
-			track:Stop(0)
-			track:Destroy()
+			releaseTrack()
 			error(result, 0)
 		end
 		if result then
 			cancelled = true
-			track:Stop(0)
+			releaseTrack()
 			return true
 		end
 
@@ -108,11 +135,12 @@ function AttackAnimationPlayer.Play(
 		hitTriggered = true
 		local succeeded, message = pcall(onHit)
 		if not succeeded then
-			track:Stop()
-			track:Destroy()
+			releaseTrack()
 			error(message, 0)
 		end
 	end
+
+	notifyProgress(0)
 
 	while track.IsPlaying do
 		if checkCancelled() then
@@ -122,11 +150,16 @@ function AttackAnimationPlayer.Play(
 		local length = track.Length
 		if length > 0 then
 			local progress = math.clamp(track.TimePosition / length, 0, 1)
+			notifyProgress(progress)
 			if not hitTriggered and progress >= hitProgress then
 				triggerHit()
 			end
-			if progress >= 1 - COMPLETION_EPSILON / length then
+			if hitTriggered
+				and (length - track.TimePosition) / speed
+					<= AnimationTrackRelease.DefaultFadeDuration
+			then
 				completed = true
+				break
 			end
 		end
 
@@ -138,15 +171,16 @@ function AttackAnimationPlayer.Play(
 	local length = track.Length
 	if not cancelled and length > 0 then
 		local finalProgress = math.clamp(track.TimePosition / length, 0, 1)
+		notifyProgress(finalProgress)
 		if not hitTriggered and finalProgress >= hitProgress then
 			triggerHit()
 		end
-		if finalProgress >= 1 - COMPLETION_EPSILON / length then
+		if finalProgress >= 1 - 1 / 30 / length then
 			completed = true
 		end
 	end
 
-	track:Destroy()
+	releaseTrack()
 	return {
 		HitTriggered = hitTriggered,
 		Completed = completed,

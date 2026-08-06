@@ -7,6 +7,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local DebugLog = require(ReplicatedStorage.Shared.DebugLog)
 local PlayerAttackTargetQuery = require(script.Parent.PlayerAttackTargetQuery)
 local PlayerDataReadyService = require(script.Parent.PlayerDataReadyService)
 local PlayerMonsterAttackApplication = require(script.Parent.PlayerMonsterAttackApplication)
@@ -24,6 +25,12 @@ local ServerRemoteAccess = require(script.Parent.ServerRemoteAccess)
 local TutorialProgressStateService = require(script.Parent.TutorialProgressStateService)
 local MonsterAttackProtocol = require(ReplicatedStorage.Shared.Monster.MonsterAttackProtocol)
 local ValueValidation = require(ReplicatedStorage.Shared.ValueValidation)
+
+local attackCoordinateLog = DebugLog.Create("AttackSelectionCoordinates")
+
+local function vector3Text(value: Vector3): string
+	return string.format("(%.2f,%.2f,%.2f)", value.X, value.Y, value.Z)
+end
 
 local targetQueryRemote = ServerRemoteAccess.EnsureFunction(
 	MonsterAttackProtocol.TargetQueryRemoteName
@@ -73,6 +80,15 @@ commandRemote.OnServerInvoke = function(player, spawnPointId, targetPlayerId, en
 		SecurityAnalyticsAggregator.Record(player, "MonsterAttack", "InvalidEntryPoint")
 		return { Succeeded = false, Reason = "InvalidEntryPoint", CommandId = nil, Monster = nil }
 	end
+	attackCoordinateLog(
+		"[SERVER_REQUEST]",
+		"mode=Player",
+		"serverTime=" .. string.format("%.2f", workspace:GetServerTimeNow()),
+		string.format("player=%s:%d", player.Name, player.UserId),
+		"spawn=" .. spawnPointId,
+		"targetUserId=" .. tostring(targetPlayerId),
+		"entryPoint=" .. vector3Text(entryPoint)
+	)
 	PlayerJourneyAnalyticsCoordinator.RecordAttackRequested(player, spawnPointId)
 
 	local succeeded, responseOrError = xpcall(function()
@@ -91,6 +107,13 @@ commandRemote.OnServerInvoke = function(player, spawnPointId, targetPlayerId, en
 			tostring(targetPlayerId),
 			tostring(responseOrError)
 		))
+		attackCoordinateLog(
+			"[SERVER_RESULT]",
+			"mode=Player",
+			"succeeded=false",
+			"reason=ServerError",
+			"entryPoint=" .. vector3Text(entryPoint)
+		)
 		return { Succeeded = false, Reason = "ServerError", CommandId = nil, Monster = nil }
 	end
 	if responseOrError.Succeeded then
@@ -109,6 +132,15 @@ commandRemote.OnServerInvoke = function(player, spawnPointId, targetPlayerId, en
 			"Gameplay:Attack:Rejected:" .. string.sub(reason, 1, 32)
 		)
 	end
+	attackCoordinateLog(
+		"[SERVER_RESULT]",
+		"mode=Player",
+		"serverTime=" .. string.format("%.2f", workspace:GetServerTimeNow()),
+		"succeeded=" .. tostring(responseOrError.Succeeded),
+		"reason=" .. tostring(responseOrError.Reason),
+		"commandId=" .. tostring(responseOrError.CommandId),
+		"entryPoint=" .. vector3Text(entryPoint)
+	)
 	return responseOrError
 end
 
@@ -124,6 +156,14 @@ soloCommandRemote.OnServerInvoke = function(player, spawnPointId, entryPoint)
 		SecurityAnalyticsAggregator.Record(player, "SoloMonsterAttack", "InvalidEntryPoint")
 		return { Succeeded = false, Reason = "InvalidEntryPoint", CommandId = nil, Monster = nil }
 	end
+	attackCoordinateLog(
+		"[SERVER_REQUEST]",
+		"mode=Solo",
+		"serverTime=" .. string.format("%.2f", workspace:GetServerTimeNow()),
+		string.format("player=%s:%d", player.Name, player.UserId),
+		"spawn=" .. spawnPointId,
+		"entryPoint=" .. vector3Text(entryPoint)
+	)
 	PlayerJourneyAnalyticsCoordinator.RecordAttackRequested(player, spawnPointId)
 
 	local succeeded, responseOrError = xpcall(function()
@@ -140,6 +180,13 @@ soloCommandRemote.OnServerInvoke = function(player, spawnPointId, entryPoint)
 			spawnPointId,
 			tostring(responseOrError)
 		))
+		attackCoordinateLog(
+			"[SERVER_RESULT]",
+			"mode=Solo",
+			"succeeded=false",
+			"reason=ServerError",
+			"entryPoint=" .. vector3Text(entryPoint)
+		)
 		return { Succeeded = false, Reason = "ServerError", CommandId = nil, Monster = nil }
 	end
 	if responseOrError.Succeeded then
@@ -161,5 +208,14 @@ soloCommandRemote.OnServerInvoke = function(player, spawnPointId, entryPoint)
 			"Gameplay:SoloAttack:Rejected:" .. string.sub(reason, 1, 32)
 		)
 	end
+	attackCoordinateLog(
+		"[SERVER_RESULT]",
+		"mode=Solo",
+		"serverTime=" .. string.format("%.2f", workspace:GetServerTimeNow()),
+		"succeeded=" .. tostring(responseOrError.Succeeded),
+		"reason=" .. tostring(responseOrError.Reason),
+		"commandId=" .. tostring(responseOrError.CommandId),
+		"entryPoint=" .. vector3Text(entryPoint)
+	)
 	return responseOrError
 end

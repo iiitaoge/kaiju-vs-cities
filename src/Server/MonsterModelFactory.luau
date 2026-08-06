@@ -3,6 +3,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local BuildPresentationVisibility = require(
 	ReplicatedStorage.Shared.Building.BuildPresentationVisibility
 )
+local MonsterAttackVFXController = require(script.Parent.MonsterAttackVFXController)
 
 local MonsterModelFactory = {}
 
@@ -62,7 +63,7 @@ end
 
 -- 输入：模板、生成位置、运行时父级、完整身份快照，以及可选的建造表现预隐藏标记。
 -- 输出：已经放入父级的服务器怪兽模型。
--- 内部算法：克隆模板、解除部件锚定、锚定 PrimaryPart、写入身份；可选预隐藏后再放置。
+-- 内部算法：克隆模板、关闭攻击特效、解除部件锚定、锚定 PrimaryPart、写入身份；可选预隐藏后再放置。
 function MonsterModelFactory.Create(
 	template: Model,
 	spawnCFrame: CFrame,
@@ -84,6 +85,7 @@ function MonsterModelFactory.Create(
 	assertModelScale(resolvedScale)
 	local model = template:Clone()
 	MonsterModelFactory.ApplyScale(model, resolvedScale)
+	MonsterAttackVFXController.DisableAll(model)
 	local primaryPart = assert(model.PrimaryPart, "怪兽模板必须设置 PrimaryPart")
 	for _, descendant in model:GetDescendants() do
 		if descendant:IsA("BasePart") then

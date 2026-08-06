@@ -1,3 +1,5 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
 local CityDefenseCoordinator = require(script.Parent.CityDefenseCoordinator)
 local GodzillaMoveService = require(script.Parent.GodzillaMoveService)
 local GodzillaService = require(script.Parent.GodzillaService)
@@ -6,11 +8,18 @@ local HouseAttackTargetAccess = require(script.Parent.HouseAttackTargetAccess)
 local MonsterAttackCoordinator = require(script.Parent.MonsterAttackCoordinator)
 local MonsterCombatCoordinator = require(script.Parent.MonsterCombatCoordinator)
 local MonsterDamageCoordinator = require(script.Parent.MonsterDamageCoordinator)
+local MonsterCombatDiagnosticLog = require(script.Parent.MonsterCombatDiagnosticLog)
+local MonsterExpeditionAttackPhaseCoordinator = require(
+	script.Parent.MonsterExpeditionAttackPhaseCoordinator
+)
 local MonsterRosterCoordinator = require(script.Parent.MonsterRosterCoordinator)
+local MonsterCatalog = require(ReplicatedStorage.Shared.Monster.MonsterCatalog)
 
 local MonsterExpeditionCoordinator = {}
 
 export type ExecuteOptions = {
+	TraceId: string,
+	TargetRegionId: string,
 	HouseAccess: HouseAttackTargetAccess.Access,
 	ModelAnimationConfig: MonsterAttackCoordinator.ModelAnimationConfig,
 	MonsterAttackConfig: MonsterAttackCoordinator.MonsterAttackConfig,
@@ -21,7 +30,6 @@ export type ExecuteOptions = {
 	WalkAnimation: any?,
 	RewardAmount: number,
 	MaxExpeditionDuration: number,
-	MaxBuildingDuration: number,
 	DuelResolutionDuration: number,
 	DuelWatchdogDuration: number,
 	Defense: CityDefenseCoordinator.SessionOptions,
@@ -58,10 +66,10 @@ local function updatePhase(player: Player, spawnPointId: string, phase: string)
 	end
 end
 
--- 输入：唯一进攻玩家、唯一防守玩家、进攻怪兽出生点和已验证的地盘坐标。
+-- 输入：唯一进攻玩家、唯一防守玩家、进攻怪兽出生点、已验证落点和目标区域。
 -- 输出：完整出征结果、摧毁房屋和奖励总额。
--- 内部算法：运行房屋攻击链路；每个移动/攻击帧轮询塔防和守城怪兽，
--- 守城怪兽出现时暂停建筑攻击并完成互殴，胜利后恢复原路线，死亡则结束并进入恢复分支。
+-- 内部算法：先移动到落点，再逐只清空目标区域守卫；随后固定在落点持续发射激光，
+-- 发射中转向并按距离逐栋消耗一次建筑伤害预算，最后一栋允许残血。
 function MonsterExpeditionCoordinator.Execute(
 	attacker: Player,
 	defender: Player,
@@ -72,12 +80,16 @@ function MonsterExpeditionCoordinator.Execute(
 	assert(attacker:IsA("Player") and defender:IsA("Player"), "攻守双方必须是 Player")
 	assert(attacker ~= defender, "不能攻击自己的城市")
 	assert(type(options) == "table", "options 必须是 table")
+	assert(type(options.TraceId) == "string" and options.TraceId ~= "", "TraceId 无效")
+	assert(
+		type(options.TargetRegionId) == "string" and options.TargetRegionId ~= "",
+		"TargetRegionId 无效"
+	)
 	assert(type(options.ResolveCombatConfig) == "function", "ResolveCombatConfig 必须是 function")
 	assert(type(options.OnDefeated) == "function", "OnDefeated 必须是 function")
 	assert(type(options.OnReturnRequired) == "function", "OnReturnRequired 必须是 function")
 	assert(type(options.OnDefenderReturnRequired) == "function", "OnDefenderReturnRequired 必须是 function")
 	assert(type(options.MaxExpeditionDuration) == "number" and options.MaxExpeditionDuration > 0, "MaxExpeditionDuration 无效")
-	assert(type(options.MaxBuildingDuration) == "number" and options.MaxBuildingDuration > 0, "MaxBuildingDuration 无效")
 
 	local attackerRecord = MonsterRosterCoordinator.Get(attacker, attackerSpawnPointId)
 	if not attackerRecord or not attackerRecord.Model then
@@ -96,11 +108,28 @@ function MonsterExpeditionCoordinator.Execute(
 
 	local expeditionActive = true
 	local expeditionExpired = false
-	local buildingExpired = false
 	local activeDefenderSpawnPointId: string? = nil
-	local buildingRemaining = options.MaxBuildingDuration
-	local buildingSegmentStartedAt: number? = nil
-	local buildingTimerId = 0
+	local lastCombatResult = nil
+	local function emitTerminal(attackResult, latest, terminalPath: "Recovery" | "Return", endReason: string)
+		MonsterCombatDiagnosticLog.Emit("EXPEDITION_TERMINAL", {
+			TraceId = options.TraceId,
+			AttackResultReason = attackResult.Reason or "None",
+			CombatResultReason = if lastCombatResult
+				then lastCombatResult.Reason
+				else "None",
+			CombatSucceeded = if lastCombatResult
+				then lastCombatResult.Succeeded
+				else false,
+			CombatWinner = if lastCombatResult
+				then lastCombatResult.Winner
+				else "None",
+			EndReason = endReason,
+			AttackerState = if latest then latest.State else "None",
+			AttackerHealth = if latest then latest.Health else 0,
+			AttackerModelExists = latest ~= nil and latest.Model ~= nil,
+			TerminalPath = terminalPath,
+		})
+	end
 	local function cancelCombatant(player: Player, spawnPointId: string)
 		local record = MonsterRosterCoordinator.Get(player, spawnPointId)
 		if record and record.Model then
@@ -114,48 +143,12 @@ function MonsterExpeditionCoordinator.Execute(
 			cancelCombatant(defender, activeDefenderSpawnPointId)
 		end
 	end
-	local function scheduleBuildingTimer()
-		buildingTimerId += 1
-		local ownTimerId = buildingTimerId
-		buildingSegmentStartedAt = workspace:GetServerTimeNow()
-		task.delay(buildingRemaining, function()
-			if expeditionActive and buildingTimerId == ownTimerId then
-				buildingRemaining = 0
-				buildingSegmentStartedAt = nil
-				buildingExpired = true
-				cancelActiveMotion()
-			end
-		end)
-	end
-	local function pauseBuildingTimer()
-		if buildingSegmentStartedAt then
-			buildingRemaining = math.max(
-				0,
-				buildingRemaining - (workspace:GetServerTimeNow() - buildingSegmentStartedAt)
-			)
-			buildingSegmentStartedAt = nil
-		end
-		buildingTimerId += 1
-	end
-	local function resumeBuildingTimer()
-		if not expeditionActive then
-			return
-		end
-		if buildingRemaining <= 0 then
-			buildingExpired = true
-			cancelActiveMotion()
-			return
-		end
-		scheduleBuildingTimer()
-	end
 	task.delay(options.MaxExpeditionDuration, function()
 		if expeditionActive then
 			expeditionExpired = true
 			cancelActiveMotion()
 		end
 	end)
-	scheduleBuildingTimer()
-
 	local defeatedDefenderMonsterIds = {}
 	local attackerDefeated = false
 	local towerHitCount = 0
@@ -178,6 +171,8 @@ function MonsterExpeditionCoordinator.Execute(
 		attacker,
 		attackerSpawnPointId,
 		{
+			TraceId = options.TraceId,
+			TargetRegionId = options.TargetRegionId,
 			TowerAccess = options.Defense.TowerAccess,
 			OnDefeated = onDefeated,
 			OnTowerHit = function(_towerId, damageApplied)
@@ -191,11 +186,12 @@ function MonsterExpeditionCoordinator.Execute(
 	end
 
 	local attackSucceeded, attackResultOrError = pcall(
-		MonsterAttackCoordinator.Execute,
+		MonsterExpeditionAttackPhaseCoordinator.Execute,
 		defender,
 		attackerRecord.Model,
 		entryPoint,
 		{
+			TargetRegionId = options.TargetRegionId,
 			HouseAccess = options.HouseAccess,
 			ModelAnimationConfig = options.ModelAnimationConfig,
 			MonsterAttackConfig = options.MonsterAttackConfig,
@@ -206,6 +202,23 @@ function MonsterExpeditionCoordinator.Execute(
 			WalkAnimation = options.WalkAnimation,
 			RewardAmount = options.RewardAmount,
 			RewardPlayer = attacker,
+			PollStopReason = function()
+				if options.IsCancelled and options.IsCancelled() then
+					return "Cancelled"
+				end
+				if expeditionExpired then
+					return "ExpeditionTimedOut"
+				end
+				local latest = MonsterRosterCoordinator.Get(attacker, attackerSpawnPointId)
+				if not latest
+					or not latest.Model
+					or latest.State == "Defeated"
+					or latest.State == "Recovering"
+				then
+					return "AttackerDefeated"
+				end
+				return nil
+			end,
 			OnHouseDestroyed = options.OnHouseDestroyed,
 			OnPhaseChanged = function(phase)
 				updatePhase(attacker, attackerSpawnPointId, phase)
@@ -217,9 +230,6 @@ function MonsterExpeditionCoordinator.Execute(
 				if expeditionExpired then
 					return { Kind = "ExpeditionTimedOut" }
 				end
-				if buildingExpired then
-					return { Kind = "BuildingTimedOut" }
-				end
 				local event = defenseSession.Poll()
 				return if event.Kind == "None" then nil else event
 			end,
@@ -229,9 +239,6 @@ function MonsterExpeditionCoordinator.Execute(
 				end
 				if event.Kind == "ExpeditionTimedOut" then
 					return { Continue = false, Reason = "ExpeditionTimedOut" }
-				end
-				if event.Kind == "BuildingTimedOut" then
-					return { Continue = false, Reason = "BuildingTimedOut" }
 				end
 				if event.Kind == "AttackerDefeated" then
 					return { Continue = false, Reason = "AttackerDefeated" }
@@ -257,10 +264,52 @@ function MonsterExpeditionCoordinator.Execute(
 					attacker,
 					attackerSpawnPointId
 				)
+				local defenderBeforeCombat = MonsterRosterCoordinator.Get(
+					defender,
+					event.DefenderSpawnPointId
+				)
+				local attackerDefinition = if attackerBeforeCombat
+					then MonsterCatalog.Get(attackerBeforeCombat.MonsterKey)
+					else nil
+				local defenderDefinition = if defenderBeforeCombat
+					then MonsterCatalog.Get(defenderBeforeCombat.MonsterKey)
+					else nil
+				MonsterCombatDiagnosticLog.Emit("DUEL_MATCHED", {
+					TraceId = options.TraceId,
+					AttackerUserId = attacker.UserId,
+					AttackerSpawnPointId = attackerSpawnPointId,
+					AttackerState = if attackerBeforeCombat then attackerBeforeCombat.State else "None",
+					AttackerMonsterKey = if attackerBeforeCombat then attackerBeforeCombat.MonsterKey else "None",
+					AttackerCatalogLevel = if attackerDefinition then attackerDefinition.Level else 0,
+					AttackerHealth = if attackerBeforeCombat then attackerBeforeCombat.Health else 0,
+					AttackerMaxHealth = if attackerBeforeCombat then attackerBeforeCombat.MaxHealth else 0,
+					AttackerModelMonsterKey = if attackerBeforeCombat and attackerBeforeCombat.Model
+						then tostring(attackerBeforeCombat.Model:GetAttribute("MonsterKey"))
+						else "None",
+					AttackerModelScale = if attackerBeforeCombat and attackerBeforeCombat.Model
+						then attackerBeforeCombat.Model:GetAttribute("MonsterModelScale") or 0
+						else 0,
+					DefenderUserId = defender.UserId,
+					DefenderSpawnPointId = event.DefenderSpawnPointId,
+					DefenderState = if defenderBeforeCombat then defenderBeforeCombat.State else "None",
+					DefenderMonsterKey = if defenderBeforeCombat then defenderBeforeCombat.MonsterKey else "None",
+					DefenderCatalogLevel = if defenderDefinition then defenderDefinition.Level else 0,
+					DefenderHealth = if defenderBeforeCombat then defenderBeforeCombat.Health else 0,
+					DefenderMaxHealth = if defenderBeforeCombat then defenderBeforeCombat.MaxHealth else 0,
+					DefenderModelMonsterKey = if defenderBeforeCombat and defenderBeforeCombat.Model
+						then tostring(defenderBeforeCombat.Model:GetAttribute("MonsterKey"))
+						else "None",
+					DefenderModelScale = if defenderBeforeCombat and defenderBeforeCombat.Model
+						then defenderBeforeCombat.Model:GetAttribute("MonsterModelScale") or 0
+						else 0,
+					AttackerDamage = attackerConfig.Damage,
+					DefenderDamage = defenderConfig.Damage,
+					AttackerAttackInterval = attackerConfig.AttackInterval,
+					DefenderAttackInterval = defenderConfig.AttackInterval,
+				})
 				local resumeState = if attackerBeforeCombat
 					then attackerBeforeCombat.State
 					else "MovingToTarget"
-				pauseBuildingTimer()
 				activeDefenderSpawnPointId = event.DefenderSpawnPointId
 				local combatResult = MonsterCombatCoordinator.Execute(
 					{
@@ -272,6 +321,7 @@ function MonsterExpeditionCoordinator.Execute(
 						SpawnPointId = event.DefenderSpawnPointId,
 					},
 					{
+						TraceId = options.TraceId,
 						AttackerConfig = attackerConfig,
 						DefenderConfig = defenderConfig,
 						ApproachingSide = "Defender",
@@ -289,8 +339,12 @@ function MonsterExpeditionCoordinator.Execute(
 						WatchdogDuration = options.DuelWatchdogDuration,
 					}
 				)
+				lastCombatResult = {
+					Succeeded = combatResult.Succeeded,
+					Reason = combatResult.Reason or "None",
+					Winner = combatResult.Winner or "None",
+				}
 				activeDefenderSpawnPointId = nil
-				resumeBuildingTimer()
 				local defenderAfterCombat = MonsterRosterCoordinator.Get(
 					defender,
 					event.DefenderSpawnPointId
@@ -322,7 +376,6 @@ function MonsterExpeditionCoordinator.Execute(
 	)
 	closeDefense()
 	expeditionActive = false
-	buildingTimerId += 1
 	if not attackSucceeded then
 		error(attackResultOrError, 0)
 	end
@@ -330,14 +383,12 @@ function MonsterExpeditionCoordinator.Execute(
 	if expeditionExpired then
 		attackResult.Succeeded = false
 		attackResult.Reason = "ExpeditionTimedOut"
-	elseif buildingExpired then
-		attackResult.Succeeded = false
-		attackResult.Reason = "BuildingTimedOut"
 	end
 
 	local latest = MonsterRosterCoordinator.Get(attacker, attackerSpawnPointId)
 	if not latest or latest.State == "Defeated" or latest.State == "Recovering" then
 		attackerDefeated = true
+		emitTerminal(attackResult, latest, "Recovery", "Defeated")
 		return {
 			Succeeded = false,
 			EndReason = "Defeated",
@@ -356,12 +407,12 @@ function MonsterExpeditionCoordinator.Execute(
 		endReason = "Completed"
 	elseif attackResult.Reason == "Cancelled"
 		or attackResult.Reason == "ExpeditionTimedOut"
-		or attackResult.Reason == "BuildingTimedOut"
 	then
 		endReason = "Cancelled"
 	else
 		endReason = "Failed"
 	end
+	emitTerminal(attackResult, latest, "Return", endReason)
 	local callbackSucceeded, returnResultOrError = pcall(
 		options.OnReturnRequired,
 		attacker,

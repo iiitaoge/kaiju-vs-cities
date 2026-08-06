@@ -10,9 +10,12 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local DebugLog = require(ReplicatedStorage.Shared.DebugLog)
 local MonsterRosterCoordinator = require(script.Parent.MonsterRosterCoordinator)
 local MonsterStateRules = require(ReplicatedStorage.Shared.Monster.MonsterStateRules)
 local TerritoryPointRules = require(ReplicatedStorage.Shared.Monster.TerritoryPointRules)
+
+local attackCoordinateLog = DebugLog.Create("AttackSelectionCoordinates")
 
 local SoloMonsterAttackCommandCoordinator = {}
 
@@ -124,6 +127,13 @@ function SoloMonsterAttackCommandCoordinator.Execute(
 	end
 	local pointCheck = TerritoryPointRules.Check(area.CFrame, area.Size, entryPoint)
 	if not pointCheck.Allowed then
+		attackCoordinateLog(
+			"[SERVER_TERRITORY]",
+			"mode=Solo",
+			string.format("player=%s:%d", player.Name, player.UserId),
+			"allowed=false",
+			"reason=" .. tostring(pointCheck.Reason)
+		)
 		return {
 			Succeeded = false,
 			Reason = pointCheck.Reason or "EntryPointOutsideTerritory",
@@ -131,6 +141,13 @@ function SoloMonsterAttackCommandCoordinator.Execute(
 			Monster = monster.Model,
 		}
 	end
+	attackCoordinateLog(
+		"[SERVER_TERRITORY]",
+		"mode=Solo",
+		string.format("player=%s:%d", player.Name, player.UserId),
+		"allowed=true",
+		"bounds=SoloAttackBounds"
+	)
 
 	local transition = MonsterRosterCoordinator.Transition(player, spawnPointId, "Releasing")
 	if not transition.Succeeded then

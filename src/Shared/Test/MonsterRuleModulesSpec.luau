@@ -1,5 +1,6 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local ModelAnimationConfigs = require(ReplicatedStorage.Shared.Animation.ModelAnimationConfigs)
 local EnemyTargetSelector = require(ReplicatedStorage.Shared.Monster.EnemyTargetSelector)
 local MonsterCapacityRules = require(ReplicatedStorage.Shared.Monster.MonsterCapacityRules)
 local MonsterCombatGeometry = require(ReplicatedStorage.Shared.Monster.MonsterCombatGeometry)
@@ -19,6 +20,14 @@ local TerritoryPointRules = require(ReplicatedStorage.Shared.Monster.TerritoryPo
 
 local MonsterRuleModulesSpec = {}
 
+local expectedAtomicAttackAnimationIdsByForm = {
+	[1] = 124495547756102,
+	[2] = 93928197656163,
+	[3] = 132502964657938,
+	[4] = 132502964657938,
+	[5] = 126319293232039,
+}
+
 local function expect(condition: boolean, message: string)
 	assert(condition, "MonsterRuleModulesSpec: " .. message)
 end
@@ -34,6 +43,12 @@ local function makeBoxModel(name: string, cframe: CFrame, size: Vector3): Model
 	part.Parent = model
 	model.PrimaryPart = part
 	return model
+end
+
+local function faceModelAt(model: Model, targetPosition: Vector3)
+	local pivot = model:GetPivot()
+	local horizontalTarget = Vector3.new(targetPosition.X, pivot.Position.Y, targetPosition.Z)
+	model:PivotTo(CFrame.lookAt(pivot.Position, horizontalTarget))
 end
 
 -- 输入：无。
@@ -52,9 +67,32 @@ function MonsterRuleModulesSpec.Run(): boolean
 	)
 	for _, definition in MonsterCatalog.GetAll() do
 		local monsterKey = definition.MonsterKey
+		local animation = ModelAnimationConfigs[monsterKey]
 		local attack = MonsterAttackConfigs[monsterKey]
 		local expedition = MonsterExpeditionConfigs[monsterKey]
 		expect(attack ~= nil and attack.StructureDamage > 0, monsterKey .. " 建筑伤害无效")
+		expect(animation ~= nil, monsterKey .. " 缺少动画配置")
+		expect(animation.Animations.LeftAttack == 138906116804665, monsterKey .. " 左攻击动画 ID 被改写")
+		expect(animation.Animations.RightAttack == 121743350728399, monsterKey .. " 右攻击动画 ID 被改写")
+		expect(animation.Animations.TailAttack == 105227212174985, monsterKey .. " 甩尾动画 ID 被改写")
+		expect(
+			animation.Animations.AtomicAttack
+				== expectedAtomicAttackAnimationIdsByForm[definition.FormIndex],
+			monsterKey .. " 激光动画 ID 与形态映射不一致"
+		)
+		expect(#animation.AttackSequence == 4, monsterKey .. " 缺少激光攻击轮换")
+		expect(animation.AttackSequence[4] == "AtomicAttack", monsterKey .. " 激光攻击顺序错误")
+		expect(#animation.MeleeAttackSequence == 3, monsterKey .. " 肉搏攻击顺序长度错误")
+		expect(
+			animation.MeleeAttackSequence[1] == "LeftAttack"
+				and animation.MeleeAttackSequence[2] == "RightAttack"
+				and animation.MeleeAttackSequence[3] == "TailAttack",
+			monsterKey .. " 守卫战不得混入激光攻击"
+		)
+		expect(animation.AttackEffects.LeftAttack == "VFX_tail1", monsterKey .. " 左攻击特效映射错误")
+		expect(animation.AttackEffects.RightAttack == "VFX_tail2", monsterKey .. " 右攻击特效映射错误")
+		expect(animation.AttackEffects.TailAttack == "VFX_tail3", monsterKey .. " 甩尾特效映射错误")
+		expect(animation.AttackEffects.AtomicAttack == "VFX_ATM1", monsterKey .. " 激光特效映射错误")
 		expect(expedition ~= nil, monsterKey .. " 缺少正式远征配置")
 		expect(expedition.RewardAmount > 0, monsterKey .. " 摧毁奖励必须为正数")
 		expect(expedition.Movement.MoveSpeed == 100, monsterKey .. " 出征基础移速错误")
@@ -190,6 +228,32 @@ function MonsterRuleModulesSpec.Run(): boolean
 	expect(typeof(pose.Position) == "Vector3", "怪兽攻击站位应返回 Vector3")
 	attacker:Destroy()
 	target:Destroy()
+
+	-- 静止的大型怪兽初始侧身时，必须先转入最终朝向再求站位；否则转向会
+	-- 改变长方形包围盒的水平投影，使 DesiredGap=2 在首次攻击前失效。
+	local approaching = makeBoxModel(
+		"Approaching",
+		CFrame.new(0, 0, 50),
+		Vector3.new(4, 4, 4)
+	)
+	local largeTarget = makeBoxModel(
+		"LargeTarget",
+		CFrame.lookAt(Vector3.zero, Vector3.new(1, 0, 0)),
+		Vector3.new(40, 4, 10)
+	)
+	faceModelAt(largeTarget, approaching:GetPivot().Position)
+	local mutualFacingPose = MonsterCombatGeometry.ResolvePose(approaching, largeTarget, 2)
+	approaching:PivotTo(CFrame.lookAt(
+		mutualFacingPose.Position,
+		mutualFacingPose.LookAtPosition
+	))
+	local mutualFacingGap = MonsterCombatGeometry.GetGap(approaching, largeTarget)
+	expect(
+		math.abs(mutualFacingGap - 2) < 1e-4,
+		"大型怪兽转向后的接敌距离必须保持 DesiredGap"
+	)
+	approaching:Destroy()
+	largeTarget:Destroy()
 
 	return true
 end

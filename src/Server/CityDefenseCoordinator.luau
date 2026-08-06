@@ -13,6 +13,8 @@ local TerritoryPointRules = require(ReplicatedStorage.Shared.Monster.TerritoryPo
 local CityDefenseCoordinator = {}
 
 export type SessionOptions = {
+	TraceId: string,
+	TargetRegionId: string,
 	TowerAccess: DefenseTowerAccess.Access,
 	OnDefeated: ((Player, string, MonsterDamageCoordinator.DamageSource) -> ())?,
 	OnTowerHit: ((string, number) -> ())?,
@@ -56,6 +58,11 @@ function CityDefenseCoordinator.Begin(
 	assert(defender:IsA("Player") and attacker:IsA("Player"), "攻守双方必须是 Player")
 	assert(defender ~= attacker, "防守玩家不能是进攻玩家")
 	assert(type(options) == "table", "options 必须是 table")
+	assert(type(options.TraceId) == "string" and options.TraceId ~= "", "TraceId 无效")
+	assert(
+		type(options.TargetRegionId) == "string" and options.TargetRegionId ~= "",
+		"TargetRegionId 无效"
+	)
 	assert(type(options.TowerAccess) == "table", "TowerAccess 必须是 table")
 	assert(type(options.TowerAccess.ListAliveTowers) == "function", "ListAliveTowers 必须是 function")
 	assert(options.OnTowerHit == nil or type(options.OnTowerHit) == "function", "OnTowerHit 无效")
@@ -102,6 +109,7 @@ function CityDefenseCoordinator.Begin(
 					OwnerUserId = defender.UserId,
 					SourceId = tower.TowerId,
 					Kind = "DefenseTower",
+					TraceId = options.TraceId,
 				},
 				tower.Damage,
 				{ OnDefeated = options.OnDefeated }
@@ -152,6 +160,7 @@ function CityDefenseCoordinator.Begin(
 		for _, record in MonsterRosterCoordinator.List(defender) do
 			local definition = DefenseMonsterSlotCatalog.Get(record.SpawnPointId)
 			if definition
+				and definition.RegionId == options.TargetRegionId
 				and record.State == "IdleAtSpawn"
 				and record.Model
 				and isInsideDefenseRegion(defender, definition.RegionId, attackerPosition)

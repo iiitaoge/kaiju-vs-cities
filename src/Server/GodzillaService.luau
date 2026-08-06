@@ -1,5 +1,6 @@
 local AnimationPlayer = require(script.Parent.AnimationPlayer)
 local AnimationSequencePlayer = require(script.Parent.AnimationSequencePlayer)
+local AnimationTrackRelease = require(script.Parent.AnimationTrackRelease)
 local StableModelSpawner = require(script.Parent.StableModelSpawner)
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local MonsterMovementRules = require(
@@ -23,8 +24,7 @@ function GodzillaService.StopMoving(model: Model)
 		if descendant:IsA("Animator") then
 			for _, track in descendant:GetPlayingAnimationTracks() do
 				if track.Priority == Enum.AnimationPriority.Movement then
-					track:Stop()
-					track:Destroy()
+					AnimationTrackRelease.Release(track)
 					stoppedTracks[track] = true
 				end
 			end
@@ -32,8 +32,7 @@ function GodzillaService.StopMoving(model: Model)
 	end
 
 	if cachedTrack and not stoppedTracks[cachedTrack] then
-		cachedTrack:Stop()
-		cachedTrack:Destroy()
+		AnimationTrackRelease.Release(cachedTrack)
 	end
 end
 

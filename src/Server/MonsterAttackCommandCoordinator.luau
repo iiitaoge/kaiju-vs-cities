@@ -1,10 +1,13 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local DebugLog = require(ReplicatedStorage.Shared.DebugLog)
 local MonsterRosterCoordinator = require(script.Parent.MonsterRosterCoordinator)
 local PlayerTerritoryAccess = require(script.Parent.PlayerTerritoryAccess)
 local MonsterStateRules = require(ReplicatedStorage.Shared.Monster.MonsterStateRules)
 local TerritoryPointRules = require(ReplicatedStorage.Shared.Monster.TerritoryPointRules)
+
+local attackCoordinateLog = DebugLog.Create("AttackSelectionCoordinates")
 
 local MonsterAttackCommandCoordinator = {}
 
@@ -21,6 +24,7 @@ export type CommandContext = {
 	Defender: Player,
 	AttackerSpawnPointId: string,
 	EntryPoint: Vector3,
+	TargetRegionId: string,
 	StartedAt: number,
 }
 
@@ -117,7 +121,8 @@ function MonsterAttackCommandCoordinator.Execute(
 
 	local validTerritoryCount = 0
 	local allowed = false
-	for _, territory in territories do
+	local targetRegionId: string? = nil
+	for territoryIndex, territory in territories do
 		local pointCheck = TerritoryPointRules.Check(
 			territory.CFrame,
 			territory.Size,
@@ -131,6 +136,17 @@ function MonsterAttackCommandCoordinator.Execute(
 		end
 		if pointCheck.Allowed then
 			allowed = true
+			targetRegionId = territory.ZoneId
+			attackCoordinateLog(
+				"[SERVER_TERRITORY]",
+				"mode=Player",
+				string.format("player=%s:%d", attacker.Name, attacker.UserId),
+				"targetUserId=" .. tostring(targetPlayer.UserId),
+				"allowed=true",
+				"territoryIndex=" .. tostring(territoryIndex),
+				"zone=" .. tostring(territory.ZoneId),
+				"bounds=" .. tostring(territory.BoundsId)
+			)
 			break
 		end
 	end
@@ -138,6 +154,15 @@ function MonsterAttackCommandCoordinator.Execute(
 		local reason = if validTerritoryCount > 0
 			then "EntryPointOutsideTerritory"
 			else "TargetTerritoryUnavailable"
+		attackCoordinateLog(
+			"[SERVER_TERRITORY]",
+			"mode=Player",
+			string.format("player=%s:%d", attacker.Name, attacker.UserId),
+			"targetUserId=" .. tostring(targetPlayer.UserId),
+			"allowed=false",
+			"validTerritoryCount=" .. tostring(validTerritoryCount),
+			"reason=" .. reason
+		)
 		return { Succeeded = false, Reason = reason, CommandId = nil, Monster = monster.Model }
 	end
 
@@ -157,6 +182,7 @@ function MonsterAttackCommandCoordinator.Execute(
 		Defender = targetPlayer,
 		AttackerSpawnPointId = attackerSpawnPointId,
 		EntryPoint = entryPoint,
+		TargetRegionId = assert(targetRegionId),
 		StartedAt = workspace:GetServerTimeNow(),
 	})
 	setActiveCommand(attacker, attackerSpawnPointId, commandId)

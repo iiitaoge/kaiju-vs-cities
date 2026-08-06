@@ -9,6 +9,8 @@ local HouseAttackCommitter = {}
 export type CommitOptions = {
 	-- 允许怪兽与房屋水平包围盒之间存在的最大边缘距离。
 	MaxGap: number,
+	-- false 时跳过近战距离重验，供只有目标终点、没有射程限制的激光使用。
+	EnforceRange: boolean?,
 	-- 本次命中对建筑造成的伤害。
 	Damage: number,
 	-- 本次成功摧毁房屋应增加的金钱；没有隐藏默认值。
@@ -75,6 +77,10 @@ function HouseAttackCommitter.Commit(
 	assert(type(options) == "table", "options 必须是 table")
 	assert(type(options.MaxGap) == "number" and options.MaxGap >= 0, "MaxGap 必须大于等于 0")
 	assert(
+		options.EnforceRange == nil or type(options.EnforceRange) == "boolean",
+		"EnforceRange 必须是 boolean 或 nil"
+	)
+	assert(
 		type(options.Damage) == "number"
 			and options.Damage == options.Damage
 			and options.Damage < math.huge
@@ -113,9 +119,11 @@ function HouseAttackCommitter.Commit(
 		return fail("StaleHealthGeneration", nil)
 	end
 
-	local gap = HouseAttackGeometry.GetGap(reservation.Monster, target)
-	if gap > options.MaxGap then
-		return fail("OutOfRange", nil)
+	if options.EnforceRange ~= false then
+		local gap = HouseAttackGeometry.GetGap(reservation.Monster, target)
+		if gap > options.MaxGap then
+			return fail("OutOfRange", nil)
+		end
 	end
 
 	local damageResult = access.ApplyDamage(

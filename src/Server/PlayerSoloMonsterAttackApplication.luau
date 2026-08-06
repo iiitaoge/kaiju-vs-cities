@@ -10,12 +10,14 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local AttackAnimationPlayer = require(script.Parent.AttackAnimationPlayer)
 local AttackAnimationSelector = require(script.Parent.AttackAnimationSelector)
 local GodzillaMoveService = require(script.Parent.GodzillaMoveService)
 local GodzillaService = require(script.Parent.GodzillaService)
 local ModelMover = require(script.Parent.ModelMover)
 local MonsterIncubatorCoordinator = require(script.Parent.MonsterIncubatorCoordinator)
+local MonsterAttackPresentationPlayer = require(
+	script.Parent.MonsterAttackPresentationPlayer
+)
 local MonsterReturnCoordinator = require(script.Parent.MonsterReturnCoordinator)
 local MonsterRosterCoordinator = require(script.Parent.MonsterRosterCoordinator)
 local PlayerPlotAssignmentService = require(script.Parent.PlayerPlotAssignmentService)
@@ -107,6 +109,7 @@ end
 local function playAttackPresentation(
 	player: Player,
 	spawnPointId: string,
+	targetPosition: Vector3,
 	configs,
 	isCancelled: () -> boolean
 )
@@ -128,10 +131,14 @@ local function playAttackPresentation(
 			{ Mode = configs.Attack.Animation.SelectionMode }
 		)
 		local played, playbackOrError = pcall(
-			AttackAnimationPlayer.Play,
+			MonsterAttackPresentationPlayer.Play,
 			model,
 			choice.AssetId,
 			{
+				EffectName = configs.Animation.AttackEffects[choice.Name],
+				ResolveTargetPosition = function()
+					return targetPosition
+				end,
 				HitProgress = configs.Attack.Animation.HitProgress,
 				Speed = configs.Attack.Animation.Speed,
 				Priority = Enum.AnimationPriority.Action,
@@ -269,6 +276,7 @@ function PlayerSoloMonsterAttackApplication.Execute(
 				return playAttackPresentation(
 					context.Player,
 					context.SpawnPointId,
+					context.EntryPoint,
 					configs,
 					isCancelled
 				)

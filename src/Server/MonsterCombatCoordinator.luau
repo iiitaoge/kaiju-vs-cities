@@ -1,10 +1,13 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local AttackAnimationPlayer = require(script.Parent.AttackAnimationPlayer)
 local AttackAnimationSelector = require(script.Parent.AttackAnimationSelector)
 local GodzillaMoveService = require(script.Parent.GodzillaMoveService)
 local GodzillaService = require(script.Parent.GodzillaService)
 local MonsterDamageCoordinator = require(script.Parent.MonsterDamageCoordinator)
+local MonsterCombatDiagnosticLog = require(script.Parent.MonsterCombatDiagnosticLog)
+local MonsterAttackPresentationPlayer = require(
+	script.Parent.MonsterAttackPresentationPlayer
+)
 local MonsterRosterCoordinator = require(script.Parent.MonsterRosterCoordinator)
 local MonsterCatalog = require(ReplicatedStorage.Shared.Monster.MonsterCatalog)
 local MonsterCombatGeometry = require(ReplicatedStorage.Shared.Monster.MonsterCombatGeometry)
@@ -33,6 +36,7 @@ export type CombatConfig = {
 	Animation: {
 		Animations: { [string]: number },
 		AttackSequence: { string },
+		AttackEffects: { [string]: string },
 		SelectionMode: AttackAnimationSelector.SelectionMode,
 		HitProgress: number,
 		Speed: number,
@@ -40,6 +44,7 @@ export type CombatConfig = {
 }
 
 export type ExecuteOptions = {
+	TraceId: string,
 	AttackerConfig: CombatConfig,
 	DefenderConfig: CombatConfig,
 	ApproachingSide: "Attacker" | "Defender",
@@ -80,6 +85,7 @@ local function validateConfig(config: CombatConfig)
 	assert(type(config.Animation) == "table", "Animation 必须是 table")
 	assert(type(config.Animation.Animations) == "table", "Animations 必须是 table")
 	assert(type(config.Animation.AttackSequence) == "table", "AttackSequence 必须是 table")
+	assert(type(config.Animation.AttackEffects) == "table", "AttackEffects 必须是 table")
 	assert(#config.Animation.AttackSequence > 0, "AttackSequence 不能为空")
 	assert(
 		type(config.Animation.HitProgress) == "number"
@@ -147,6 +153,28 @@ local function positionCombatants(
 	local moverConfig = if options.ApproachingSide == "Attacker"
 		then options.AttackerConfig
 		else options.DefenderConfig
+	local targetConfig = if options.ApproachingSide == "Attacker"
+		then options.DefenderConfig
+		else options.AttackerConfig
+
+	-- ResolvePose 会按接敌方最终面向目标时的包围盒计算站位，因此静止方也必须
+	-- 先进入最终朝向。否则大型非正方形模型在站位完成后转向，会让已经求出的边缘距离失效。
+	local targetFaced = GodzillaMoveService.FaceTo(
+		targetRecord.Model,
+		moverRecord.Model:GetPivot().Position,
+		targetConfig.Movement.TurnDuration
+	)
+	if not targetFaced then
+		return false, "FaceTargetIntoCombatFailed"
+	end
+
+	attackerRecord = MonsterRosterCoordinator.Get(attacker.Player, attacker.SpawnPointId)
+	defenderRecord = MonsterRosterCoordinator.Get(defender.Player, defender.SpawnPointId)
+	if not attackerRecord or not attackerRecord.Model or not defenderRecord or not defenderRecord.Model then
+		return false, "CombatantUnavailable"
+	end
+	moverRecord = if options.ApproachingSide == "Attacker" then attackerRecord else defenderRecord
+	targetRecord = if options.ApproachingSide == "Attacker" then defenderRecord else attackerRecord
 	local pose = MonsterCombatGeometry.ResolvePose(
 		moverRecord.Model,
 		targetRecord.Model,
@@ -172,16 +200,33 @@ local function positionCombatants(
 	if not attackerLatest or not attackerLatest.Model or not defenderLatest or not defenderLatest.Model then
 		return false, "CombatantUnavailable"
 	end
-	GodzillaMoveService.FaceTo(
-		attackerLatest.Model,
-		defenderLatest.Model:GetPivot().Position,
-		options.AttackerConfig.Movement.TurnDuration
+	local moverLatest = if options.ApproachingSide == "Attacker" then attackerLatest else defenderLatest
+	local targetLatest = if options.ApproachingSide == "Attacker" then defenderLatest else attackerLatest
+	local moverFaced = GodzillaMoveService.FaceTo(
+		moverLatest.Model,
+		pose.LookAtPosition,
+		moverConfig.Movement.TurnDuration
 	)
-	GodzillaMoveService.FaceTo(
-		defenderLatest.Model,
-		attackerLatest.Model:GetPivot().Position,
-		options.DefenderConfig.Movement.TurnDuration
+	if not moverFaced then
+		return false, "FaceMoverIntoCombatFailed"
+	end
+
+	local finalGap = MonsterCombatGeometry.GetGap(moverLatest.Model, targetLatest.Model)
+	local maxAllowedGap = math.min(
+		options.AttackerConfig.Movement.MaxGap,
+		options.DefenderConfig.Movement.MaxGap
 	)
+	MonsterCombatDiagnosticLog.Emit("DUEL_POSITIONED", {
+		TraceId = options.TraceId,
+		ApproachingSide = options.ApproachingSide,
+		DesiredGap = moverConfig.Movement.DesiredGap,
+		FinalGap = finalGap,
+		MaxAllowedGap = maxAllowedGap,
+		InRange = finalGap <= maxAllowedGap,
+	})
+	if finalGap > maxAllowedGap then
+		return false, "CombatPositionOutOfRange"
+	end
 	return true, nil
 end
 
@@ -212,10 +257,20 @@ local function playAttack(
 	)
 	local damageResult = nil
 	local played, playbackOrError = pcall(
-		AttackAnimationPlayer.Play,
+		MonsterAttackPresentationPlayer.Play,
 		sourceRecord.Model,
 		choice.AssetId,
 		{
+			EffectName = config.Animation.AttackEffects[choice.Name],
+			ResolveTargetPosition = function()
+				local latest = MonsterRosterCoordinator.Get(
+					target.Player,
+					target.SpawnPointId
+				)
+				return if latest and latest.Model
+					then latest.Model:GetPivot().Position
+					else nil
+			end,
 			HitProgress = config.Animation.HitProgress,
 			Speed = config.Animation.Speed,
 			Priority = Enum.AnimationPriority.Action,
@@ -233,6 +288,7 @@ local function playAttack(
 					OwnerUserId = source.Player.UserId,
 					SourceId = source.SpawnPointId,
 					Kind = "Monster",
+					TraceId = options.TraceId,
 				},
 				config.Damage,
 				{ OnDefeated = options.OnDefeated }
@@ -267,6 +323,7 @@ function MonsterCombatCoordinator.Execute(
 	assert(attacker.Player:IsA("Player") and defender.Player:IsA("Player"), "战斗双方必须是 Player")
 	assert(attacker.Player ~= defender.Player, "不能与自己的怪兽战斗")
 	assert(type(options) == "table", "options 必须是 table")
+	assert(type(options.TraceId) == "string" and options.TraceId ~= "", "TraceId 无效")
 	assert(
 		options.FirstStrike == "Attacker" or options.FirstStrike == "Defender",
 		"FirstStrike 必须是 Attacker 或 Defender"
@@ -280,11 +337,33 @@ function MonsterCombatCoordinator.Execute(
 		"WatchdogDuration 必须大于 ResolutionDuration"
 	)
 
+	local combatStartedAt = workspace:GetServerTimeNow()
 	local finished = false
 	local resolutionRequested = false
 	local watchdogRequested = false
 	local function finish(result: CombatResult): CombatResult
 		finished = true
+		local attackerRecord = MonsterRosterCoordinator.Get(attacker.Player, attacker.SpawnPointId)
+		local defenderRecord = MonsterRosterCoordinator.Get(defender.Player, defender.SpawnPointId)
+		MonsterCombatDiagnosticLog.Emit("DUEL_FINISHED", {
+			TraceId = options.TraceId,
+			AttackerUserId = attacker.Player.UserId,
+			AttackerSpawnPointId = attacker.SpawnPointId,
+			DefenderUserId = defender.Player.UserId,
+			DefenderSpawnPointId = defender.SpawnPointId,
+			Succeeded = result.Succeeded,
+			Reason = result.Reason or "None",
+			Winner = result.Winner or "None",
+			AttackerDefeated = result.AttackerDefeated,
+			DefenderDefeated = result.DefenderDefeated,
+			AttackerState = if attackerRecord then attackerRecord.State else "None",
+			AttackerHealth = if attackerRecord then attackerRecord.Health else 0,
+			AttackerModelExists = attackerRecord ~= nil and attackerRecord.Model ~= nil,
+			DefenderState = if defenderRecord then defenderRecord.State else "None",
+			DefenderHealth = if defenderRecord then defenderRecord.Health else 0,
+			DefenderModelExists = defenderRecord ~= nil and defenderRecord.Model ~= nil,
+			ElapsedSeconds = workspace:GetServerTimeNow() - combatStartedAt,
+		})
 		return result
 	end
 	local function cancelMotion(combatant: Combatant)
@@ -368,6 +447,22 @@ function MonsterCombatCoordinator.Execute(
 			return finish(makeResult(false, "CombatantUnavailable", nil, isDefeated(attacker), isDefeated(defender)))
 		end
 		local damage = math.max(loserRecord.Health, 1)
+		MonsterCombatDiagnosticLog.Emit("DUEL_LEVEL_RESOLUTION", {
+			TraceId = options.TraceId,
+			AttackerSpawnPointId = attacker.SpawnPointId,
+			DefenderSpawnPointId = defender.SpawnPointId,
+			ResolutionKind = if watchdogRequested then "Watchdog" else "ResolutionTimer",
+			AttackerMonsterKey = attackerRecord.MonsterKey,
+			AttackerLevel = attackerDefinition.Level,
+			AttackerHealth = attackerRecord.Health,
+			DefenderMonsterKey = defenderRecord.MonsterKey,
+			DefenderLevel = defenderDefinition.Level,
+			DefenderHealth = defenderRecord.Health,
+			ComputedWinner = winner,
+			ComputedLoser = if winner == "Attacker" then "Defender" else "Attacker",
+			FatalDamage = damage,
+			ElapsedSeconds = workspace:GetServerTimeNow() - combatStartedAt,
+		})
 		local damageResult = MonsterDamageCoordinator.ApplyDamage(
 			loserCombatant.Player,
 			loserCombatant.SpawnPointId,
@@ -375,6 +470,7 @@ function MonsterCombatCoordinator.Execute(
 				OwnerUserId = winnerCombatant.Player.UserId,
 				SourceId = winnerCombatant.SpawnPointId,
 				Kind = "Monster",
+				TraceId = options.TraceId,
 			},
 			damage,
 			{ OnDefeated = options.OnDefeated }

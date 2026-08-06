@@ -117,7 +117,8 @@ function PlayerRuntimeHouseAttackAccess.ResolveAliveTarget(
 	if type(houseId) ~= "string" or houseId == "" then
 		return nil, "InvalidHouseId"
 	end
-	if not HouseCatalog.Get(houseId) then
+	local definition = HouseCatalog.Get(houseId)
+	if not definition then
 		return nil, "UnknownHouse"
 	end
 	if HouseStateService.Get(player, houseId).LifeState ~= "Alive" then
@@ -138,9 +139,12 @@ function PlayerRuntimeHouseAttackAccess.ResolveAliveTarget(
 	end
 	return {
 		HouseId = houseId,
+		RegionId = definition.RegionId,
 		CFrame = bounds.CFrame,
 		Size = bounds.Size,
 		HealthGeneration = health.Generation,
+		CurrentHealth = health.CurrentHealth,
+		MaxHealth = health.MaxHealth,
 	}, nil
 end
 

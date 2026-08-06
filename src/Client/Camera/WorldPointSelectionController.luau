@@ -1,3 +1,4 @@
+local GuiService = game:GetService("GuiService")
 local UserInputService = game:GetService("UserInputService")
 
 local TopDownCamera = require(script.Parent.TopDownCamera)
@@ -51,7 +52,9 @@ function WorldPointSelectionController.Run(
 			return
 		end
 
-		local position = WorldPointResolver.Resolve(Vector2.new(input.Position.X, input.Position.Y))
+		local inputScreen = Vector2.new(input.Position.X, input.Position.Y)
+		local inputViewport = inputScreen + GuiService:GetGuiInset()
+		local position = WorldPointResolver.Resolve(inputViewport)
 		if position then
 			selectedEvent:Fire(position)
 		end

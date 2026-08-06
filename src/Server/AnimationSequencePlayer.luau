@@ -1,4 +1,5 @@
 local AnimationPlayer = require(script.Parent.AnimationPlayer)
+local AnimationTrackRelease = require(script.Parent.AnimationTrackRelease)
 
 local AnimationSequencePlayer = {}
 
@@ -15,8 +16,7 @@ function AnimationSequencePlayer.Play(
 			Priority = priority,
 		})
 
-		track.Ended:Wait()
-		track:Destroy()
+		AnimationTrackRelease.WaitForCompletion(track)
 	end
 end
 
