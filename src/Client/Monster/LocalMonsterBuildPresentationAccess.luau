@@ -84,6 +84,25 @@ function LocalMonsterBuildPresentationAccess.WaitForIncubator(
 	end, timeout) :: Model?
 end
 
+function LocalMonsterBuildPresentationAccess.WaitForIncubatorTemplate(
+	plot: Model,
+	spawnPointId: string,
+	ownerUserId: number,
+	templateId: string,
+	timeout: number
+): Model?
+	return waitFor(function()
+		local model = LocalMonsterBuildPresentationAccess.FindIncubator(
+			plot,
+			spawnPointId,
+			ownerUserId
+		)
+		return if model and model:GetAttribute("IncubatorTemplateId") == templateId
+			then model
+			else nil
+	end, timeout) :: Model?
+end
+
 function LocalMonsterBuildPresentationAccess.FindMonster(
 	plot: Model,
 	spawnPointId: string,

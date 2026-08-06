@@ -84,6 +84,10 @@ local function getActiveSession(plot: Model, spawnPointId: string): Session?
 	return session
 end
 
+local function getObjectPivot(object: BasePart | Model): CFrame
+	return if object:IsA("BasePart") then object.CFrame else object:GetPivot()
+end
+
 local function resolve(plot: Model, spawnPointId: string)
 	local config = MonsterIncubatorConfigs[spawnPointId]
 	if not config then
@@ -135,7 +139,7 @@ function MonsterIncubatorCoordinator.Release(
 	if not incubator or not config then
 		return releaseResult(false, resolveReason or "IncubatorUnavailable", nil)
 	end
-	local initialLiquidCFrame = incubator.Liquid.CFrame
+	local initialLiquidCFrame = getObjectPivot(incubator.Liquid)
 	local initialGlassCFrame = incubator.Glass.CFrame
 	local initialBaseCFrame = incubator.Base:GetPivot()
 	local liquidTarget, liquidReason = VerticalSinkResolver.Resolve(

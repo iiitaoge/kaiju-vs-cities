@@ -3,7 +3,7 @@
 	输入：MonsterBuildPresentation RemoteEvent 的协议命令。
 	输出：只产生客户端临时视觉；结束后显示服务器权威模型。
 	内部算法：解析 Plot/配置/模板/权威模型并本地隐藏；复用房屋拆除和升起小模块；
-		首次罐体和怪兽只升起，升级先拆旧模板再升起新模板。
+		首次罐体和怪兽只升起；换形态升级严格串行执行怪兽拆除、罐体拆/建、怪兽建造。
 	不负责：创建服务器对象、等待业务阶段、扣款、保存、攻击开合或怪兽状态。
 ]]
 
@@ -59,6 +59,21 @@ local function resolveMonsterTemplate(monsterKey: string): (Model, number)
 	return template, modelScale
 end
 
+local function resolveIncubatorTemplate(config, templateId: string): Model
+	local configured = false
+	for _, configuredTemplateId in config.TemplateIdsByForm do
+		if configuredTemplateId == templateId then
+			configured = true
+			break
+		end
+	end
+	assert(configured, "培养罐模板未配置：" .. templateId)
+	local templateRoot = ReplicatedStorage:FindFirstChild(config.TemplateRootName)
+	local template = templateRoot and templateRoot:FindFirstChild(templateId)
+	assert(template and template:IsA("Model"), "找不到培养罐模板：" .. templateId)
+	return template
+end
+
 local function resolveCommon(command)
 	local incubatorConfig = assert(
 		MonsterIncubatorConfigs[command.SpawnPointId],
@@ -95,9 +110,7 @@ end
 
 local function presentIncubatorBuild(command)
 	local config, presentation, plot = resolveCommon(command)
-	local templateRoot = ReplicatedStorage:FindFirstChild(config.TemplateRootName)
-	local template = templateRoot and templateRoot:FindFirstChild(config.TemplateId)
-	assert(template and template:IsA("Model"), "找不到培养罐模板：" .. config.TemplateId)
+	local template = resolveIncubatorTemplate(config, command.TemplateId)
 	local slot = assert(
 		LocalMonsterBuildPresentationAccess.FindSlot(
 			plot,
@@ -115,6 +128,10 @@ local function presentIncubatorBuild(command)
 			presentation.ResolveTimeout
 		),
 		"找不到服务器培养罐：" .. command.SpawnPointId
+	)
+	assert(
+		authoritative:GetAttribute("IncubatorTemplateId") == command.TemplateId,
+		"服务器培养罐模板身份不匹配：" .. command.SpawnPointId
 	)
 	local snapshot = LocalBuildingVisibility.Hide(authoritative)
 	local succeeded, message = xpcall(function()
@@ -179,28 +196,117 @@ local function presentMonsterBuild(command)
 end
 
 local function presentMonsterUpgrade(command)
-	local presentation, slot, authoritative = resolveMonsterPresentation(command)
+	local config, presentation, plot = resolveCommon(command)
+	local incubatorSlot = assert(
+		LocalMonsterBuildPresentationAccess.FindSlot(
+			plot,
+			config.ZoneId,
+			"IncubatorSlots",
+			config.IncubatorSlotId
+		),
+		"找不到培养罐定位点：" .. config.IncubatorSlotId
+	)
+	local oldAuthoritativeIncubator = assert(
+		LocalMonsterBuildPresentationAccess.WaitForIncubator(
+			plot,
+			command.SpawnPointId,
+			command.OwnerUserId,
+			presentation.ResolveTimeout
+		),
+		"找不到服务器培养罐：" .. command.SpawnPointId
+	)
+	assert(
+		oldAuthoritativeIncubator:GetAttribute("IncubatorTemplateId")
+			== command.PreviousIncubatorTemplateId,
+		"服务器培养罐模板身份不匹配：" .. command.SpawnPointId
+	)
+	local oldIncubatorTemplate = resolveIncubatorTemplate(
+		config,
+		command.PreviousIncubatorTemplateId
+	)
+	local newIncubatorTemplate = resolveIncubatorTemplate(
+		config,
+		command.IncubatorTemplateId
+	)
+
+	local spawnPoint = assert(
+		MonsterSpawnPointCatalog.Get(command.SpawnPointId),
+		"未知 SpawnPointId：" .. command.SpawnPointId
+	)
+	local monsterSlot = assert(
+		LocalMonsterBuildPresentationAccess.FindSlot(
+			plot,
+			spawnPoint.ZoneId,
+			"Slots",
+			spawnPoint.SlotId
+		),
+		"找不到怪兽出生点：" .. spawnPoint.SlotId
+	)
+	local authoritativeMonster = assert(
+		LocalMonsterBuildPresentationAccess.WaitForMonster(
+			plot,
+			command.SpawnPointId,
+			command.OwnerUserId,
+			command.MonsterKey,
+			presentation.ResolveTimeout
+		),
+		"找不到服务器怪兽：" .. command.SpawnPointId
+	)
 	local oldTemplate, oldModelScale = resolveMonsterTemplate(command.PreviousMonsterKey)
 	local newTemplate, newModelScale = resolveMonsterTemplate(command.MonsterKey)
-	local targetPivot = authoritative:GetPivot()
-	local snapshot = LocalBuildingVisibility.Hide(authoritative)
+	local monsterPivot = authoritativeMonster:GetPivot()
+	local monsterSnapshot = LocalBuildingVisibility.Hide(authoritativeMonster)
+	local oldIncubatorSnapshot = nil
+	local newIncubatorSnapshot = nil
 	local succeeded, message = xpcall(function()
 		LocalBuildingDemolitionAnimation.Play(
 			oldTemplate,
-			targetPivot,
-			slot.Position.Y,
+			command.PreviousMonsterCFrame,
+			monsterSlot.Position.Y,
 			presentation.Demolish,
 			oldModelScale
 		)
+		local oldIncubatorPivot = oldAuthoritativeIncubator:GetPivot()
+		oldIncubatorSnapshot = LocalBuildingVisibility.Hide(oldAuthoritativeIncubator)
+		LocalBuildingDemolitionAnimation.Play(
+			oldIncubatorTemplate,
+			oldIncubatorPivot,
+			incubatorSlot.Position.Y,
+			presentation.Demolish
+		)
+		local newAuthoritativeIncubator = assert(
+			LocalMonsterBuildPresentationAccess.WaitForIncubatorTemplate(
+				plot,
+				command.SpawnPointId,
+				command.OwnerUserId,
+				command.IncubatorTemplateId,
+				presentation.ResolveTimeout
+			),
+			"找不到升级后的服务器培养罐：" .. command.SpawnPointId
+		)
+		newIncubatorSnapshot = LocalBuildingVisibility.Hide(newAuthoritativeIncubator)
+		LocalBuildingRiseAnimation.Play(
+			newIncubatorTemplate,
+			newAuthoritativeIncubator:GetPivot(),
+			incubatorSlot.Position.Y,
+			presentation.Rise
+		)
+		LocalBuildingVisibility.Restore(newIncubatorSnapshot)
 		LocalBuildingRiseAnimation.Play(
 			newTemplate,
-			targetPivot,
-			slot.Position.Y,
+			monsterPivot,
+			monsterSlot.Position.Y,
 			presentation.Rise,
 			newModelScale
 		)
 	end, debug.traceback)
-	LocalBuildingVisibility.Restore(snapshot)
+	if oldIncubatorSnapshot then
+		LocalBuildingVisibility.Restore(oldIncubatorSnapshot)
+	end
+	if newIncubatorSnapshot then
+		LocalBuildingVisibility.Restore(newIncubatorSnapshot)
+	end
+	LocalBuildingVisibility.Restore(monsterSnapshot)
 	if not succeeded then
 		error(message)
 	end

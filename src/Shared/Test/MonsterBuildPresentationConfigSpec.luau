@@ -28,7 +28,12 @@ function MonsterBuildPresentationConfigSpec.Run(): boolean
 		expect(definition ~= nil, "缺少 " .. spawnPointId .. " 出生点配置")
 		expect(incubator ~= nil, "缺少 " .. spawnPointId .. " 培养罐配置")
 		expect(incubator.IncubatorSlotId == spawnPointId, "培养罐定位点没有独立身份")
-		expect(incubator.TemplateId == "PetriDish-3", "培养罐没有统一使用新模板")
+		for formIndex = 1, 5 do
+			expect(
+				incubator.TemplateIdsByForm[formIndex] == "PetriDish-" .. formIndex,
+				string.format("形态 %d 的培养罐模板映射错误", formIndex)
+			)
+		end
 		expect(incubator.PresentationId == "MonsterStandard", "培养罐未复用专用表现")
 		if index == 1 then
 			expect(definition.RequiredBuiltSpawnPointId == nil, "S1 不应有前置槽位")
@@ -50,7 +55,7 @@ function MonsterBuildPresentationConfigSpec.Run(): boolean
 		"同一外观内升级不应触发拆除/建造"
 	)
 	expect(
-		MonsterCatalog.HasTemplateChanged("Godzilla-L005", "Godzilla-L006") == true,
+		MonsterCatalog.HasTemplateChanged("Godzilla-L015", "Godzilla-L016") == true,
 		"进入新外观等级必须触发拆除/建造"
 	)
 	expect(

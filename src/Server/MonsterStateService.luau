@@ -133,13 +133,16 @@ function MonsterStateService.SetMonster(
 	player: Player,
 	spawnPointId: string,
 	monsterKey: string,
+	spawnCFrame: CFrame,
 	maxHealth: number
 ): Snapshot?
+	assert(typeof(spawnCFrame) == "CFrame", "spawnCFrame 必须是 CFrame")
 	local state = findState(player, spawnPointId)
 	if not state then
 		return nil
 	end
 	state:SetAttribute("MonsterKey", monsterKey)
+	state:SetAttribute("SpawnCFrame", spawnCFrame)
 	state:SetAttribute("MaxHealth", maxHealth)
 	state:SetAttribute("Health", maxHealth)
 	return snapshot(state)

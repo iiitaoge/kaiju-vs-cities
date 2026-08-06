@@ -170,25 +170,35 @@ function ContentContractValidator.Validate()
 			local templateRoot = ReplicatedStorage:FindFirstChild(
 				incubatorConfig.TemplateRootName
 			)
-			local template = nil
-			local templateReason = nil
-			if templateRoot and templateRoot:IsA("Folder") then
-				template, templateReason = MonsterIncubatorTemplateAccess.Resolve(
-					templateRoot,
-					incubatorConfig.TemplateId
-				)
-			else
-				templateReason = "MissingIncubatorTemplateRoot"
-			end
 			add(
 				errors,
-				template ~= nil,
-				string.format(
-					"%s 罐体模板无效：%s",
-					spawnPoint.SpawnPointId,
-					templateReason or "Unknown"
-				)
+				type(incubatorConfig.TemplateIdsByForm) == "table",
+				spawnPoint.SpawnPointId .. " 缺少形态到罐体模板映射"
 			)
+			if type(incubatorConfig.TemplateIdsByForm) == "table" then
+				for formIndex, templateId in incubatorConfig.TemplateIdsByForm do
+					local template = nil
+					local templateReason = nil
+					if templateRoot and templateRoot:IsA("Folder") then
+						template, templateReason = MonsterIncubatorTemplateAccess.Resolve(
+							templateRoot,
+							templateId
+						)
+					else
+						templateReason = "MissingIncubatorTemplateRoot"
+					end
+					add(
+						errors,
+						template ~= nil,
+						string.format(
+							"%s 形态 %s 罐体模板无效：%s",
+							spawnPoint.SpawnPointId,
+							tostring(formIndex),
+							templateReason or "Unknown"
+						)
+					)
+				end
+			end
 		end
 
 		local maxLevel = MonsterSpawnPointCatalog.GetMaxLevel(spawnPoint.SpawnPointId) or 0
@@ -200,6 +210,17 @@ function ContentContractValidator.Validate()
 				local monster = MonsterCatalog.Get(monsterKey)
 				add(errors, monster ~= nil, spawnPoint.SpawnPointId .. " 引用了未知 MonsterKey " .. monsterKey)
 				if monster then
+					add(
+						errors,
+						incubatorConfig ~= nil
+							and type(incubatorConfig.TemplateIdsByForm) == "table"
+							and type(incubatorConfig.TemplateIdsByForm[monster.FormIndex]) == "string",
+						string.format(
+							"%s 的怪兽形态 %d 缺少罐体模板",
+							spawnPoint.SpawnPointId,
+							monster.FormIndex
+						)
+					)
 					local template, _, modelScale, templateReason =
 						MonsterTemplateResolver.Resolve(monsterKey)
 					add(

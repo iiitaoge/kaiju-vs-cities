@@ -150,6 +150,7 @@ local function createForSpawnPoint(
 	template: Model,
 	modelScale: number,
 	spawnPoint: BasePart,
+	homeCFrame: CFrame,
 	maxHealth: number,
 	runtimeParent: Instance,
 	enforceCapacity: boolean,
@@ -170,6 +171,9 @@ local function createForSpawnPoint(
 	end
 	if typeof(spawnPoint) ~= "Instance" or not spawnPoint:IsA("BasePart") then
 		return operation(false, "InvalidSpawnPoint", nil)
+	end
+	if typeof(homeCFrame) ~= "CFrame" then
+		return operation(false, "InvalidHomeCFrame", nil)
 	end
 	if not validPositiveNumber(maxHealth) then
 		return operation(false, "InvalidMaxHealth", nil)
@@ -200,7 +204,7 @@ local function createForSpawnPoint(
 		player,
 		spawnPointId,
 		monsterKey,
-		spawnPoint.CFrame,
+		homeCFrame,
 		maxHealth
 	)
 	if not state then
@@ -213,7 +217,7 @@ local function createForSpawnPoint(
 	local created, modelOrError = pcall(
 		MonsterModelFactory.Create,
 		template,
-		spawnPoint.CFrame,
+		homeCFrame,
 		runtimeParent,
 		{
 			OwnerUserId = player.UserId,
@@ -240,7 +244,7 @@ local function createForSpawnPoint(
 	return operation(true, nil, recordWithModel(player, state))
 end
 
--- 输入：玩家、唯一出生点、模板身份、模板、绝对 Scale、出生位置、最大生命、运行时父级和可选预隐藏标记。
+-- 输入：玩家、唯一出生点身份、怪兽 Home CFrame、模板、绝对 Scale、最大生命、运行时父级和可选预隐藏标记。
 -- 输出：新增后的怪兽记录或明确失败原因。
 -- 内部算法：验证一出生点一怪兽和容量，先建状态，再按要求创建可见或预隐藏模型；失败时回滚状态。
 function MonsterRosterCoordinator.CreateForSpawnPoint(
@@ -250,6 +254,7 @@ function MonsterRosterCoordinator.CreateForSpawnPoint(
 	template: Model,
 	modelScale: number,
 	spawnPoint: BasePart,
+	homeCFrame: CFrame,
 	maxHealth: number,
 	runtimeParent: Instance,
 	hideForPresentation: boolean?
@@ -265,6 +270,7 @@ function MonsterRosterCoordinator.CreateForSpawnPoint(
 		template,
 		modelScale,
 		spawnPoint,
+		homeCFrame,
 		maxHealth,
 		runtimeParent,
 		true,
@@ -280,6 +286,7 @@ function MonsterRosterCoordinator.RestoreForSpawnPoint(
 	template: Model,
 	modelScale: number,
 	spawnPoint: BasePart,
+	homeCFrame: CFrame,
 	maxHealth: number,
 	runtimeParent: Instance
 ): OperationResult
@@ -290,6 +297,7 @@ function MonsterRosterCoordinator.RestoreForSpawnPoint(
 		template,
 		modelScale,
 		spawnPoint,
+		homeCFrame,
 		maxHealth,
 		runtimeParent,
 		false,
@@ -297,7 +305,7 @@ function MonsterRosterCoordinator.RestoreForSpawnPoint(
 	)
 end
 
--- 输入：玩家、出生点、目标怪兽模板、绝对 Scale，以及可选的建造表现预隐藏标记。
+-- 输入：玩家、出生点身份、目标怪兽 Home CFrame、模板、绝对 Scale，以及可选的建造表现预隐藏标记。
 -- 输出：替换后的怪兽记录。
 -- 内部算法：只允许 IdleAtSpawn；先成功创建可见或预隐藏的新模型，再更新状态并替换运行时索引。
 function MonsterRosterCoordinator.ReplaceForSpawnPoint(
@@ -307,6 +315,7 @@ function MonsterRosterCoordinator.ReplaceForSpawnPoint(
 	template: Model,
 	modelScale: number,
 	spawnPoint: BasePart,
+	homeCFrame: CFrame,
 	maxHealth: number,
 	hideForPresentation: boolean?
 ): OperationResult
@@ -334,6 +343,9 @@ function MonsterRosterCoordinator.ReplaceForSpawnPoint(
 	if typeof(spawnPoint) ~= "Instance" or not spawnPoint:IsA("BasePart") then
 		return operation(false, "InvalidSpawnPoint", recordWithModel(player, current))
 	end
+	if typeof(homeCFrame) ~= "CFrame" then
+		return operation(false, "InvalidHomeCFrame", recordWithModel(player, current))
+	end
 	local binding = SpawnPointMonsterBinding.Get(spawnPoint)
 	if binding.SpawnPointId ~= spawnPointId or binding.MonsterKey ~= current.MonsterKey then
 		return operation(false, "SpawnPointBindingMismatch", recordWithModel(player, current))
@@ -351,7 +363,7 @@ function MonsterRosterCoordinator.ReplaceForSpawnPoint(
 		MonsterModelFactory.Replace,
 		previous,
 		template,
-		current.SpawnCFrame,
+		homeCFrame,
 		runtimeParent,
 		{
 			OwnerUserId = player.UserId,
@@ -370,7 +382,13 @@ function MonsterRosterCoordinator.ReplaceForSpawnPoint(
 	end
 
 	local updated = assert(
-		MonsterStateService.SetMonster(player, spawnPointId, newMonsterKey, maxHealth),
+		MonsterStateService.SetMonster(
+			player,
+			spawnPointId,
+			newMonsterKey,
+			homeCFrame,
+			maxHealth
+		),
 		"替换模型后怪兽状态意外丢失"
 	)
 	assert(
@@ -381,7 +399,7 @@ function MonsterRosterCoordinator.ReplaceForSpawnPoint(
 	return operation(true, nil, recordWithModel(player, updated))
 end
 
--- 输入：玩家、出生点和同一形态升级后的怪兽身份、绝对 Scale 与最大生命。
+-- 输入：玩家、出生点身份、同一形态 Home CFrame、升级后的怪兽身份、绝对 Scale 与最大生命。
 -- 输出：保留原 Model Instance、满血更新后的记录。
 -- 内部算法：验证空闲状态、出生点绑定和运行时模型，再同步更新状态、绑定和 Model 身份。
 -- 不负责：判断模板是否变化、价格、等级映射或播放表现。
@@ -391,6 +409,7 @@ function MonsterRosterCoordinator.UpgradeInPlace(
 	newMonsterKey: string,
 	modelScale: number,
 	spawnPoint: BasePart,
+	homeCFrame: CFrame,
 	maxHealth: number
 ): OperationResult
 	local current = MonsterStateService.Get(player, spawnPointId)
@@ -410,6 +429,9 @@ function MonsterRosterCoordinator.UpgradeInPlace(
 	if typeof(spawnPoint) ~= "Instance" or not spawnPoint:IsA("BasePart") then
 		return operation(false, "InvalidSpawnPoint", recordWithModel(player, current))
 	end
+	if typeof(homeCFrame) ~= "CFrame" then
+		return operation(false, "InvalidHomeCFrame", recordWithModel(player, current))
+	end
 	if not validPositiveNumber(maxHealth) then
 		return operation(false, "InvalidMaxHealth", recordWithModel(player, current))
 	end
@@ -423,7 +445,13 @@ function MonsterRosterCoordinator.UpgradeInPlace(
 	end
 
 	local updated = assert(
-		MonsterStateService.SetMonster(player, spawnPointId, newMonsterKey, maxHealth),
+		MonsterStateService.SetMonster(
+			player,
+			spawnPointId,
+			newMonsterKey,
+			homeCFrame,
+			maxHealth
+		),
 		"原地升级时怪兽状态意外丢失"
 	)
 	assert(
@@ -439,6 +467,7 @@ function MonsterRosterCoordinator.UpgradeInPlace(
 		MaxHealth = updated.MaxHealth,
 	})
 	MonsterModelFactory.ApplyScale(model, modelScale)
+	model:PivotTo(homeCFrame)
 	return operation(true, nil, recordWithModel(player, updated))
 end
 

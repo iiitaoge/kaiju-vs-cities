@@ -18,6 +18,7 @@ function MonsterBuildPresentationProtocolSpec.Run(): boolean
 		SpawnPointId = "M1-S1",
 		PresentationId = "MonsterStandard",
 		BuildSpeedMultiplier = 1,
+		TemplateId = "PetriDish-1",
 	})
 	expectValid({
 		Kind = "MonsterBuild",
@@ -33,8 +34,11 @@ function MonsterBuildPresentationProtocolSpec.Run(): boolean
 		SpawnPointId = "M1-S1",
 		PresentationId = "MonsterStandard",
 		BuildSpeedMultiplier = 2,
-		PreviousMonsterKey = "Godzilla-L005",
-		MonsterKey = "Godzilla-L006",
+		PreviousMonsterKey = "Godzilla-L015",
+		MonsterKey = "Godzilla-L016",
+		PreviousIncubatorTemplateId = "PetriDish-1",
+		IncubatorTemplateId = "PetriDish-2",
+		PreviousMonsterCFrame = CFrame.new(1, 2, 3),
 	})
 
 	for _, multiplier in { 0, -1, math.huge, 0 / 0 } do
@@ -44,6 +48,7 @@ function MonsterBuildPresentationProtocolSpec.Run(): boolean
 			SpawnPointId = "M1-S1",
 			PresentationId = "MonsterStandard",
 			BuildSpeedMultiplier = multiplier,
+			TemplateId = "PetriDish-1",
 		})
 		assert(
 			not valid and reason == "InvalidBuildSpeedMultiplier",

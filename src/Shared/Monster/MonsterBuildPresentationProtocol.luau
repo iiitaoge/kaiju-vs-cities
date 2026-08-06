@@ -18,6 +18,7 @@ export type IncubatorBuildCommand = {
 	SpawnPointId: string,
 	PresentationId: string,
 	BuildSpeedMultiplier: number,
+	TemplateId: string,
 }
 
 export type MonsterBuildCommand = {
@@ -37,6 +38,9 @@ export type MonsterUpgradeCommand = {
 	BuildSpeedMultiplier: number,
 	PreviousMonsterKey: string,
 	MonsterKey: string,
+	PreviousIncubatorTemplateId: string,
+	IncubatorTemplateId: string,
+	PreviousMonsterCFrame: CFrame,
 }
 
 export type Command = IncubatorBuildCommand | MonsterBuildCommand | MonsterUpgradeCommand
@@ -70,6 +74,9 @@ function MonsterBuildPresentationProtocol.Validate(command): (boolean, string?)
 	end
 
 	if command.Kind == "IncubatorBuild" then
+		if not ValueValidation.IsNonEmptyString(command.TemplateId) then
+			return false, "InvalidIncubatorTemplateId"
+		end
 		return true, nil
 	end
 	if command.Kind == "MonsterBuild" then
@@ -87,6 +94,18 @@ function MonsterBuildPresentationProtocol.Validate(command): (boolean, string?)
 		end
 		if command.PreviousMonsterKey == command.MonsterKey then
 			return false, "MonsterKeyUnchanged"
+		end
+		if not ValueValidation.IsNonEmptyString(command.PreviousIncubatorTemplateId) then
+			return false, "InvalidPreviousIncubatorTemplateId"
+		end
+		if not ValueValidation.IsNonEmptyString(command.IncubatorTemplateId) then
+			return false, "InvalidIncubatorTemplateId"
+		end
+		if command.PreviousIncubatorTemplateId == command.IncubatorTemplateId then
+			return false, "IncubatorTemplateIdUnchanged"
+		end
+		if typeof(command.PreviousMonsterCFrame) ~= "CFrame" then
+			return false, "InvalidPreviousMonsterCFrame"
 		end
 		return true, nil
 	end

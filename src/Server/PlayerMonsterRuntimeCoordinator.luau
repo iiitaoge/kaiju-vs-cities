@@ -1,7 +1,7 @@
 --[[
 	职责：
 	- 把玩家已建造的怪兽出生点状态恢复为服务器权威罐体和怪兽。
-	- 执行“先建造罐体再建造怪兽”和“拆除旧怪兽表现再建造新怪兽”的完整服务器链路。
+	- 执行“先建造罐体再建造怪兽”和“怪兽拆除→罐体拆除→罐体建造→怪兽建造”的完整服务器链路。
 
 	输入：
 	- Load / Unload：已经分配 Plot 的 Player。
@@ -13,9 +13,9 @@
 	- 返回 Succeeded、稳定 Reason，以及对应怪兽记录。
 
 	内部算法：
-	- 读取出生点配置、保存状态和已解锁 MonsterSpawnPoint Slot。
+	- 读取出生点配置、保存状态和已解锁 MonsterSpawnPoint Slot；Slot 只负责身份绑定，怪兽位置只取当前罐体 MonsterHomeAttachment。
 	- 先协调罐体建造/恢复，再解析 MonsterKey 模板并由怪兽名册创建或替换；
-	  首次建造等待罐体表现完成后才创建怪兽；升级只在模板变化时播放拆除加建造表现。
+	  首次建造等待罐体表现完成后才创建怪兽；换形态升级严格播放怪兽拆除、罐体拆/建、怪兽建造。
 	- Build 由名册容量规则拒绝超限；Load 恢复既有资产，不因容量后来降低而删除怪兽。
 
 	不负责：建造价格、容量升级价格、攻击 UI 或存档读写。
@@ -31,6 +31,7 @@ local MonsterBuildButtonPresentationService = require(
 	script.Parent.Button.MonsterBuildButtonPresentationService
 )
 local MonsterIncubatorBuildCoordinator = require(script.Parent.MonsterIncubatorBuildCoordinator)
+local MonsterIncubatorCoordinator = require(script.Parent.MonsterIncubatorCoordinator)
 local MonsterRosterCoordinator = require(script.Parent.MonsterRosterCoordinator)
 local MonsterSpawnPointStateService = require(script.Parent.MonsterSpawnPointStateService)
 local MonsterTemplateResolver = require(script.Parent.MonsterTemplateResolver)
@@ -81,6 +82,7 @@ type PlanItem = {
 	ModelScale: number,
 	MaxHealth: number,
 	Point: BasePart,
+	IncubatorFormIndex: number,
 }
 
 type RuntimeActionPlan = {
@@ -99,6 +101,13 @@ type RuntimeActionPlan = {
 	BuildSpeedMultiplier: number,
 	PreviousMonsterKey: string?,
 	TemplateChanged: boolean,
+	IncubatorFormIndex: number,
+	IncubatorTemplateId: string,
+	PreviousIncubatorTemplateId: string?,
+	PreviousMonsterCFrame: CFrame?,
+	PreviousTemplate: Model?,
+	PreviousModelScale: number?,
+	PreviousMaxHealth: number?,
 }
 
 type CreatedLoadItem = {
@@ -206,6 +215,32 @@ local function resolvePresentation(spawnPointId: string)
 	return config.PresentationId, presentation, nil
 end
 
+local function resolveIncubatorTemplateId(
+	spawnPointId: string,
+	formIndex: number
+): (string?, string?)
+	local config = MonsterIncubatorConfigs[spawnPointId]
+	if not config then
+		return nil, "IncubatorConfigUnavailable"
+	end
+	local templateId = config.TemplateIdsByForm[formIndex]
+	if type(templateId) ~= "string" or templateId == "" then
+		return nil, "IncubatorTemplateNotConfiguredForForm"
+	end
+	return templateId, nil
+end
+
+local function resolveMonsterHomeCFrame(
+	plot: Model,
+	spawnPointId: string
+): (CFrame?, string?)
+	local incubator, reason = WorkspaceMonsterIncubatorAccess.Resolve(plot, spawnPointId)
+	if not incubator then
+		return nil, reason or "MonsterIncubatorUnavailable"
+	end
+	return incubator.MonsterHomeAttachment.WorldCFrame, nil
+end
+
 local function createLoadPlan(player: Player, plot: Model): ({ PlanItem }?, string?)
 	local points, pointsReason = getUnlockedPoints(player)
 	if not points then
@@ -243,7 +278,8 @@ local function createLoadPlan(player: Player, plot: Model): ({ PlanItem }?, stri
 		end
 		local incubatorCheck = MonsterIncubatorBuildCoordinator.Validate(
 			plot,
-			state.SpawnPointId
+			state.SpawnPointId,
+			monsterDefinition.FormIndex
 		)
 		if not incubatorCheck.Succeeded then
 			return nil, (incubatorCheck.Reason or "MonsterIncubatorUnavailable")
@@ -258,6 +294,7 @@ local function createLoadPlan(player: Player, plot: Model): ({ PlanItem }?, stri
 			ModelScale = modelScale,
 			MaxHealth = monsterDefinition.MaxHealth * healthMultiplier,
 			Point = point,
+			IncubatorFormIndex = monsterDefinition.FormIndex,
 		})
 	end
 	return plan, nil
@@ -303,7 +340,11 @@ local function prepareBuild(player: Player, spawnPointId: string): (RuntimeActio
 	if not monsterKey or not template or not monsterDefinition or not modelScale then
 		return nil, resolveReason or "MonsterResolveFailed"
 	end
-	local incubatorCheck = MonsterIncubatorBuildCoordinator.Validate(plot, spawnPointId)
+	local incubatorCheck = MonsterIncubatorBuildCoordinator.Validate(
+		plot,
+		spawnPointId,
+		monsterDefinition.FormIndex
+	)
 	if not incubatorCheck.Succeeded then
 		return nil, incubatorCheck.Reason or "MonsterIncubatorUnavailable"
 	end
@@ -316,6 +357,13 @@ local function prepareBuild(player: Player, spawnPointId: string): (RuntimeActio
 		return nil, presentationReason or "MonsterBuildPresentationUnavailable"
 	end
 	local bonuses = PlayerRebirthBonusQuery.Get(player)
+	local incubatorTemplateId, incubatorTemplateReason = resolveIncubatorTemplateId(
+		spawnPointId,
+		monsterDefinition.FormIndex
+	)
+	if not incubatorTemplateId then
+		return nil, incubatorTemplateReason or "MonsterIncubatorUnavailable"
+	end
 	return {
 		Plot = plot,
 		SpawnPointId = spawnPointId,
@@ -332,6 +380,13 @@ local function prepareBuild(player: Player, spawnPointId: string): (RuntimeActio
 		BuildSpeedMultiplier = bonuses.BuildSpeedMultiplier,
 		PreviousMonsterKey = nil,
 		TemplateChanged = true,
+		IncubatorFormIndex = monsterDefinition.FormIndex,
+		IncubatorTemplateId = incubatorTemplateId,
+		PreviousIncubatorTemplateId = nil,
+		PreviousMonsterCFrame = nil,
+		PreviousTemplate = nil,
+		PreviousModelScale = nil,
+		PreviousMaxHealth = nil,
 	}, nil
 end
 
@@ -362,12 +417,19 @@ local function prepareUpgrade(
 	if not record then
 		return nil, "UnknownSpawnPoint"
 	end
+	if not record.Model or not record.Model.Parent then
+		return nil, "RuntimeModelUnavailable"
+	end
 	local incubator, incubatorReason = WorkspaceMonsterIncubatorAccess.Resolve(
 		plot,
 		spawnPointId
 	)
 	if not incubator then
 		return nil, incubatorReason or "MonsterIncubatorUnavailable"
+	end
+	local incubatorCheck = MonsterIncubatorCoordinator.Validate(plot, spawnPointId)
+	if not incubatorCheck.Succeeded then
+		return nil, incubatorCheck.Reason or "MonsterIncubatorUnavailable"
 	end
 	local permission = MonsterStateRules.CheckUpgrade(record.State)
 	if not permission.Allowed then
@@ -384,6 +446,15 @@ local function prepareUpgrade(
 	if not monsterKey or not template or not monsterDefinition or not modelScale then
 		return nil, resolveReason or "MonsterResolveFailed"
 	end
+	local previousMonsterDefinition = MonsterCatalog.Get(record.MonsterKey)
+	if not previousMonsterDefinition then
+		return nil, "PreviousMonsterDefinitionUnavailable"
+	end
+	local previousTemplate, _, previousModelScale, previousResolveReason =
+		MonsterTemplateResolver.Resolve(record.MonsterKey)
+	if not previousTemplate or not previousModelScale then
+		return nil, previousResolveReason or "PreviousMonsterResolveFailed"
+	end
 	local templateChanged = MonsterCatalog.HasTemplateChanged(record.MonsterKey, monsterKey)
 	if templateChanged == nil then
 		return nil, "MonsterTemplateComparisonUnavailable"
@@ -395,6 +466,26 @@ local function prepareUpgrade(
 	local presentationId, presentation, presentationReason = resolvePresentation(spawnPointId)
 	if not presentationId or not presentation then
 		return nil, presentationReason or "MonsterBuildPresentationUnavailable"
+	end
+	local previousIncubatorTemplateId, previousIncubatorReason = resolveIncubatorTemplateId(
+		spawnPointId,
+		previousMonsterDefinition.FormIndex
+	)
+	if not previousIncubatorTemplateId then
+		return nil, previousIncubatorReason or "PreviousMonsterIncubatorUnavailable"
+	end
+	local incubatorTemplateId, incubatorTemplateReason = resolveIncubatorTemplateId(
+		spawnPointId,
+		monsterDefinition.FormIndex
+	)
+	if not incubatorTemplateId then
+		return nil, incubatorTemplateReason or "MonsterIncubatorUnavailable"
+	end
+	if incubator.Model:GetAttribute("IncubatorTemplateId") ~= previousIncubatorTemplateId then
+		return nil, "MonsterIncubatorFormMismatch"
+	end
+	if templateChanged ~= (previousIncubatorTemplateId ~= incubatorTemplateId) then
+		return nil, "MonsterIncubatorTemplateChangeMismatch"
 	end
 	local bonuses = PlayerRebirthBonusQuery.Get(player)
 	return {
@@ -413,6 +504,13 @@ local function prepareUpgrade(
 		BuildSpeedMultiplier = bonuses.BuildSpeedMultiplier,
 		PreviousMonsterKey = record.MonsterKey,
 		TemplateChanged = templateChanged,
+		IncubatorFormIndex = monsterDefinition.FormIndex,
+		IncubatorTemplateId = incubatorTemplateId,
+		PreviousIncubatorTemplateId = previousIncubatorTemplateId,
+		PreviousMonsterCFrame = assert(record.Model):GetPivot(),
+		PreviousTemplate = previousTemplate,
+		PreviousModelScale = previousModelScale,
+		PreviousMaxHealth = record.MaxHealth,
 	}, nil
 end
 
@@ -466,7 +564,8 @@ function PlayerMonsterRuntimeCoordinator.Load(player: Player): Result
 		local restoredIncubator = MonsterIncubatorBuildCoordinator.Restore(
 			player,
 			plot,
-			item.SpawnPointId
+			item.SpawnPointId,
+			item.IncubatorFormIndex
 		)
 		if not restoredIncubator.Succeeded or not restoredIncubator.Incubator then
 			rollbackCreatedItems()
@@ -479,6 +578,27 @@ function PlayerMonsterRuntimeCoordinator.Load(player: Player): Result
 				0
 			)
 		end
+		local homeCFrame, homeReason = resolveMonsterHomeCFrame(
+			plot,
+			item.SpawnPointId
+		)
+		if not homeCFrame then
+			local removed = MonsterIncubatorBuildCoordinator.Remove(
+				plot,
+				item.SpawnPointId,
+				restoredIncubator.Incubator
+			)
+			if not removed.Succeeded then
+				warn("怪兽读档定位失败后删除当前罐体失败：", removed.Reason)
+			end
+			rollbackCreatedItems()
+			return result(
+				false,
+				(homeReason or "MonsterHomeUnavailable") .. ":" .. item.SpawnPointId,
+				nil,
+				0
+			)
+		end
 		local created = MonsterRosterCoordinator.RestoreForSpawnPoint(
 			player,
 			item.SpawnPointId,
@@ -486,6 +606,7 @@ function PlayerMonsterRuntimeCoordinator.Load(player: Player): Result
 			item.Template,
 			item.ModelScale,
 			item.Point,
+			homeCFrame,
 			item.MaxHealth,
 			runtimeRoot
 		)
@@ -524,10 +645,23 @@ function PlayerMonsterRuntimeCoordinator.Build(player: Player, spawnPointId: str
 	local builtIncubator = MonsterIncubatorBuildCoordinator.Build(
 		player,
 		plan.Plot,
-		spawnPointId
+		spawnPointId,
+		plan.IncubatorFormIndex
 	)
 	if not builtIncubator.Succeeded or not builtIncubator.Incubator then
 		return result(false, builtIncubator.Reason or "MonsterIncubatorBuildFailed", nil, nil)
+	end
+	local homeCFrame, homeReason = resolveMonsterHomeCFrame(plan.Plot, spawnPointId)
+	if not homeCFrame then
+		local removed = MonsterIncubatorBuildCoordinator.Remove(
+			plan.Plot,
+			spawnPointId,
+			builtIncubator.Incubator
+		)
+		if not removed.Succeeded then
+			warn("怪兽建造定位失败后删除罐体失败：", removed.Reason)
+		end
+		return result(false, homeReason or "MonsterHomeUnavailable", nil, nil)
 	end
 
 	local created = MonsterRosterCoordinator.CreateForSpawnPoint(
@@ -537,6 +671,7 @@ function PlayerMonsterRuntimeCoordinator.Build(player: Player, spawnPointId: str
 		plan.Template,
 		plan.ModelScale,
 		plan.Point,
+		homeCFrame,
 		plan.MaxHealth,
 		plan.RuntimeRoot,
 		true
@@ -625,6 +760,25 @@ function PlayerMonsterRuntimeCoordinator.Upgrade(
 	if not plan then
 		return result(false, planReason or "MonsterUpgradeUnavailable", MonsterRosterCoordinator.Get(player, spawnPointId), nil)
 	end
+	local homeCFrame = nil
+	local homeReason = nil
+	if plan.TemplateChanged then
+		homeCFrame, homeReason = MonsterIncubatorBuildCoordinator.ResolveHomeCFrame(
+			plan.Plot,
+			spawnPointId,
+			plan.IncubatorFormIndex
+		)
+	else
+		homeCFrame, homeReason = resolveMonsterHomeCFrame(plan.Plot, spawnPointId)
+	end
+	if not homeCFrame then
+		return result(
+			false,
+			homeReason or "MonsterHomeUnavailable",
+			MonsterRosterCoordinator.Get(player, spawnPointId),
+			nil
+		)
+	end
 
 	local upgraded = MonsterUpgradeCoordinator.Execute(
 		player,
@@ -633,36 +787,105 @@ function PlayerMonsterRuntimeCoordinator.Upgrade(
 		plan.Template,
 		plan.ModelScale,
 		plan.Point,
+		homeCFrame,
 		plan.MaxHealth,
 		plan.TemplateChanged
 	)
 	if not upgraded.Succeeded then
 		return result(false, upgraded.Reason, upgraded.Record, nil)
 	end
-	MonsterSpawnPointStateService.MarkBuilt(player, spawnPointId, targetLevel, plan.MonsterKey)
-	if plan.TemplateChanged then
-		local presented = MonsterBuildPresentationPublisher.PublishAndWait({
-			Kind = "MonsterUpgrade",
-			OwnerUserId = player.UserId,
-			SpawnPointId = spawnPointId,
-			PresentationId = plan.PresentationId,
-			BuildSpeedMultiplier = plan.BuildSpeedMultiplier,
-			PreviousMonsterKey = assert(plan.PreviousMonsterKey),
-			MonsterKey = plan.MonsterKey,
-		}, BuildPresentationTiming.ScaleDuration(
-			plan.DemolishDuration + plan.RiseDuration,
-			plan.BuildSpeedMultiplier
-		), nil)
-		BuildPresentationVisibility.Restore(assert(upgraded.Record and upgraded.Record.Model))
-		if not presented.Succeeded then
-			-- 模型替换和保存身份已经提交；表现失败不能把成功升级误报为购买失败并退款。
-			warn(string.format(
-				"怪兽升级已提交，但拆除/建造表现失败：%s/%s (%s)",
-				player.Name,
-				spawnPointId,
-				presented.Reason or "Unknown"
-			))
+	if not plan.TemplateChanged then
+		MonsterSpawnPointStateService.MarkBuilt(
+			player,
+			spawnPointId,
+			targetLevel,
+			plan.MonsterKey
+		)
+		return result(true, nil, upgraded.Record, nil)
+	end
+
+	local presented = MonsterBuildPresentationPublisher.Publish({
+		Kind = "MonsterUpgrade",
+		OwnerUserId = player.UserId,
+		SpawnPointId = spawnPointId,
+		PresentationId = plan.PresentationId,
+		BuildSpeedMultiplier = plan.BuildSpeedMultiplier,
+		PreviousMonsterKey = assert(plan.PreviousMonsterKey),
+		MonsterKey = plan.MonsterKey,
+		PreviousIncubatorTemplateId = assert(plan.PreviousIncubatorTemplateId),
+		IncubatorTemplateId = plan.IncubatorTemplateId,
+		PreviousMonsterCFrame = assert(plan.PreviousMonsterCFrame),
+	})
+	local presentationStarted = presented.Succeeded
+	if presentationStarted then
+		presented = MonsterBuildPresentationPublisher.Wait(
+			BuildPresentationTiming.ScaleDuration(
+				2 * plan.DemolishDuration,
+				plan.BuildSpeedMultiplier
+			),
+			nil
+		)
+	end
+
+	local replacedIncubator = MonsterIncubatorBuildCoordinator.Replace(
+		player,
+		plan.Plot,
+		spawnPointId,
+		plan.IncubatorFormIndex,
+		presentationStarted
+	)
+	if not replacedIncubator.Succeeded or not replacedIncubator.Incubator then
+		local rolledBackMonster = MonsterRosterCoordinator.ReplaceForSpawnPoint(
+			player,
+			spawnPointId,
+			assert(plan.PreviousMonsterKey),
+			assert(plan.PreviousTemplate),
+			assert(plan.PreviousModelScale),
+			plan.Point,
+			assert(plan.PreviousMonsterCFrame),
+			assert(plan.PreviousMaxHealth),
+			false
+		)
+		if not rolledBackMonster.Succeeded then
+			warn("罐体升级失败后恢复旧怪兽失败：", rolledBackMonster.Reason)
 		end
+		return result(
+			false,
+			replacedIncubator.Reason or "MonsterIncubatorReplaceFailed",
+			rolledBackMonster.Record,
+			nil
+		)
+	end
+	MonsterSpawnPointStateService.MarkBuilt(player, spawnPointId, targetLevel, plan.MonsterKey)
+
+	if presented.Succeeded then
+		presented = MonsterBuildPresentationPublisher.Wait(
+			BuildPresentationTiming.ScaleDuration(
+				plan.RiseDuration,
+				plan.BuildSpeedMultiplier
+			),
+			nil
+		)
+	end
+	BuildPresentationVisibility.Restore(replacedIncubator.Incubator)
+	if presented.Succeeded then
+		presented = MonsterBuildPresentationPublisher.Wait(
+			BuildPresentationTiming.ScaleDuration(
+				plan.RiseDuration,
+				plan.BuildSpeedMultiplier
+			),
+			nil
+		)
+	end
+	BuildPresentationVisibility.Restore(assert(upgraded.Record and upgraded.Record.Model))
+	if not presented.Succeeded then
+		-- 模型替换和保存身份已经提交；表现失败不能把成功升级误报为购买失败并退款。
+		warn(string.format(
+			"怪兽升级已提交，但拆除/建造表现失败：%s/%s (%s)",
+			player.Name,
+			spawnPointId,
+			presented.Reason or "Unknown"
+		))
 	end
 	return result(true, nil, upgraded.Record, nil)
 end

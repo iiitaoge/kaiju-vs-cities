@@ -149,6 +149,7 @@ local function createRuntime(
 		template,
 		modelScale,
 		point,
+		point.CFrame,
 		maxHealth,
 		runtimeRoot
 	)
@@ -357,6 +358,7 @@ function PlayerDefenseMonsterRuntimeCoordinator.Upgrade(
 		plan.Template,
 		plan.ModelScale,
 		plan.Point,
+		plan.Point.CFrame,
 		plan.MaxHealth,
 		plan.TemplateChanged
 	)

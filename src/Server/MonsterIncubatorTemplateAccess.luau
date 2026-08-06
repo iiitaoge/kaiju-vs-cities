@@ -1,7 +1,7 @@
 --[[
 	职责：从显式模板目录解析并验证一个罐体模板。
 	输入：模板根 Folder、TemplateId。
-	输出：包含 Base/Liquid/Glass/Target 的唯一 Model，或稳定失败原因。
+	输出：包含 Base/MonsterHomeAttachment、Liquid(Model/BasePart)、Glass、Target 的唯一 Model，或稳定失败原因。
 	内部算法：只检查直接子级、类型、可克隆性和全部零件锚定状态。
 	不负责：读取配置、查找 Plot、Clone、定位、动画或怪兽生成。
 ]]
@@ -55,7 +55,17 @@ function MonsterIncubatorTemplateAccess.Resolve(
 	if not base or not base:IsA("Model") then
 		return nil, "InvalidIncubatorTemplateBase"
 	end
-	if not liquid or not liquid:IsA("BasePart") then
+	local monsterHome, monsterHomeDuplicated = UniqueNamedChildAccess.Find(
+		base,
+		"MonsterHomeAttachment"
+	)
+	if monsterHomeDuplicated then
+		return nil, "DuplicateMonsterHomeAttachment"
+	end
+	if not monsterHome or not monsterHome:IsA("Attachment") then
+		return nil, "InvalidMonsterHomeAttachment"
+	end
+	if not liquid or (not liquid:IsA("BasePart") and not liquid:IsA("Model")) then
 		return nil, "InvalidIncubatorTemplateLiquid"
 	end
 	if not glass or not glass:IsA("BasePart") then

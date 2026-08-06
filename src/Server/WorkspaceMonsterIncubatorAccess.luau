@@ -1,7 +1,7 @@
 --[[
 	职责：管理并验证 Plot/Runtime/MonsterIncubators 中的服务器权威罐体。
 	输入：Plot、SpawnPointId；创建目录或删除时接收明确操作参数。
-	输出：Runtime Folder、罐体合同或稳定失败原因。
+	输出：Runtime Folder、含 MonsterHomeAttachment 的罐体合同或稳定失败原因。
 	内部算法：固定 Runtime 路径、唯一名称、身份、直接子级和锚定状态验证。
 	不负责：模板、世界定位、Clone、动画、怪兽状态或购买事务。
 ]]
@@ -14,7 +14,8 @@ local WorkspaceMonsterIncubatorAccess = {}
 export type Incubator = {
 	Model: Model,
 	Base: Model,
-	Liquid: BasePart,
+	MonsterHomeAttachment: Attachment,
+	Liquid: BasePart | Model,
 	Glass: BasePart,
 	Target: BasePart,
 }
@@ -108,7 +109,17 @@ function WorkspaceMonsterIncubatorAccess.Resolve(
 	if not base or not base:IsA("Model") then
 		return nil, "InvalidIncubatorBase"
 	end
-	if not liquid or not liquid:IsA("BasePart") then
+	local monsterHome, monsterHomeDuplicated = UniqueNamedChildAccess.Find(
+		base,
+		"MonsterHomeAttachment"
+	)
+	if monsterHomeDuplicated then
+		return nil, "DuplicateMonsterHomeAttachment"
+	end
+	if not monsterHome or not monsterHome:IsA("Attachment") then
+		return nil, "InvalidMonsterHomeAttachment"
+	end
+	if not liquid or (not liquid:IsA("BasePart") and not liquid:IsA("Model")) then
 		return nil, "InvalidIncubatorLiquid"
 	end
 	if not glass or not glass:IsA("BasePart") then
@@ -124,6 +135,7 @@ function WorkspaceMonsterIncubatorAccess.Resolve(
 	return {
 		Model = model,
 		Base = base,
+		MonsterHomeAttachment = monsterHome,
 		Liquid = liquid,
 		Glass = glass,
 		Target = target,
