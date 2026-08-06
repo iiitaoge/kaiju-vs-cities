@@ -2,7 +2,7 @@
 	职责：接受并跟踪一只怪兽的服务器权威单人空地出征命令。
 	输入：在线玩家、自己的 SpawnPointId、落点，以及范围访问和执行回调。
 	输出：立即返回命令是否接受、CommandId 和怪兽 Model。
-	内部算法：提交瞬间确认没有其他玩家，校验权威 Bounds、怪兽空闲状态，
+	内部算法：提交瞬间确认没有其他玩家，校验展示空 Plot 的权威 Bounds 和怪兽空闲状态，
 		切换 Releasing 后异步执行；命令接受后新玩家加入不会取消当前出征。
 	不负责：罐体动画、怪兽移动、攻击动画、奖励或客户端 UI。
 ]]
@@ -146,7 +146,7 @@ function SoloMonsterAttackCommandCoordinator.Execute(
 		"mode=Solo",
 		string.format("player=%s:%d", player.Name, player.UserId),
 		"allowed=true",
-		"bounds=SoloAttackBounds"
+		"bounds=DisplayedAvailablePlot"
 	)
 
 	local transition = MonsterRosterCoordinator.Transition(player, spawnPointId, "Releasing")

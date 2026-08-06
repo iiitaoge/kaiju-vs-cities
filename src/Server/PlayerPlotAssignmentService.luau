@@ -2,7 +2,8 @@
 	职责：
 	- 把在线玩家分配到 Workspace/PlayerPlots 下预先放置的固定 Plot。
 	- 以 Plot 的 OwnerUserId Attribute 保存服务器权威占用关系。
-	- 空 Plot 停放到 ServerStorage；占用时移回 Workspace，使客户端只收到在线玩家的 Plot。
+	- 始终把一块未占用 Plot 留在 Workspace 展示，其余空 Plot 停放到 ServerStorage。
+	- 分配时优先使用 ServerStorage 中的空 Plot，容量将满时才分配展示 Plot。
 
 	场景合同：
 	- PlayerPlots (Folder)
@@ -18,11 +19,12 @@
 	输出：
 	- Assign/GetPlot：Plot Model，失败时附原因。
 	- Release：是否释放成功。
+	- GetDisplayedAvailablePlot：当前留在 Workspace 的唯一空 Plot。
 
 	内部算法：
 	- 合并 Workspace 活跃 Plot 与 ServerStorage 空闲池，按 PlotId 稳定排序。
-	- 选择第一个 OwnerUserId 为 0 的合法 Plot，先写占用再移入 Workspace。
-	- 释放时先清空 Runtime，再清除占用并移回 ServerStorage。
+	- 选择空 Plot 时先取空闲池，池耗尽后才取 Workspace 展示 Plot。
+	- 分配或释放后重新维持“有剩余容量时恰好展示一块空 Plot”的不变量。
 	- 分配和释放时清空 Runtime，永远不修改 Zones 等静态场景。
 ]]
 
@@ -141,6 +143,43 @@ local function clearRuntime(plot: Model)
 	end
 end
 
+-- 输入：当前全部合法 Plot。
+-- 输出：有剩余容量时，Workspace 中按名称最小的唯一空 Plot；满员时返回 nil。
+-- 内部算法：优先保留已经展示的空 Plot，停放多余展示 Plot；若没有则激活第一个空 Plot。
+local function ensureSingleDisplayedAvailablePlot(): Model?
+	local root = getRoot()
+	if not root then
+		return nil
+	end
+
+	local availablePlots = {}
+	local displayedPlots = {}
+	for _, plot in listPlots() do
+		if getOwnerUserId(plot) == 0 then
+			table.insert(availablePlots, plot)
+			if plot.Parent == root then
+				table.insert(displayedPlots, plot)
+			end
+		end
+	end
+	if #availablePlots == 0 then
+		return nil
+	end
+
+	local displayed = displayedPlots[1]
+	if not displayed then
+		displayed = availablePlots[1]
+		local activated, reason = activate(displayed)
+		assert(activated, reason)
+	end
+	for _, plot in displayedPlots do
+		if plot ~= displayed then
+			park(plot)
+		end
+	end
+	return displayed
+end
+
 local function findOwnedPlot(player: Player): Model?
 	local indexed = assignments[player]
 	if indexed and indexed.Parent and getOwnerUserId(indexed) == player.UserId then
@@ -175,18 +214,33 @@ function PlayerPlotAssignmentService.Assign(player: Player): (Model?, string?)
 	if #plots == 0 then
 		return nil, "NoValidPlot"
 	end
+	local availablePool = getAvailablePool()
+	local selected = nil
 	for _, plot in plots do
-		if getOwnerUserId(plot) == 0 then
-			clearRuntime(plot)
-			plot:SetAttribute(OWNER_ATTRIBUTE, player.UserId)
-			local activated, activateReason = activate(plot)
-			if not activated then
-				plot:SetAttribute(OWNER_ATTRIBUTE, 0)
-				return nil, activateReason
-			end
-			assignments[player] = plot
-			return plot, nil
+		if getOwnerUserId(plot) == 0 and plot.Parent == availablePool then
+			selected = plot
+			break
 		end
+	end
+	if not selected then
+		for _, plot in plots do
+			if getOwnerUserId(plot) == 0 then
+				selected = plot
+				break
+			end
+		end
+	end
+	if selected then
+		clearRuntime(selected)
+		selected:SetAttribute(OWNER_ATTRIBUTE, player.UserId)
+		local activated, activateReason = activate(selected)
+		if not activated then
+			selected:SetAttribute(OWNER_ATTRIBUTE, 0)
+			return nil, activateReason
+		end
+		assignments[player] = selected
+		ensureSingleDisplayedAvailablePlot()
+		return selected, nil
 	end
 
 	return nil, "NoAvailablePlot"
@@ -201,6 +255,19 @@ function PlayerPlotAssignmentService.GetPlot(player: Player): (Model?, string?)
 	return nil, "PlayerHasNoPlot"
 end
 
+function PlayerPlotAssignmentService.GetDisplayedAvailablePlot(): (Model?, string?)
+	local root = getRoot()
+	if not root then
+		return nil, "PlotRootUnavailable"
+	end
+	for _, plot in listPlots() do
+		if plot.Parent == root and getOwnerUserId(plot) == 0 then
+			return plot, nil
+		end
+	end
+	return nil, "NoDisplayedAvailablePlot"
+end
+
 function PlayerPlotAssignmentService.Release(player: Player): boolean
 	assertPlayer(player)
 	local plot = findOwnedPlot(player)
@@ -212,6 +279,7 @@ function PlayerPlotAssignmentService.Release(player: Player): boolean
 	clearRuntime(plot)
 	plot:SetAttribute(OWNER_ATTRIBUTE, 0)
 	park(plot)
+	ensureSingleDisplayedAvailablePlot()
 	return true
 end
 
@@ -236,6 +304,7 @@ function PlayerPlotAssignmentService.Start()
 			assignments[player] = plot
 		end
 	end
+	ensureSingleDisplayedAvailablePlot()
 
 	Players.PlayerAdded:Connect(function(player)
 		local plot, reason = PlayerPlotAssignmentService.Assign(player)

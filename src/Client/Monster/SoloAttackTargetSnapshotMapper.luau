@@ -1,5 +1,5 @@
 --[[
-	职责：把服务端单人攻击区域快照转换为客户端选点目标。
+	职责：把服务端展示空 Plot 快照转换为客户端选点目标。
 	输入：未知 SoloTarget 快照；输出：字段完整的 Solo Target 或 nil。
 	内部算法：验证 AttackView 与 Bounds 的 CFrame/正尺寸并复制字段。
 	不负责：读取 Workspace、玩家查询、相机、落点校验或网络。

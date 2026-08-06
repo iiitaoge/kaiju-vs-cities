@@ -1,6 +1,6 @@
 --[[
 	职责：组装服务器权威的单人空地出征链路。
-	输入：在线玩家、自己的 SpawnPointId、SoloAttackBounds 内落点。
+	输入：在线玩家、自己的 SpawnPointId、展示空 Plot 的 AttackViewBounds 内落点。
 	输出：命令是否接受、Reason、CommandId 和供客户端跟随的怪兽 Model。
 	内部算法：调用单人命令协调器；接受后开罐、最多三秒移动到点击点，
 		连续播放三秒攻击动画且不造成伤害/奖励，最后复用回城与罐体恢复模块。
