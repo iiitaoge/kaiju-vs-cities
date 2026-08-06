@@ -11,7 +11,13 @@ local AttackSelectionHUDController = require(
 local CityBuildingPresentationController = require(
 	script.Parent.Building.CityBuildingPresentationController
 )
+local CombatHealthBarController = require(
+	script.Parent.UI.CombatHealthBarController
+)
 local EconomyHUDController = require(script.Parent.UI.EconomyHUDController)
+local IncomeGainPresentationController = require(
+	script.Parent.UI.IncomeGainPresentationController
+)
 local DefenseMonsterUIController = require(
 	script.Parent.Monster.DefenseMonsterUIController
 )
@@ -46,11 +52,15 @@ StudioSaveResetController.Start()
 TutorialController.Start()
 AttackSelectionHUDController.Start()
 EconomyHUDController.Start()
+IncomeGainPresentationController.Start()
+CombatHealthBarController.Start()
 CityBuildingPresentationController.Start()
 MonsterBuildPresentationController.Start()
 MonsterIncubatorUIController.Start()
 DefenseMonsterUIController.Start()
 task.spawn(RebirthButtonController.Start)
-LocalPlayerBuildingInteractionCoordinator.Start()
+LocalPlayerBuildingInteractionCoordinator.Start(
+	IncomeGainPresentationController.PlayTouchContact
+)
 IncomeHouseWorldUIController.Start()
 ButtonController.Start(rejectLegacyClientAction)

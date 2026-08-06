@@ -9,6 +9,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local HouseHealthStateService = require(script.Parent.HouseHealthStateService)
+local HouseAttackActivityService = require(script.Parent.HouseAttackActivityService)
 local HouseIncomeService = require(script.Parent.HouseIncomeService)
 local HouseStateService = require(script.Parent.HouseStateService)
 local PlayerStructureDurabilityResolver = require(
@@ -18,6 +19,9 @@ local RegionStateService = require(script.Parent.RegionStateService)
 local HouseCatalog = require(ReplicatedStorage.Shared.Building.HouseCatalog)
 local IncomeHouseWorldUIProtocol = require(
 	ReplicatedStorage.Shared.Building.IncomeHouseWorldUIProtocol
+)
+local CombatHealthBarProtocol = require(
+	ReplicatedStorage.Shared.UI.CombatHealthBarProtocol
 )
 local RuntimeBuildingIdentity = require(
 	ReplicatedStorage.Shared.Building.RuntimeBuildingIdentity
@@ -75,6 +79,10 @@ function HouseWorldUIPresentationService.Refresh(
 		health.MaxHealth
 	)
 	model:SetAttribute("BuildingHealthGeneration", health.Generation)
+	model:SetAttribute(
+		CombatHealthBarProtocol.HouseActiveAttackCountAttributeName,
+		HouseAttackActivityService.GetActiveCount(player, houseId)
+	)
 	model:SetAttribute(
 		IncomeHouseWorldUIProtocol.LifeStateAttributeName,
 		state.LifeState

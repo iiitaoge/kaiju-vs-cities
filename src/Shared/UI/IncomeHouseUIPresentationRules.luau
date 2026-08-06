@@ -1,9 +1,9 @@
 --[[
-	职责：把单栋产钱房屋的只读状态映射为 WorldObjectUI 显示快照。
-	输入：LifeState、自动收入、产速、累计基数、结算时间、当前时间和 HP。
+	职责：把单栋产钱房屋的只读收入状态映射为 WorldObjectUI 显示快照。
+	输入：LifeState、自动收入、产速、累计基数、结算时间和当前时间。
 	输出：Billboard 是否启用、Text1～Text5 与 Money.Val 的可见性和文本。
 	内部算法：Alive 才显示；非自动按时间推算待领取，自动显示每秒产量。
-	不负责：读取 Instance、结算收入、修改生命或定位 UI。
+	不负责：读取 Instance、结算收入、战斗血条或定位 UI。
 ]]
 
 local CompactNumberFormatter = require(script.Parent.CompactNumberFormatter)
@@ -41,9 +41,6 @@ function IncomeHouseUIPresentationRules.Resolve(input)
 		or type(input.AutoIncome) ~= "boolean"
 		or not finiteNonNegative(input.IncomePerSecond)
 		or not finiteNonNegative(input.StoredMoney)
-		or not finiteNonNegative(input.CurrentHealth)
-		or not finiteNonNegative(input.MaxHealth)
-		or input.MaxHealth <= 0
 		or not finiteNonNegative(input.Now)
 		or (input.LastIncomeAt ~= nil and not finiteNonNegative(input.LastIncomeAt))
 	then
@@ -64,14 +61,7 @@ function IncomeHouseUIPresentationRules.Resolve(input)
 	return {
 		Enabled = true,
 		Texts = {
-			Text1 = {
-				Visible = true,
-				Text = string.format(
-					"HP %s/%s",
-					CompactNumberFormatter.Format(math.max(0, input.CurrentHealth)),
-					CompactNumberFormatter.Format(input.MaxHealth)
-				),
-			},
+			Text1 = hiddenText(),
 			Text2 = hiddenText(),
 			Text3 = hiddenText(),
 			Text4 = hiddenText(),

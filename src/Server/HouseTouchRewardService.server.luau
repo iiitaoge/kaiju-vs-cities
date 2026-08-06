@@ -4,6 +4,9 @@ local SecurityAnalyticsAggregator = require(
 	script.Parent.Analytics.SecurityAnalyticsAggregator
 )
 local HouseInteractionService = require(script.Parent.HouseInteractionService)
+local IncomeGainPresentationPublisher = require(
+	script.Parent.IncomeGainPresentationPublisher
+)
 local PlayerDataReadyService = require(script.Parent.PlayerDataReadyService)
 local DebugLog = require(ReplicatedStorage.Shared.DebugLog)
 local InstancePath = require(ReplicatedStorage.Shared.InstancePath)
@@ -24,6 +27,14 @@ houseEntered.OnServerEvent:Connect(function(player, action, houseId)
 		SecurityAnalyticsAggregator.Record(player, "HouseEntered", "InvalidHouseId")
 	end
 	local result = HouseInteractionService.Handle(player, action, houseId)
+	if result.Action == "Enter" and result.Accepted and result.Reward > 0 then
+		IncomeGainPresentationPublisher.Publish(player, {
+			Kind = "Touch",
+			Entries = {
+				{ HouseId = result.HouseId, Amount = result.Reward },
+			},
+		})
+	end
 	log(
 		player.Name,
 		result.Action,

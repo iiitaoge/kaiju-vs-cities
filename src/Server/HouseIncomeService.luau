@@ -11,7 +11,7 @@
 	- SettleHouse：本次新增收入、结算后的 StoredMoney。
 	- SettleRegionHouses：逐栋结算的数量和新增收入总和。
 	- CollectHouse：目标房屋领取金额和玩家新余额。
-	- CollectRegion：目标区域结算、领取总额和玩家新余额。
+	- CollectRegion：目标区域结算、逐栋领取明细、领取总额和玩家新余额。
 
 	读取：
 	- RegionEconomyConfigs
@@ -70,6 +70,11 @@ export type CollectionResult = {
 	Balance: number,
 }
 
+export type CollectionEntry = {
+	HouseId: string,
+	Amount: number,
+}
+
 export type RegionCollectionResult = {
 	Accepted: boolean,
 	Reason: string?,
@@ -77,6 +82,7 @@ export type RegionCollectionResult = {
 	Collected: number,
 	Balance: number,
 	SettledHouseCount: number,
+	Entries: { CollectionEntry },
 }
 
 local function getBuiltHouseCount(player: Player, regionId: string): number
@@ -308,16 +314,24 @@ function HouseIncomeService.CollectRegion(
 			Collected = 0,
 			Balance = MoneyService.Get(player),
 			SettledHouseCount = settlement.SettledCount,
+			Entries = {},
 		}
 	end
 
 	local collected = 0
+	local entries = {}
 	for _, definition in HouseCatalog.GetAll() do
 		if definition.RegionId == regionId
 			and HouseStateService.Get(player, definition.HouseId).LifeState ~= "Unbuilt"
 		then
 			local amount = HouseStateService.TakeStoredMoney(player, definition.HouseId)
 			collected += amount
+			if amount > 0 then
+				table.insert(entries, {
+					HouseId = definition.HouseId,
+					Amount = amount,
+				})
+			end
 		end
 	end
 	local balance = if collected > 0
@@ -330,6 +344,7 @@ function HouseIncomeService.CollectRegion(
 		Collected = collected,
 		Balance = balance,
 		SettledHouseCount = settlement.SettledCount,
+		Entries = entries,
 	}
 end
 

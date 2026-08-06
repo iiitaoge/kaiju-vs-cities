@@ -1,7 +1,7 @@
 --[[
 	职责：为已开启 AutoIncome 的在线玩家周期领取区域收入。
 	输入：Start 无参数。
-	输出：无；收入通过 HouseIncomeService 进入 MoneyService。
+	输出：收入通过 HouseIncomeService 进入 MoneyService；成功后发布逐栋客户端表现。
 	内部算法：等待数据 Ready → 固定周期遍历产钱区域 → 领取已建造且启用自动收入的区域。
 	不负责：收入公式、按钮、Boost 购买、建筑或存档。
 ]]
@@ -12,6 +12,9 @@ local GameAnalyticsEconomyAggregator = require(
 	script.Parent.Analytics.GameAnalyticsEconomyAggregator
 )
 local HouseIncomeService = require(script.Parent.HouseIncomeService)
+local IncomeGainPresentationPublisher = require(
+	script.Parent.IncomeGainPresentationPublisher
+)
 local IncomeAutoCollectionConfigs = require(script.Parent.IncomeAutoCollectionConfigs)
 local PlayerDataReadyService = require(script.Parent.PlayerDataReadyService)
 local PlayerRegionTransactionLock = require(script.Parent.PlayerRegionTransactionLock)
@@ -57,6 +60,10 @@ local function run(player: Player)
 								regionId,
 								outcome.Collected
 							)
+							IncomeGainPresentationPublisher.Publish(player, {
+								Kind = "Automatic",
+								Entries = outcome.Entries,
+							})
 						end
 					end
 				end

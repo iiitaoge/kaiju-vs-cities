@@ -98,6 +98,15 @@ function Spec.Run(player: Player)
 		assert(collection.Accepted, "Boost 后区域领取失败：" .. tostring(collection.Reason))
 		expectNear(collection.Generated, 200, "R1 Boost 后两秒区域收入")
 		expectNear(collection.Collected, 200, "R1 Boost 后两秒自动领取金额")
+		assert(#collection.Entries > 0, "R1 收入没有返回逐栋领取明细")
+		local detailedAmount = 0
+		local foundFirstHouse = false
+		for _, entry in collection.Entries do
+			detailedAmount += entry.Amount
+			foundFirstHouse = foundFirstHouse or entry.HouseId == houseId
+		end
+		expectNear(detailedAmount, collection.Collected, "逐栋领取明细总额")
+		assert(foundFirstHouse, "逐栋领取明细缺少首栋房屋")
 
 		local repeated = IncomeZoneBoostCoordinator.Execute(player, REGION_ID)
 		assert(not repeated.Succeeded and repeated.Reason == "AlreadyBoosted", "Boost 必须只能购买一次")

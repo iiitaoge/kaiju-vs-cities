@@ -10,6 +10,9 @@ local IncomeHouseWorldUIProtocol = require(
 	ReplicatedStorage.Shared.Building.IncomeHouseWorldUIProtocol
 )
 local MoneyProtocol = require(ReplicatedStorage.Shared.Economy.MoneyProtocol)
+local IncomeGainPresentationProtocol = require(
+	ReplicatedStorage.Shared.Economy.IncomeGainPresentationProtocol
+)
 local ModelMovementVisualProtocol = require(
 	ReplicatedStorage.Shared.Movement.ModelMovementVisualProtocol
 )
@@ -69,6 +72,15 @@ function CrossBoundaryProtocolConstantsSpec.Run(): boolean
 	)
 	expect(MoneyProtocol.BalanceAttributeName == "MoneyBalance", "余额 Attribute 名称漂移")
 	expect(
+		IncomeGainPresentationProtocol.RemoteName == "IncomeGainPresentation",
+		"房屋收入表现 Remote 名称漂移"
+	)
+	expect(
+		IncomeGainPresentationProtocol.Kinds.Automatic == "Automatic"
+			and IncomeGainPresentationProtocol.Kinds.Touch == "Touch",
+		"房屋收入表现 Kind 漂移"
+	)
+	expect(
 		ModelMovementVisualProtocol.RemoteName == "ModelMovementVisual",
 		"模型移动表现 Remote 名称漂移"
 	)
@@ -97,6 +109,7 @@ function CrossBoundaryProtocolConstantsSpec.Run(): boolean
 	)
 	expectUniqueNonEmpty({
 		CityBuildingPresentation = CityBuildingPresentationProtocol.RemoteName,
+		IncomeGainPresentation = IncomeGainPresentationProtocol.RemoteName,
 		MonsterBuildPresentation = MonsterBuildPresentationProtocol.RemoteName,
 		MonsterAttackTargets = MonsterAttackProtocol.TargetQueryRemoteName,
 		MonsterAttackCommand = MonsterAttackProtocol.CommandRemoteName,
@@ -122,6 +135,7 @@ function CrossBoundaryProtocolConstantsSpec.Run(): boolean
 		CityBuildingPresentation = CityBuildingPresentationProtocol,
 		MonsterBuildPresentation = MonsterBuildPresentationProtocol,
 		IncomeHouseWorldUI = IncomeHouseWorldUIProtocol,
+		IncomeGainPresentation = IncomeGainPresentationProtocol,
 		MonsterAttack = MonsterAttackProtocol,
 		MonsterManagement = MonsterManagementProtocol,
 		ModelMovementVisual = ModelMovementVisualProtocol,
@@ -162,6 +176,7 @@ function CrossBoundaryProtocolConstantsSpec.Run(): boolean
 	)
 	expect(table.isfrozen(StudioSaveResetProtocol), "Studio 删档协议必须只读")
 	expect(table.isfrozen(MoneyProtocol), "余额协议必须只读")
+	expect(table.isfrozen(IncomeGainPresentationProtocol.Kinds), "房屋收入表现 Kind 表必须只读")
 	expect(table.isfrozen(ModelMovementVisualProtocol.Kinds), "模型移动 Kind 表必须只读")
 	expect(
 		table.isfrozen(MultiplayerAttackAcceptanceProtocol),

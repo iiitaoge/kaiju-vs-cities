@@ -17,6 +17,9 @@ local SecurityAnalyticsAggregator = require(
 local CityBuildingPresentationPublisher = require(script.Parent.CityBuildingPresentationPublisher)
 local ContentContractValidator = require(script.Parent.ContentContractValidator)
 local IncomeAutoCollectionService = require(script.Parent.IncomeAutoCollectionService)
+local IncomeGainPresentationPublisher = require(
+	script.Parent.IncomeGainPresentationPublisher
+)
 local MoneyService = require(script.Parent.MoneyService)
 local DefenseMonsterSpawnPointStateService = require(
 	script.Parent.DefenseMonsterSpawnPointStateService
@@ -68,6 +71,7 @@ PlayerPlotSpawnService.Start()
 PlayerCharacterMovementService.Start()
 CityBuildingPresentationPublisher.Start()
 MonsterBuildPresentationPublisher.Start()
+IncomeGainPresentationPublisher.Start()
 MoneyService.Start()
 StudioMoneyCheatService.Start()
 RegionStateService.Start()

@@ -3,7 +3,7 @@
 	- 只为本地玩家自己 Plot 中的服务器权威建筑维护收入触碰交互。
 
 	输入：
-	- Start；场景输入来自 Workspace/PlayerPlots/<OwnPlot>/Runtime/Buildings。
+	- Start 接收本地接触反馈回调；场景输入来自 Workspace/PlayerPlots/<OwnPlot>/Runtime/Buildings。
 
 	输出：
 	- 每个合法自有建筑拥有一个本地触碰绑定；建筑替换或删除时自动解绑。
@@ -28,6 +28,7 @@ local LocalPlayerBuildingInteractionCoordinator = {}
 
 local activeHandles: { [Model]: any } = setmetatable({}, { __mode = "k" })
 local pendingModels: { [Model]: boolean } = setmetatable({}, { __mode = "k" })
+local playContactFeedback: ((Model) -> ())? = nil
 local started = false
 
 local function unbind(model: Model)
@@ -42,7 +43,11 @@ local function bindReady(model: Model, identity: RuntimeBuildingIdentity.Identit
 	if activeHandles[model] then
 		return
 	end
-	activeHandles[model] = LocalBuildingInteractionController.Bind(identity.HouseId, model)
+	activeHandles[model] = LocalBuildingInteractionController.Bind(
+		identity.HouseId,
+		model,
+		assert(playContactFeedback)
+	)
 end
 
 local function scheduleBind(model: Model)
@@ -108,11 +113,15 @@ local function attach()
 	end)
 end
 
-function LocalPlayerBuildingInteractionCoordinator.Start()
+function LocalPlayerBuildingInteractionCoordinator.Start(
+	contactFeedback: (Model) -> ()
+)
 	if started then
 		return
 	end
+	assert(type(contactFeedback) == "function", "contactFeedback 必须是 function")
 	started = true
+	playContactFeedback = contactFeedback
 	task.spawn(attach)
 end
 
