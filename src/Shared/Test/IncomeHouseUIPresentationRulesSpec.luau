@@ -14,20 +14,27 @@ local function input()
 		StoredMoney = 20,
 		LastIncomeAt = 100,
 		Now = 110,
+		CurrentHealth = 750,
+		MaxHealth = 1_000,
 	}
 end
 
 function IncomeHouseUIPresentationRulesSpec.Run(): boolean
 	local manual = IncomeHouseUIPresentationRules.Resolve(input())
 	assert(manual.Enabled, "Alive 房屋 UI 未启用")
-	assert(not manual.Texts.Text1.Visible, "旧房屋 UI 不应继续显示 HP 文本")
+	assert(manual.Texts.Text2.Text == "+5/s", "手动领取房屋产速错误")
+	assert(manual.Texts.Text3.Text == "750/1K HP", "手动领取房屋生命值错误")
 	assert(manual.Money.Text == "70", "累计待领取金额错误")
-	assert(not manual.Texts.Text2.Visible and not manual.Texts.Text5.Visible, "无关文本没有隐藏")
+	assert(not manual.Texts.Text1.Visible and not manual.Texts.Text5.Visible, "无关文本没有隐藏")
 
 	local autoInput = input()
 	autoInput.AutoIncome = true
 	local automatic = IncomeHouseUIPresentationRules.Resolve(autoInput)
 	assert(automatic.Money.Text == "+5/s", "自动收入每秒产量错误")
+	assert(
+		not automatic.Texts.Text2.Visible and not automatic.Texts.Text3.Visible,
+		"自动收入房屋重复显示产速或 HP"
+	)
 
 	local destroyedInput = input()
 	destroyedInput.LifeState = "Destroyed"

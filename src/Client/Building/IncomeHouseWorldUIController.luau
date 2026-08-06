@@ -35,6 +35,8 @@ local observedAttributes = {
 	IncomeHouseWorldUIProtocol.IncomePerSecondAttributeName,
 	IncomeHouseWorldUIProtocol.StoredMoneyAttributeName,
 	IncomeHouseWorldUIProtocol.LastIncomeAtAttributeName,
+	IncomeHouseWorldUIProtocol.CurrentHealthAttributeName,
+	IncomeHouseWorldUIProtocol.MaxHealthAttributeName,
 }
 
 local function unbind(model: Model)
@@ -68,6 +70,8 @@ local function bindReady(model: Model)
 			IncomePerSecond = model:GetAttribute(IncomeHouseWorldUIProtocol.IncomePerSecondAttributeName),
 			StoredMoney = model:GetAttribute(IncomeHouseWorldUIProtocol.StoredMoneyAttributeName),
 			LastIncomeAt = model:GetAttribute(IncomeHouseWorldUIProtocol.LastIncomeAtAttributeName),
+			CurrentHealth = model:GetAttribute(IncomeHouseWorldUIProtocol.CurrentHealthAttributeName),
+			MaxHealth = model:GetAttribute(IncomeHouseWorldUIProtocol.MaxHealthAttributeName),
 			-- 服务端收入用 os.time() 结算；向下取整后客户端显示与实际领取金额一致。
 			Now = math.floor(workspace:GetServerTimeNow()),
 		}))
