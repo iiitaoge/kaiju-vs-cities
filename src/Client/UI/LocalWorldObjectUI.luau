@@ -11,6 +11,10 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local WorldObjectUIPlacement = require(
 	ReplicatedStorage.Shared.UI.WorldObjectUIPlacement
 )
+local UIModeVisibilityRules = require(
+	ReplicatedStorage.Shared.UI.UIModeVisibilityRules
+)
+local LocalUIVisibilityGate = require(script.Parent.LocalUIVisibilityGate)
 
 local template = ReplicatedStorage:WaitForChild("WorldObjectUI")
 assert(template:IsA("Attachment"), "ReplicatedStorage.WorldObjectUI 必须是 Attachment")
@@ -61,6 +65,13 @@ local function createAt(
 
 	billboard.Enabled = false
 	attachment.Parent = parentPart
+	local visibilityGate = LocalUIVisibilityGate.Create(
+		UIModeVisibilityRules.Channels.Gameplay,
+		function(visible)
+			billboard.Enabled = visible
+		end,
+		false
+	)
 
 	local destroyed = false
 	local handle = {} :: any
@@ -70,7 +81,7 @@ local function createAt(
 			return
 		end
 		local enabled = type(presentation) == "table" and presentation.Enabled == true
-		billboard.Enabled = enabled
+		visibilityGate:SetDesiredVisible(enabled)
 		if not enabled then
 			return
 		end
@@ -98,6 +109,7 @@ local function createAt(
 			return
 		end
 		destroyed = true
+		visibilityGate:Destroy()
 		if attachment.Parent then
 			attachment:Destroy()
 		end

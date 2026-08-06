@@ -24,6 +24,12 @@ local MonsterIncubatorUIPlacement = require(
 	ReplicatedStorage.Shared.Monster.MonsterIncubatorUIPlacement
 )
 local ResponsiveUIScale = require(ReplicatedStorage.Shared.UI.ResponsiveUIScale)
+local UIModeVisibilityRules = require(
+	ReplicatedStorage.Shared.UI.UIModeVisibilityRules
+)
+local LocalUIVisibilityGate = require(
+	script.Parent.Parent.UI.LocalUIVisibilityGate
+)
 local AnalyticsIntentProtocol = require(
 	ReplicatedStorage.Shared.Analytics.AnalyticsIntentProtocol
 )
@@ -115,6 +121,13 @@ function DefenseMonsterUIController.Start()
 			warn("防守怪兽 UI：无法复用培养罐面板：", presentationReason)
 			return
 		end
+		local visibilityGate = LocalUIVisibilityGate.Create(
+			UIModeVisibilityRules.Channels.Gameplay,
+			function(visible)
+				presentation.Gui.Enabled = visible
+			end,
+			false
+		)
 
 		local selectedSpawnPointId: string? = nil
 		local selectedModel: Model? = nil
@@ -269,9 +282,9 @@ function DefenseMonsterUIController.Start()
 				lastRefresh = now
 				refreshSelection()
 			end
-			presentation.Gui.Enabled = wantsVisible
+			visibilityGate:SetDesiredVisible(wantsVisible
 				and selectedModel ~= nil
-				and selectedModel.Parent ~= nil
+				and selectedModel.Parent ~= nil)
 
 			local camera = Workspace.CurrentCamera
 			if camera and lastViewportSize ~= camera.ViewportSize then

@@ -28,6 +28,12 @@ local MonsterSpawnPointCatalog = require(
 	ReplicatedStorage.Shared.Monster.MonsterSpawnPointCatalog
 )
 local ResponsiveUIScale = require(ReplicatedStorage.Shared.UI.ResponsiveUIScale)
+local UIModeVisibilityRules = require(
+	ReplicatedStorage.Shared.UI.UIModeVisibilityRules
+)
+local LocalUIVisibilityGate = require(
+	script.Parent.Parent.UI.LocalUIVisibilityGate
+)
 local AnalyticsIntentProtocol = require(
 	ReplicatedStorage.Shared.Analytics.AnalyticsIntentProtocol
 )
@@ -123,6 +129,7 @@ function MonsterIncubatorUIController.Start()
 		local currentMonster: Model? = nil
 		local responsiveScale: UIScale? = nil
 		local screenGui: ScreenGui? = nil
+		local visibilityGate: LocalUIVisibilityGate.Handle? = nil
 		local managementWantsVisible = false
 		local isWithinProximity = false
 		local lastViewportSize: Vector2? = nil
@@ -141,9 +148,9 @@ function MonsterIncubatorUIController.Start()
 		end
 
 		local function applyVisibility()
-			local layer = screenGui
-			if layer then
-				layer.Enabled = managementWantsVisible and isWithinProximity
+			local gate = visibilityGate
+			if gate then
+				gate:SetDesiredVisible(managementWantsVisible and isWithinProximity)
 			end
 		end
 
@@ -258,6 +265,10 @@ function MonsterIncubatorUIController.Start()
 			if management then
 				management.Close()
 			end
+			if visibilityGate then
+				visibilityGate:Destroy()
+				visibilityGate = nil
+			end
 			if references then
 				local refs = references
 				refs.Gui.Enabled = false
@@ -298,6 +309,16 @@ function MonsterIncubatorUIController.Start()
 			responsiveScale = getOrCreateResponsiveScale(resolved.Panel)
 			resolved.Robux.Visible = false
 			screenGui = createScreenPresentation(playerGui, resolved.Panel)
+			visibilityGate = LocalUIVisibilityGate.Create(
+				UIModeVisibilityRules.Channels.Gameplay,
+				function(visible)
+					local layer = screenGui
+					if layer then
+						layer.Enabled = visible
+					end
+				end,
+				false
+			)
 			updateSpatialPresentation()
 			management = MonsterManagementCoordinator.Create({
 				Render = render,

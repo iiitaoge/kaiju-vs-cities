@@ -21,6 +21,12 @@ local RebirthProtocol = require(
 local RebirthUIPresentationRules = require(
 	ReplicatedStorage.Shared.UI.RebirthUIPresentationRules
 )
+local UIModeVisibilityRules = require(
+	ReplicatedStorage.Shared.UI.UIModeVisibilityRules
+)
+local LocalUIVisibilityGate = require(
+	script.Parent.Parent.UI.LocalUIVisibilityGate
+)
 local AnalyticsIntentProtocol = require(
 	ReplicatedStorage.Shared.Analytics.AnalyticsIntentProtocol
 )
@@ -84,6 +90,13 @@ function RebirthButtonController.Start()
 	end
 	placeBillboardAboveButton(button, ui.Pull, ui.Billboard)
 	ui.Billboard.Enabled = false
+	local visibilityGate = LocalUIVisibilityGate.Create(
+		UIModeVisibilityRules.Channels.Gameplay,
+		function(nextVisible)
+			ui.Billboard.Enabled = nextVisible
+		end,
+		false
+	)
 	ui.MoneyButton.Active = false
 	ui.MoneyButton.Selectable = false
 
@@ -143,7 +156,7 @@ function RebirthButtonController.Start()
 		end
 		visible = nextVisible
 		refreshGeneration += 1
-		ui.Billboard.Enabled = visible
+		visibilityGate:SetDesiredVisible(visible)
 		if not visible then
 			return
 		end

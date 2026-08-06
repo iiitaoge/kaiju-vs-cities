@@ -7,6 +7,7 @@
 ]]
 
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalAttackSelectionHUDAccess = require(
 	script.Parent.LocalAttackSelectionHUDAccess
@@ -14,10 +15,18 @@ local LocalAttackSelectionHUDAccess = require(
 local PlayerMonsterAttackSelectionCoordinator = require(
 	script.Parent.PlayerMonsterAttackSelectionCoordinator
 )
+local LocalUIModeService = require(script.Parent.Parent.UI.LocalUIModeService)
+local LocalUIVisibilityGate = require(
+	script.Parent.Parent.UI.LocalUIVisibilityGate
+)
+local UIModeVisibilityRules = require(
+	ReplicatedStorage.Shared.UI.UIModeVisibilityRules
+)
 
 local AttackSelectionHUDController = {}
 
 local started = false
+local starting = false
 
 local function resolveHUD(): (LocalAttackSelectionHUDAccess.References?, string?)
 	local playerGui = Players.LocalPlayer:FindFirstChildOfClass("PlayerGui")
@@ -28,20 +37,23 @@ local function resolveHUD(): (LocalAttackSelectionHUDAccess.References?, string?
 end
 
 function AttackSelectionHUDController.Start()
-	if started then
+	if started or starting then
 		return
 	end
-	started = true
+	starting = true
 
-	local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
-	playerGui:WaitForChild("HUD", 10)
-	local refs, reason = LocalAttackSelectionHUDAccess.Resolve(playerGui)
-	if not refs then
-		warn("攻击选择 HUD 无效：" .. tostring(reason))
-		return
-	end
-	refs.Root.Visible = false
-	refs.BrowseControls.Visible = true
+	task.spawn(function()
+		local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui") :: PlayerGui
+		local refs, reason = LocalAttackSelectionHUDAccess.Wait(playerGui)
+		starting = false
+		if not refs then
+			warn("攻击选择 HUD 初始化失败：" .. tostring(reason))
+			return
+		end
+		started = true
+		refs.Root.Visible = false
+		refs.BrowseControls.Visible = true
+	end)
 end
 
 function AttackSelectionHUDController.Open(spawnPointId: string, callbacks)
@@ -56,8 +68,21 @@ function AttackSelectionHUDController.Open(spawnPointId: string, callbacks)
 		callbacks.OnUnavailable(reason or "AttackSelectionHUDUnavailable")
 		return nil
 	end
+	local modeSession, modeReason = LocalUIModeService.Acquire(
+		UIModeVisibilityRules.Modes.AttackSelection
+	)
+	if not modeSession then
+		callbacks.OnUnavailable(modeReason or "UIModeUnavailable")
+		return nil
+	end
 
-	refs.Root.Visible = false
+	local rootVisibility = LocalUIVisibilityGate.Create(
+		UIModeVisibilityRules.Channels.Attack,
+		function(visible)
+			refs.Root.Visible = visible
+		end,
+		false
+	)
 	refs.BrowseControls.Visible = true
 	local connections: { RBXScriptConnection } = {}
 	local closed = false
@@ -70,12 +95,14 @@ function AttackSelectionHUDController.Open(spawnPointId: string, callbacks)
 		end
 		closed = true
 		following = false
-		refs.Root.Visible = false
+		rootVisibility:SetDesiredVisible(false)
 		refs.BrowseControls.Visible = true
 		for _, connection in connections do
 			connection:Disconnect()
 		end
 		table.clear(connections)
+		modeSession:Release()
+		rootVisibility:Destroy()
 	end
 
 	session = PlayerMonsterAttackSelectionCoordinator.Open(spawnPointId, {
@@ -100,7 +127,7 @@ function AttackSelectionHUDController.Open(spawnPointId: string, callbacks)
 			local solo = target.Kind == "Solo"
 			refs.BrowseControls.Visible = not solo
 			refs.Title.Text = if solo then target.DisplayName else target.Player.Name
-			refs.Root.Visible = true
+			rootVisibility:SetDesiredVisible(true)
 			if callbacks.OnTargetChanged then
 				callbacks.OnTargetChanged(target)
 			end
@@ -109,7 +136,7 @@ function AttackSelectionHUDController.Open(spawnPointId: string, callbacks)
 		OnClosed = function(closeReason)
 			if closeReason == "CommandAccepted" then
 				refs.BrowseControls.Visible = false
-				refs.Root.Visible = true
+				rootVisibility:SetDesiredVisible(true)
 			else
 				cleanup()
 			end
@@ -122,8 +149,9 @@ function AttackSelectionHUDController.Open(spawnPointId: string, callbacks)
 				return
 			end
 			following = true
+			modeSession:SetMode(UIModeVisibilityRules.Modes.AttackFollow)
 			refs.BrowseControls.Visible = false
-			refs.Root.Visible = true
+			rootVisibility:SetDesiredVisible(true)
 			if callbacks.OnFollowStarted then
 				callbacks.OnFollowStarted(monster)
 			end

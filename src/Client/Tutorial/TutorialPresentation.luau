@@ -11,6 +11,12 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local ResponsiveUIScale = require(ReplicatedStorage.Shared.UI.ResponsiveUIScale)
+local UIModeVisibilityRules = require(
+	ReplicatedStorage.Shared.UI.UIModeVisibilityRules
+)
+local LocalUIVisibilityGate = require(
+	script.Parent.Parent.UI.LocalUIVisibilityGate
+)
 
 local TutorialPresentation = {}
 
@@ -83,6 +89,13 @@ function TutorialPresentation.Create(playerGui: PlayerGui): (Handle?, string?)
 	info.RichText = true
 	info.TextScaled = true
 	gui.Parent = playerGui
+	local visibilityGate = LocalUIVisibilityGate.Create(
+		UIModeVisibilityRules.Channels.Tutorial,
+		function(visible)
+			gui.Enabled = visible
+		end,
+		false
+	)
 
 	local beam: Beam? = nil
 	local originAttachment: Attachment? = nil
@@ -175,7 +188,7 @@ function TutorialPresentation.Create(playerGui: PlayerGui): (Handle?, string?)
 		end
 		title.Text = "TIP:"
 		info.Text = string.format("<b>%s</b>\n%s", definition.Title, definition.Info)
-		gui.Enabled = true
+		visibilityGate:SetDesiredVisible(true)
 		setTarget(target)
 	end
 
@@ -183,7 +196,7 @@ function TutorialPresentation.Create(playerGui: PlayerGui): (Handle?, string?)
 		if destroyed then
 			return
 		end
-		gui.Enabled = false
+		visibilityGate:SetDesiredVisible(false)
 		clearBeam()
 	end
 
@@ -201,6 +214,7 @@ function TutorialPresentation.Create(playerGui: PlayerGui): (Handle?, string?)
 			connection:Disconnect()
 		end
 		table.clear(connections)
+		visibilityGate:Destroy()
 		gui:Destroy()
 	end
 

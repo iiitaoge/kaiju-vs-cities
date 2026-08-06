@@ -19,10 +19,15 @@ local MoneyProtocol = require(ReplicatedStorage.Shared.Economy.MoneyProtocol)
 local RuntimeBuildingIdentity = require(
 	ReplicatedStorage.Shared.Building.RuntimeBuildingIdentity
 )
+local UIModeVisibilityRules = require(
+	ReplicatedStorage.Shared.UI.UIModeVisibilityRules
+)
+local LocalUIVisibilityGate = require(script.Parent.LocalUIVisibilityGate)
 
 local EconomyHUDController = {}
 
 type HUDReferences = {
+	UpData: GuiObject,
 	MoneyValue: TextLabel,
 	AutoIncomeValue: TextLabel,
 }
@@ -33,6 +38,7 @@ local modelConnections: { [Model]: { RBXScriptConnection } } = setmetatable(
 	{ __mode = "k" }
 )
 local references: HUDReferences? = nil
+local visibilityGate: LocalUIVisibilityGate.Handle? = nil
 local started = false
 
 local function finiteNonNegative(value): boolean
@@ -72,6 +78,7 @@ local function resolveHUD(playerGui: PlayerGui): (HUDReferences?, string?)
 	end
 
 	return {
+		UpData = upData,
 		MoneyValue = moneyValue,
 		AutoIncomeValue = autoIncomeValue,
 	}, nil
@@ -194,6 +201,13 @@ function EconomyHUDController.Start()
 		return
 	end
 	references = resolved
+	visibilityGate = LocalUIVisibilityGate.Create(
+		UIModeVisibilityRules.Channels.Gameplay,
+		function(visible)
+			resolved.UpData.Visible = visible
+		end,
+		resolved.UpData.Visible
+	)
 	refreshBalance()
 	refreshAutomaticIncome()
 	localPlayer:GetAttributeChangedSignal(MoneyProtocol.BalanceAttributeName):Connect(

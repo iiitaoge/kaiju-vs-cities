@@ -14,6 +14,10 @@ local UserInputService = game:GetService("UserInputService")
 local StudioSaveResetProtocol = require(
 	ReplicatedStorage.Shared.Persistence.StudioSaveResetProtocol
 )
+local UIModeVisibilityRules = require(
+	ReplicatedStorage.Shared.UI.UIModeVisibilityRules
+)
+local LocalUIVisibilityGate = require(script.Parent.UI.LocalUIVisibilityGate)
 
 local StudioSaveResetController = {}
 
@@ -63,6 +67,13 @@ function StudioSaveResetController.Start()
 	gui.ResetOnSpawn = false
 	gui.DisplayOrder = 1000
 	gui.Parent = playerGui
+	LocalUIVisibilityGate.Create(
+		UIModeVisibilityRules.Channels.Gameplay,
+		function(visible)
+			gui.Enabled = visible
+		end,
+		true
+	)
 	local button = createButton(gui, UserInputService.TouchEnabled)
 
 	local remote = ReplicatedStorage
