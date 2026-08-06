@@ -72,6 +72,10 @@ function CrossBoundaryProtocolConstantsSpec.Run(): boolean
 	)
 	expect(MoneyProtocol.BalanceAttributeName == "MoneyBalance", "余额 Attribute 名称漂移")
 	expect(
+		MoneyProtocol.AutomaticIncomeRateAttributeName == "AutomaticIncomeRate",
+		"自动收入总速率 Attribute 名称漂移"
+	)
+	expect(
 		IncomeGainPresentationProtocol.RemoteName == "IncomeGainPresentation",
 		"房屋收入表现 Remote 名称漂移"
 	)
@@ -122,6 +126,7 @@ function CrossBoundaryProtocolConstantsSpec.Run(): boolean
 	}, "Remote 名称")
 	expectUniqueNonEmpty({
 		Money = MoneyProtocol.BalanceAttributeName,
+		AutomaticIncomeRate = MoneyProtocol.AutomaticIncomeRateAttributeName,
 		LifeState = IncomeHouseWorldUIProtocol.LifeStateAttributeName,
 		AutoIncome = IncomeHouseWorldUIProtocol.AutoIncomeAttributeName,
 		IncomePerSecond = IncomeHouseWorldUIProtocol.IncomePerSecondAttributeName,

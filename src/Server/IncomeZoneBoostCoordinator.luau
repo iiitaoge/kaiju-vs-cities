@@ -8,6 +8,9 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local AutomaticIncomeRatePresentationService = require(
+	script.Parent.AutomaticIncomeRatePresentationService
+)
 local GameAnalyticsGateway = require(script.Parent.Analytics.GameAnalyticsGateway)
 local PlayerJourneyAnalyticsCoordinator = require(
 	script.Parent.Analytics.PlayerJourneyAnalyticsCoordinator
@@ -140,6 +143,7 @@ local function executeUnlocked(player: Player, regionId: string)
 		error("未知 Boost 事务：" .. tostring(transactionKind))
 	end
 	RegionStateService.SetBoostPurchased(player, regionId, permission.CompletesBoost)
+	AutomaticIncomeRatePresentationService.Refresh(player)
 	for _, definition in HouseCatalog.GetAll() do
 		if definition.RegionId == regionId then
 			local model = PlayerCityRuntimeCoordinator.ResolveBuilding(player, definition.HouseId)

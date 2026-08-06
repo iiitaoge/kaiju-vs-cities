@@ -30,6 +30,9 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local AutomaticIncomeRatePresentationService = require(
+	script.Parent.AutomaticIncomeRatePresentationService
+)
 local HouseStateService = require(script.Parent.HouseStateService)
 local HouseWorldUIPresentationService = require(script.Parent.HouseWorldUIPresentationService)
 local PlayerDataReadyService = require(script.Parent.PlayerDataReadyService)
@@ -448,6 +451,7 @@ function PlayerCityRuntimeCoordinator.Load(player: Player): LoadResult
 	if player.Parent ~= Players then
 		return result(false, "PlayerUnavailable", nil, 0)
 	end
+	AutomaticIncomeRatePresentationService.Refresh(player)
 
 	local plot, plotReason = PlayerPlotAssignmentService.GetPlot(player)
 	if not plot then

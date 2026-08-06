@@ -13,6 +13,9 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local AutomaticIncomeRatePresentationService = require(
+	script.Parent.AutomaticIncomeRatePresentationService
+)
 local BuildingPresentationConfigs = require(
 	ReplicatedStorage.Shared.Building.BuildingPresentationConfigs
 )
@@ -205,6 +208,7 @@ local function finishRebuild(
 		BuildPresentationVisibility.Restore(model)
 		local _, completed = HouseStateService.CompleteRebuild(player, houseId, os.time())
 		if completed then
+			AutomaticIncomeRatePresentationService.Refresh(player)
 			HouseWorldUIPresentationService.Refresh(player, houseId, model)
 			return
 		end
@@ -396,13 +400,17 @@ function HouseLifecycleCoordinator.Destroy(
 	if not destroyed then
 		return result(false, "HouseNotAlive", nil, nil)
 	end
+	AutomaticIncomeRatePresentationService.Refresh(player)
 	local removal = PlayerCityRuntimeCoordinator.RemoveBuilding(player, houseId, model)
 	if not removal.Succeeded then
 		local _, rolledBack = HouseStateService.RollbackDestroy(player, houseId, os.time())
 		if not rolledBack then
 			warn(string.format("房屋摧毁移除失败且状态回滚失败：%s/%s", player.Name, houseId))
-		elseif model.Parent then
-			HouseWorldUIPresentationService.Refresh(player, houseId, model)
+		else
+			AutomaticIncomeRatePresentationService.Refresh(player)
+			if model.Parent then
+				HouseWorldUIPresentationService.Refresh(player, houseId, model)
+			end
 		end
 		return result(false, removal.Reason or "RuntimeBuildingRemoveFailed", nil, nil)
 	end

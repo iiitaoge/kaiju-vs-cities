@@ -4,6 +4,9 @@ local Players = game:GetService("Players")
 Players.CharacterAutoLoads = false
 
 local AnalyticsIntentService = require(script.Parent.Analytics.AnalyticsIntentService)
+local AutomaticIncomeRatePresentationService = require(
+	script.Parent.AutomaticIncomeRatePresentationService
+)
 local GameAnalyticsEconomyAggregator = require(
 	script.Parent.Analytics.GameAnalyticsEconomyAggregator
 )
@@ -75,6 +78,7 @@ IncomeGainPresentationPublisher.Start()
 MoneyService.Start()
 StudioMoneyCheatService.Start()
 RegionStateService.Start()
+AutomaticIncomeRatePresentationService.Start()
 RebirthService.Start()
 PlayerZoneSceneVisibilityService.Start()
 PlayerCityRuntimeCoordinator.Start()

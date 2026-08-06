@@ -19,6 +19,7 @@ local PlayerCityRuntimeCoordinator = require(script.Parent.Parent.PlayerCityRunt
 local PlayerSaveStateAdapter = require(script.Parent.Parent.PlayerSaveStateAdapter)
 local RegionStateService = require(script.Parent.Parent.RegionStateService)
 local HouseCatalog = require(ReplicatedStorage.Shared.Building.HouseCatalog)
+local MoneyProtocol = require(ReplicatedStorage.Shared.Economy.MoneyProtocol)
 local PlayerSaveSchema = require(ReplicatedStorage.Shared.Persistence.PlayerSaveSchema)
 
 local Spec = {}
@@ -92,6 +93,27 @@ function Spec.Run(player: Player)
 		assert(autoBoost.Succeeded, "R1 自动领取 Boost 失败：" .. tostring(autoBoost.Reason))
 		local region = RegionStateService.Get(player, REGION_ID)
 		assert(region.BoostPurchased and region.AutoIncome, "第三笔没有完成 Boost")
+		local expectedAutomaticRate = 0
+		for _, definition in HouseCatalog.GetAll() do
+			if definition.RegionId == REGION_ID then
+				local rate = HouseIncomeService.GetHouseRate(player, definition.HouseId)
+				if rate.Accepted then
+					expectedAutomaticRate += rate.IncomePerSecond
+				end
+			end
+		end
+		expectNear(
+			player:GetAttribute(MoneyProtocol.AutomaticIncomeRateAttributeName),
+			expectedAutomaticRate,
+			"自动收入总速率镜像"
+		)
+		local modelRefresh = PlayerCityRuntimeCoordinator.RefreshZone(player, REGION_ID)
+		assert(modelRefresh.Succeeded, "自动收入换模测试失败：" .. tostring(modelRefresh.Reason))
+		expectNear(
+			player:GetAttribute(MoneyProtocol.AutomaticIncomeRateAttributeName),
+			expectedAutomaticRate,
+			"房屋换模不应清零自动收入总速率"
+		)
 
 		local lastIncomeAt = assert(HouseStateService.Get(player, houseId).LastIncomeAt)
 		local collection = HouseIncomeService.CollectRegion(player, REGION_ID, lastIncomeAt + 2)

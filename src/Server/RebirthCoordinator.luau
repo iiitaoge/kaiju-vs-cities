@@ -10,6 +10,9 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local AutomaticIncomeRatePresentationService = require(
+	script.Parent.AutomaticIncomeRatePresentationService
+)
 local MonsterExpeditionReportService = require(script.Parent.MonsterExpeditionReportService)
 local PlayerJourneyAnalyticsCoordinator = require(
 	script.Parent.Analytics.PlayerJourneyAnalyticsCoordinator
@@ -96,6 +99,7 @@ local function reloadRuntime(player: Player, data): (boolean, string?)
 	if not applied then
 		return false, "StateApplyFailed:" .. tostring(applyError)
 	end
+	AutomaticIncomeRatePresentationService.Refresh(player)
 
 	local visibility = PlayerZoneSceneVisibilityService.ApplyAll(player)
 	if not visibility.Succeeded then

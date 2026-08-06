@@ -14,6 +14,9 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local AutomaticIncomeRatePresentationService = require(
+	script.Parent.AutomaticIncomeRatePresentationService
+)
 local BuildingPresentationConfigs = require(
 	ReplicatedStorage.Shared.Building.BuildingPresentationConfigs
 )
@@ -111,6 +114,7 @@ function RegionUpgradeCityCoordinator.Upgrade(player: Player, regionId: string)
 	if not upgrade.Succeeded then
 		return nil, upgrade.NextButtonState
 	end
+	AutomaticIncomeRatePresentationService.Refresh(player)
 
 	local newLevel = assert(upgrade.NewLevel, "成功升级必须返回 NewLevel")
 	local presentationId = assert(
