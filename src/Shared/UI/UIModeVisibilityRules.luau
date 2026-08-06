@@ -2,7 +2,7 @@
 	职责：定义客户端界面模式与显示通道之间的纯策略。
 	输入：当前模式和界面通道。
 	输出：该通道在当前模式下是否允许显示。
-	内部算法：普通模式显示常规界面；攻击选择/跟随只显示攻击界面和新手教程。
+	内部算法：普通模式显示常规界面；攻击选择/跟随显示攻击界面；战斗血条和新手教程始终保留。
 	不负责：保存业务显隐状态、修改 Instance、管理攻击会话或 Roblox CoreGui。
 ]]
 
@@ -17,6 +17,7 @@ UIModeVisibilityRules.Modes = table.freeze({
 UIModeVisibilityRules.Channels = table.freeze({
 	Gameplay = "Gameplay",
 	Attack = "Attack",
+	Combat = "Combat",
 	Tutorial = "Tutorial",
 })
 
@@ -29,6 +30,7 @@ local validModes = table.freeze({
 local validChannels = table.freeze({
 	[UIModeVisibilityRules.Channels.Gameplay] = true,
 	[UIModeVisibilityRules.Channels.Attack] = true,
+	[UIModeVisibilityRules.Channels.Combat] = true,
 	[UIModeVisibilityRules.Channels.Tutorial] = true,
 })
 
@@ -44,7 +46,9 @@ function UIModeVisibilityRules.Allows(mode: string, channel: string): boolean
 	assert(UIModeVisibilityRules.IsMode(mode), "mode 无效")
 	assert(UIModeVisibilityRules.IsChannel(channel), "channel 无效")
 
-	if channel == UIModeVisibilityRules.Channels.Tutorial then
+	if channel == UIModeVisibilityRules.Channels.Tutorial
+		or channel == UIModeVisibilityRules.Channels.Combat
+	then
 		return true
 	end
 	if mode == UIModeVisibilityRules.Modes.Normal then

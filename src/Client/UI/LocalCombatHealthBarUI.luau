@@ -67,7 +67,7 @@ function LocalCombatHealthBarUI.Create(model: Model, localName: string): Handle
 	billboard.Enabled = false
 	attachment.Parent = parentPart
 	local visibilityGate = LocalUIVisibilityGate.Create(
-		UIModeVisibilityRules.Channels.Gameplay,
+		UIModeVisibilityRules.Channels.Combat,
 		function(visible)
 			billboard.Enabled = visible
 		end,

@@ -110,6 +110,14 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 	local inputSession = nil
 	local panelSession = nil
 	local crosshairSession = nil
+	local followStateConnection: RBXScriptConnection? = nil
+
+	local function disconnectFollowState()
+		if followStateConnection then
+			followStateConnection:Disconnect()
+			followStateConnection = nil
+		end
+	end
 
 	-- 输入：当前 LocalPlayer 的实时 Character 与 CurrentCamera。
 	-- 输出：成功把相机交还给当前 Humanoid 时返回 true；角色暂不可用时返回 false。
@@ -227,6 +235,7 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 		local monster = result.Monster
 		if monster and monster:IsDescendantOf(workspace) then
 			local followConfig = MonsterAttackSelectionConfig.FollowCamera
+			disconnectFollowState()
 			followSession = MonsterFollowCamera.Start(
 				monster,
 				{
@@ -234,6 +243,7 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 					FieldOfView = followConfig.FieldOfView,
 					Responsiveness = followConfig.Responsiveness,
 					OnStopped = function(reason)
+						disconnectFollowState()
 						followSession = nil
 						restoreLocalPlayerCamera()
 						if callbacks.OnFollowStopped then
@@ -242,7 +252,20 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 					end,
 				}
 			)
-			if callbacks.OnFollowStarted then
+			local function stopAfterReturn()
+				if monster:GetAttribute("MonsterState") ~= "IdleAtSpawn" then
+					return
+				end
+				local session = followSession
+				if session and session.IsActive() then
+					session.Stop("MonsterReturned")
+				end
+			end
+			followStateConnection = monster:GetAttributeChangedSignal("MonsterState"):Connect(
+				stopAfterReturn
+			)
+			stopAfterReturn()
+			if followSession and followSession.IsActive() and callbacks.OnFollowStarted then
 				callbacks.OnFollowStarted(monster)
 			end
 		end
