@@ -4,7 +4,7 @@
 
 ## GameAnalytics 配置
 
-在 Studio 中选中 `ServerStorage`，设置 Attributes：
+在 Studio 中选中 `ServerStorage/GameAnalytics` 文件夹，设置 Attributes：
 
 | Attribute | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -13,7 +13,7 @@
 | `GameAnalyticsBuild` | String | 否 | 数据 Build，缺省 `0.1.0` |
 | `GameAnalyticsDebug` | Boolean | 否 | SDK 调试日志，缺省 `false` |
 
-凭据不进入源码。凭据无效时 GA 保持关闭，玩法继续运行。Place 必须开启 HTTP Requests。正式发布前应修改 `GameAnalyticsBuild`，以便按版本隔离调试期和正式数据。
+凭据不进入源码，而是由 Argon 同步 `ServerStorage/GameAnalytics` 文件夹的 Attributes。凭据无效或文件夹缺失时 GA 保持关闭，玩法继续运行。Place 必须开启 HTTP Requests。正式发布前应修改 `GameAnalyticsBuild`，以便按版本隔离调试期和正式数据。
 
 ## Roblox 原生漏斗
 

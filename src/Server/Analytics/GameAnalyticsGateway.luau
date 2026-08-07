@@ -1,6 +1,6 @@
 --[[
 	职责：隔离项目业务代码与官方 GameAnalytics SDK。
-	输入：Start 从 ServerStorage Attributes 读取凭据；事件函数接收已裁决的服务器事实。
+	输入：Start 从 ServerStorage.GameAnalytics Attributes 读取凭据；事件函数接收已裁决的服务器事实。
 	输出：返回事件是否已交给 SDK 队列；缺凭据、参数无效或 SDK 异常时返回 false。
 	内部算法：校验配置 → 延迟 require SDK → 初始化白名单/Build → 保护调用事件接口。
 	不负责：判断业务成功、聚合高频事件、计算金额、创建 Roblox 漏斗或重试网络请求。
@@ -20,14 +20,22 @@ local started = false
 local enabled = false
 local sdk = nil
 
+local function getConfigFolder(): Folder?
+	local instance = ServerStorage:FindFirstChild(GameAnalyticsConfig.ConfigFolderName)
+	if instance and instance:IsA("Folder") then
+		return instance
+	end
+	return nil
+end
+
 local function isCredential(value, expectedLength: number): boolean
 	return type(value) == "string"
 		and #value == expectedLength
 		and string.find(value, "^[A-Za-z0-9]+$") ~= nil
 end
 
-local function resolveBuild(): string
-	local value = ServerStorage:GetAttribute(GameAnalyticsConfig.BuildAttribute)
+local function resolveBuild(configFolder: Folder): string
+	local value = configFolder:GetAttribute(GameAnalyticsConfig.BuildAttribute)
 	if type(value) == "string" and value ~= "" and #value <= 32 then
 		return value
 	end
@@ -41,11 +49,21 @@ function GameAnalyticsGateway.Start(): boolean
 	started = true
 	ReplicatedStorage:SetAttribute(GameAnalyticsConfig.ClientEnabledAttribute, false)
 
-	local gameKey = ServerStorage:GetAttribute(GameAnalyticsConfig.GameKeyAttribute)
-	local secretKey = ServerStorage:GetAttribute(GameAnalyticsConfig.SecretKeyAttribute)
+	local configFolder = getConfigFolder()
+	if not configFolder then
+		warn(string.format(
+			"GameAnalytics 未启用：请在 ServerStorage 下创建 Folder %s，并设置有效的凭据 Attributes",
+			GameAnalyticsConfig.ConfigFolderName
+		))
+		return false
+	end
+
+	local gameKey = configFolder:GetAttribute(GameAnalyticsConfig.GameKeyAttribute)
+	local secretKey = configFolder:GetAttribute(GameAnalyticsConfig.SecretKeyAttribute)
 	if not isCredential(gameKey, 32) or not isCredential(secretKey, 40) then
 		warn(string.format(
-			"GameAnalytics 未启用：请在 ServerStorage 设置有效的 %s 和 %s Attributes",
+			"GameAnalytics 未启用：请在 ServerStorage.%s 设置有效的 %s 和 %s Attributes",
+			GameAnalyticsConfig.ConfigFolderName,
 			GameAnalyticsConfig.GameKeyAttribute,
 			GameAnalyticsConfig.SecretKeyAttribute
 		))
@@ -64,10 +82,10 @@ function GameAnalyticsGateway.Start(): boolean
 		sdkOrError:initialize({
 			gameKey = gameKey,
 			secretKey = secretKey,
-			build = resolveBuild(),
+			build = resolveBuild(configFolder),
 			availableResourceCurrencies = { GameAnalyticsConfig.Currency },
 			availableResourceItemTypes = GameAnalyticsConfig.ResourceItemTypes,
-			enableInfoLog = ServerStorage:GetAttribute(GameAnalyticsConfig.DebugAttribute) == true,
+			enableInfoLog = configFolder:GetAttribute(GameAnalyticsConfig.DebugAttribute) == true,
 			enableVerboseLog = false,
 			automaticSendBusinessEvents = false,
 			reportErrors = false,
