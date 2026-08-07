@@ -14,6 +14,7 @@ local AttackAnimationSelector = require(script.Parent.AttackAnimationSelector)
 local GodzillaMoveService = require(script.Parent.GodzillaMoveService)
 local GodzillaService = require(script.Parent.GodzillaService)
 local ModelMover = require(script.Parent.ModelMover)
+local MonsterAttackCameraPublisher = require(script.Parent.MonsterAttackCameraPublisher)
 local MonsterIncubatorCoordinator = require(script.Parent.MonsterIncubatorCoordinator)
 local MonsterAttackPresentationPlayer = require(
 	script.Parent.MonsterAttackPresentationPlayer
@@ -27,6 +28,9 @@ local SoloMonsterAttackCommandCoordinator = require(
 )
 local WorkspaceSoloAttackAreaAccess = require(script.Parent.WorkspaceSoloAttackAreaAccess)
 local ModelAnimationConfigs = require(ReplicatedStorage.Shared.Animation.ModelAnimationConfigs)
+local MonsterAttackSelectionConfig = require(
+	ReplicatedStorage.Shared.Monster.MonsterAttackSelectionConfig
+)
 local DefenseMonsterSlotCatalog = require(
 	ReplicatedStorage.Shared.Monster.DefenseMonsterSlotCatalog
 )
@@ -242,6 +246,44 @@ function PlayerSoloMonsterAttackApplication.Execute(
 				)
 				if not released.Succeeded then
 					return result(false, released.Reason or "IncubatorReleaseFailed")
+				end
+				local targetPlotName, regionId, cameraReason =
+					WorkspaceSoloAttackAreaAccess.ResolveCameraTarget(
+						context.TargetPlotName,
+						context.EntryPoint
+					)
+				if not targetPlotName then
+					return result(false, cameraReason or "RegionCameraTargetUnavailable")
+				end
+				local cameraPublished = MonsterAttackCameraPublisher.Publish(
+					context.Player,
+					{
+						Kind = "FocusSoloRegion",
+						CommandId = context.CommandId,
+						AttackerUserId = context.Player.UserId,
+						AttackerSpawnPointId = context.SpawnPointId,
+						TargetPlotName = targetPlotName,
+						RegionId = regionId or SoloMonsterAttackConfigs.CameraFallbackRegionId,
+					}
+				)
+				if not cameraPublished.Succeeded then
+					return result(
+						false,
+						cameraPublished.Reason or "RegionCameraPublishFailed"
+					)
+				end
+				local cameraReady = MonsterAttackCameraPublisher.WaitForCompletion(
+					context.Player,
+					context.SpawnPointId,
+					context.CommandId,
+					MonsterAttackSelectionConfig.MarkerCamera.CompletionTimeout,
+					isCancelled
+				)
+				if not cameraReady.Succeeded then
+					return result(
+						false,
+						cameraReady.Reason or "RegionCameraTransitionFailed"
+					)
 				end
 				local moving = MonsterRosterCoordinator.Transition(
 					context.Player,

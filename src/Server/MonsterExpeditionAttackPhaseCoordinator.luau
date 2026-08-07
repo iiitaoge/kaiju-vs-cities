@@ -1,8 +1,8 @@
 --[[
 	职责：编排一次出征从目标落点、区域守卫到建筑激光的攻击阶段。
 	输入：防守玩家、进攻怪兽、落点，以及移动、守卫中断、区域和建筑攻击依赖。
-	输出：与建筑攻击命令兼容的结果；到达落点后，守卫必须逐只处理完才能进入激光阶段。
-	内部算法：移动到固定落点 → 循环 Poll/Handle 守卫事件 → 区域持续激光伤害预算。
+	输出：与建筑攻击命令兼容的结果；到达进攻出生点后，守卫必须逐只处理完才能进入激光阶段。
+	内部算法：移动到目标区域进攻出生点 → 循环 Poll/Handle 守卫事件 → 区域持续激光伤害预算。
 	不负责：决定怪兽战斗胜负、恢复、回城、塔伤害或存档。
 ]]
 
@@ -22,6 +22,7 @@ export type ExecuteOptions = {
 	HouseAccess: HouseAttackTargetAccess.Access,
 	ModelAnimationConfig: MonsterAttackCoordinator.ModelAnimationConfig,
 	MonsterAttackConfig: MonsterAttackCoordinator.MonsterAttackConfig,
+	ApproachPosition: Vector3?,
 	MoveSpeed: number,
 	MaxTravelDuration: number?,
 	TimingSafetyMargin: number?,
@@ -114,21 +115,25 @@ function MonsterExpeditionAttackPhaseCoordinator.Execute(
 			task.wait(0.05)
 		end
 	end)
-	local moved = GodzillaMoveService.MoveTo(monster, destination, {
-		MoveSpeed = options.MoveSpeed,
-		MaxTravelDuration = options.MaxTravelDuration,
-		TimingSafetyMargin = options.TimingSafetyMargin,
-		TurnDuration = options.TurnDuration,
-		SetMoving = function(isMoving, moveSpeed)
-			GodzillaService.SetMoving(
-				monster,
-				options.ModelAnimationConfig,
-				isMoving,
-				moveSpeed,
-				options.WalkAnimation
-			)
-		end,
-	})
+	local moved = GodzillaMoveService.MoveTo(
+		monster,
+		options.ApproachPosition or destination,
+		{
+			MoveSpeed = options.MoveSpeed,
+			MaxTravelDuration = options.MaxTravelDuration,
+			TimingSafetyMargin = options.TimingSafetyMargin,
+			TurnDuration = options.TurnDuration,
+			SetMoving = function(isMoving, moveSpeed)
+				GodzillaService.SetMoving(
+					monster,
+					options.ModelAnimationConfig,
+					isMoving,
+					moveSpeed,
+					options.WalkAnimation
+				)
+			end,
+		}
+	)
 	moveActive = false
 	if movePollError ~= nil then
 		error(movePollError, 0)

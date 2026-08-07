@@ -20,6 +20,10 @@ local GodzillaMoveService = require(script.Parent.GodzillaMoveService)
 local GodzillaService = require(script.Parent.GodzillaService)
 local ModelMover = require(script.Parent.ModelMover)
 local MonsterAttackCommandCoordinator = require(script.Parent.MonsterAttackCommandCoordinator)
+local MonsterAttackCameraPublisher = require(script.Parent.MonsterAttackCameraPublisher)
+local MonsterExpeditionProgressPublisher = require(
+	script.Parent.MonsterExpeditionProgressPublisher
+)
 local MonsterExpeditionCoordinator = require(script.Parent.MonsterExpeditionCoordinator)
 local MonsterExpeditionReportService = require(script.Parent.MonsterExpeditionReportService)
 local MonsterIncubatorCoordinator = require(script.Parent.MonsterIncubatorCoordinator)
@@ -35,7 +39,13 @@ local PlayerRebirthBonusQuery = require(script.Parent.PlayerRebirthBonusQuery)
 local PlayerRuntimeHouseAttackAccess = require(script.Parent.PlayerRuntimeHouseAttackAccess)
 local PlayerRuntimeDefenseTowerAccess = require(script.Parent.PlayerRuntimeDefenseTowerAccess)
 local WorkspacePlayerWorldAccess = require(script.Parent.WorkspacePlayerWorldAccess)
+local WorkspaceMonsterEncounterAccess = require(
+	script.Parent.WorkspaceMonsterEncounterAccess
+)
 local ModelAnimationConfigs = require(ReplicatedStorage.Shared.Animation.ModelAnimationConfigs)
+local MonsterAttackSelectionConfig = require(
+	ReplicatedStorage.Shared.Monster.MonsterAttackSelectionConfig
+)
 local MonsterAttackConfigs = require(ReplicatedStorage.Shared.Monster.MonsterAttackConfigs)
 local DefenseMonsterSlotCatalog = require(
 	ReplicatedStorage.Shared.Monster.DefenseMonsterSlotCatalog
@@ -329,6 +339,16 @@ function PlayerMonsterAttackApplication.Execute(
 		{
 			TerritoryAccess = WorkspacePlayerWorldAccess.Territory,
 			StartExpedition = function(commandContext, isCancelled)
+				local progressPublished = MonsterExpeditionProgressPublisher.PublishStarted(
+					commandContext.Defender,
+					commandContext.CommandId,
+					commandContext.Attacker.UserId,
+					commandContext.AttackerSpawnPointId,
+					commandContext.StartedAt
+				)
+				if not progressPublished.Succeeded then
+					warn("发布防守方出征进度开始失败：", progressPublished.Reason)
+				end
 				local traceId = string.format(
 					"%d:%s:%d",
 					commandContext.Attacker.UserId,
@@ -342,6 +362,25 @@ function PlayerMonsterAttackApplication.Execute(
 				if not latest or not latest.Model then
 					return preExpeditionFailure("MonsterUnavailable", false)
 				end
+				local targetPlot, targetPlotReason = PlayerPlotAssignmentService.GetPlot(
+					commandContext.Defender
+				)
+				if not targetPlot then
+					return preExpeditionFailure(
+						targetPlotReason or "TargetPlotUnavailable",
+						isCancelled()
+					)
+				end
+				local encounterPoints, encounterReason = WorkspaceMonsterEncounterAccess.Resolve(
+					targetPlot,
+					commandContext.TargetRegionId
+				)
+				if not encounterPoints then
+					return preExpeditionFailure(
+						encounterReason or "MonsterEncounterPointsUnavailable",
+						isCancelled()
+					)
+				end
 				local released = MonsterIncubatorCoordinator.Release(
 					plot,
 					commandContext.AttackerSpawnPointId,
@@ -354,6 +393,43 @@ function PlayerMonsterAttackApplication.Execute(
 						released.Reason == "Cancelled"
 					)
 				end
+				local cameraPublished = MonsterAttackCameraPublisher.Publish(
+					commandContext.Attacker,
+					{
+						Kind = "FocusRegion",
+						CommandId = commandContext.CommandId,
+						AttackerUserId = commandContext.Attacker.UserId,
+						AttackerSpawnPointId = commandContext.AttackerSpawnPointId,
+						TargetOwnerUserId = commandContext.Defender.UserId,
+						RegionId = commandContext.TargetRegionId,
+					}
+				)
+				if not cameraPublished.Succeeded then
+					return preExpeditionFailure(
+						cameraPublished.Reason or "RegionCameraPublishFailed",
+						isCancelled()
+					)
+				end
+				local cameraReady = MonsterAttackCameraPublisher.WaitForCompletion(
+					commandContext.Attacker,
+					commandContext.AttackerSpawnPointId,
+					commandContext.CommandId,
+					MonsterAttackSelectionConfig.MarkerCamera.CompletionTimeout,
+					isCancelled
+				)
+				if not cameraReady.Succeeded then
+					return preExpeditionFailure(
+						cameraReady.Reason or "RegionCameraTransitionFailed",
+						cameraReady.Reason == "Cancelled"
+					)
+				end
+				local releasedRecord = MonsterRosterCoordinator.Get(
+					commandContext.Attacker,
+					commandContext.AttackerSpawnPointId
+				)
+				if not releasedRecord or not releasedRecord.Model then
+					return preExpeditionFailure("MonsterUnavailableAfterCamera", false)
+				end
 				local moving = MonsterRosterCoordinator.Transition(
 					commandContext.Attacker,
 					commandContext.AttackerSpawnPointId,
@@ -365,6 +441,13 @@ function PlayerMonsterAttackApplication.Execute(
 						false
 					)
 				end
+				local relocated = ModelMover.Snap(
+					releasedRecord.Model,
+					encounterPoints.AttackMonsterSpawnPoint.CFrame
+				)
+				if not relocated then
+					return preExpeditionFailure("AttackMonsterSpawnRelocationFailed", false)
+				end
 				return MonsterExpeditionCoordinator.Execute(
 					commandContext.Attacker,
 					commandContext.Defender,
@@ -373,6 +456,8 @@ function PlayerMonsterAttackApplication.Execute(
 					{
 						TraceId = traceId,
 						TargetRegionId = commandContext.TargetRegionId,
+						ApproachPosition = encounterPoints.AttackMonsterSpawnPoint.Position,
+						EncounterCFrame = encounterPoints.EncounterPoint.CFrame,
 						HouseAccess = PlayerRuntimeHouseAttackAccess,
 						ModelAnimationConfig = configs.Animation,
 						MonsterAttackConfig = scaleStructureAttack(
@@ -441,6 +526,15 @@ function PlayerMonsterAttackApplication.Execute(
 				callSucceeded,
 				result
 			)
+				local progressEnded = MonsterExpeditionProgressPublisher.PublishEnded(
+					commandContext.Defender,
+					commandContext.CommandId,
+					commandContext.Attacker.UserId,
+					commandContext.AttackerSpawnPointId
+				)
+				if not progressEnded.Succeeded and progressEnded.Reason ~= "DefenderUnavailable" then
+					warn("发布防守方出征进度结束失败：", progressEnded.Reason)
+				end
 				local report = MonsterExpeditionReportBuilder.Build({
 					CommandId = commandContext.CommandId,
 					AttackerUserId = commandContext.Attacker.UserId,

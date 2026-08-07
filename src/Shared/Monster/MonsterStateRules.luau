@@ -4,6 +4,8 @@ export type MonsterState =
 	"IdleAtSpawn"
 	| "Releasing"
 	| "MovingToTarget"
+	| "Encountering"
+	| "EnteringDuel"
 	| "AttackingStructure"
 	| "Defending"
 	| "FightingMonster"
@@ -28,6 +30,8 @@ local transitions: { [string]: { [string]: boolean } } = {
 	},
 	MovingToTarget = {
 		AttackingStructure = true,
+		Encountering = true,
+		EnteringDuel = true,
 		FightingMonster = true,
 		Returning = true,
 		Defeated = true,
@@ -39,8 +43,25 @@ local transitions: { [string]: { [string]: boolean } } = {
 		Defeated = true,
 	},
 	Defending = {
+		Encountering = true,
 		FightingMonster = true,
 		IdleAtSpawn = true,
+		Returning = true,
+		Defeated = true,
+	},
+	Encountering = {
+		MovingToTarget = true,
+		EnteringDuel = true,
+		Defending = true,
+		FightingMonster = true,
+		Returning = true,
+		Defeated = true,
+	},
+	EnteringDuel = {
+		MovingToTarget = true,
+		Encountering = true,
+		Defending = true,
+		FightingMonster = true,
 		Returning = true,
 		Defeated = true,
 	},

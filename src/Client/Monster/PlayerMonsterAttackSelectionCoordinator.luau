@@ -22,6 +22,15 @@ local AttackSelectionCoordinateDiagnostics = require(
 )
 local AttackTargetSnapshotMapper = require(script.Parent.AttackTargetSnapshotMapper)
 local LocalAttackCrosshairPresenter = require(script.Parent.LocalAttackCrosshairPresenter)
+local LocalMonsterAttackCameraMarkerAccess = require(
+	script.Parent.LocalMonsterAttackCameraMarkerAccess
+)
+local MonsterAttackCameraRemoteClient = require(
+	script.Parent.MonsterAttackCameraRemoteClient
+)
+local MonsterDuelCameraRemoteClient = require(
+	script.Parent.MonsterDuelCameraRemoteClient
+)
 local MonsterAttackRemoteClient = require(script.Parent.MonsterAttackRemoteClient)
 local SoloAttackPanelCoordinator = require(script.Parent.SoloAttackPanelCoordinator)
 local SoloAttackTargetSnapshotMapper = require(
@@ -29,6 +38,12 @@ local SoloAttackTargetSnapshotMapper = require(
 )
 local MonsterAttackSelectionConfig = require(
 	ReplicatedStorage.Shared.Monster.MonsterAttackSelectionConfig
+)
+local MonsterAttackCameraProtocol = require(
+	ReplicatedStorage.Shared.Monster.MonsterAttackCameraProtocol
+)
+local MonsterDuelCameraProtocol = require(
+	ReplicatedStorage.Shared.Monster.MonsterDuelCameraProtocol
 )
 local AnalyticsIntentProtocol = require(
 	ReplicatedStorage.Shared.Analytics.AnalyticsIntentProtocol
@@ -111,12 +126,37 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 	local panelSession = nil
 	local crosshairSession = nil
 	local followStateConnection: RBXScriptConnection? = nil
+	local cameraPresentationConnection: RBXScriptConnection? = nil
+	local duelCameraPresentationConnection: RBXScriptConnection? = nil
+	local pendingCameraCommand = nil
+	local pendingDuelCameraCommand: MonsterDuelCameraProtocol.CameraCommand? = nil
+	local lastRegionCamera: {
+		TargetCFrame: CFrame,
+		TransitionDuration: number,
+		FieldOfView: number,
+	}? = nil
+	local latestCameraCommandId = 0
+	local latestDuelCameraCommandId = 0
+	local acceptedCommandId: number? = nil
 
 	local function disconnectFollowState()
 		if followStateConnection then
 			followStateConnection:Disconnect()
 			followStateConnection = nil
 		end
+	end
+
+	local function disconnectCameraPresentation()
+		if cameraPresentationConnection then
+			cameraPresentationConnection:Disconnect()
+			cameraPresentationConnection = nil
+		end
+		if duelCameraPresentationConnection then
+			duelCameraPresentationConnection:Disconnect()
+			duelCameraPresentationConnection = nil
+		end
+		pendingCameraCommand = nil
+		pendingDuelCameraCommand = nil
 	end
 
 	-- 输入：当前 LocalPlayer 的实时 Character 与 CurrentCamera。
@@ -231,10 +271,134 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 		end
 	end
 
+	local function startCameraMarkerFocus(command)
+		task.spawn(function()
+			local markerConfig = MonsterAttackSelectionConfig.MarkerCamera
+			local marker, reason
+			if command.Kind == MonsterAttackCameraProtocol.FocusSoloRegionKind then
+				marker, reason = LocalMonsterAttackCameraMarkerAccess.WaitByPlotName(
+					command.TargetPlotName,
+					command.RegionId,
+					markerConfig.MarkerName,
+					markerConfig.ResolveTimeout
+				)
+			else
+				marker, reason = LocalMonsterAttackCameraMarkerAccess.Wait(
+					command.TargetOwnerUserId,
+					command.RegionId,
+					markerConfig.MarkerName,
+					markerConfig.ResolveTimeout
+				)
+			end
+			if command.CommandId ~= latestCameraCommandId then
+				return
+			end
+			if not marker then
+				warn("怪兽攻击区域运镜找不到 CameraMarker：", reason)
+				return
+			end
+			lastRegionCamera = {
+				TargetCFrame = marker.CFrame,
+				TransitionDuration = markerConfig.TransitionDuration,
+				FieldOfView = markerConfig.FieldOfView,
+			}
+			local session = followSession
+			if not session or not session.IsActive() then
+				return
+			end
+			local focused = session.Focus({
+				TargetCFrame = marker.CFrame,
+				TransitionDuration = markerConfig.TransitionDuration,
+				FieldOfView = markerConfig.FieldOfView,
+				OnCompleted = function()
+					local acknowledged = MonsterAttackCameraRemoteClient.Acknowledge(command)
+					if not acknowledged then
+						warn("怪兽攻击区域运镜完成回执发送失败")
+					end
+				end,
+			})
+			if not focused then
+				warn("怪兽攻击区域运镜会话已结束")
+			end
+		end)
+	end
+
+	local function focusCameraMarker(command)
+		if command.AttackerUserId ~= Players.LocalPlayer.UserId
+			or command.AttackerSpawnPointId ~= spawnPointId
+			or command.CommandId <= latestCameraCommandId
+			or (acceptedCommandId ~= nil and command.CommandId ~= acceptedCommandId)
+		then
+			return
+		end
+		latestCameraCommandId = command.CommandId
+		if not followSession then
+			pendingCameraCommand = command
+			return
+		end
+		startCameraMarkerFocus(command)
+	end
+
+	local function handleDuelCameraCommand(
+		command: MonsterDuelCameraProtocol.Command
+	)
+		if command.Role ~= "Attacker"
+			or command.AttackerUserId ~= Players.LocalPlayer.UserId
+			or command.AttackerSpawnPointId ~= spawnPointId
+		then
+			return
+		end
+		if command.CommandId <= latestDuelCameraCommandId then
+			return
+		end
+		latestDuelCameraCommandId = command.CommandId
+		if command.Kind == MonsterDuelCameraProtocol.RestoreKind then
+			pendingDuelCameraCommand = nil
+			local session = followSession
+			if session and session.IsActive() then
+				if command.RestoreToRegion and lastRegionCamera then
+					local regionCamera = lastRegionCamera
+					local focused = session.Focus({
+						TargetCFrame = regionCamera.TargetCFrame,
+						TransitionDuration = regionCamera.TransitionDuration,
+						FieldOfView = regionCamera.FieldOfView,
+					})
+					if not focused then
+						warn("决斗结束后恢复区域镜头失败")
+					end
+				else
+					session.Stop("DuelEnded")
+				end
+			end
+			return
+		end
+		local session = followSession
+		if not session or not session.IsActive() then
+			pendingDuelCameraCommand = command
+			return
+		end
+		local focused = session.Focus({
+			TargetCFrame = command.CameraCFrame,
+			TransitionDuration = command.TransitionDuration,
+			FieldOfView = command.FieldOfView,
+			OnCompleted = function()
+				local acknowledged = MonsterDuelCameraRemoteClient.Acknowledge(command)
+				if not acknowledged then
+					warn("攻击方决斗镜头完成回执发送失败")
+				end
+			end,
+		})
+		if not focused then
+			warn("攻击方决斗镜头会话已结束")
+		end
+	end
+
 	local function onAccepted(result)
+		acceptedCommandId = result.CommandId
 		local monster = result.Monster
 		if monster and monster:IsDescendantOf(workspace) then
 			local followConfig = MonsterAttackSelectionConfig.FollowCamera
+			local markerConfig = MonsterAttackSelectionConfig.MarkerCamera
 			disconnectFollowState()
 			followSession = MonsterFollowCamera.Start(
 				monster,
@@ -242,8 +406,10 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 					Offset = followConfig.Offset,
 					FieldOfView = followConfig.FieldOfView,
 					Responsiveness = followConfig.Responsiveness,
+					RestoreDuration = markerConfig.RestoreDuration,
 					OnStopped = function(reason)
 						disconnectFollowState()
+						disconnectCameraPresentation()
 						followSession = nil
 						restoreLocalPlayerCamera()
 						if callbacks.OnFollowStopped then
@@ -265,6 +431,33 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 				stopAfterReturn
 			)
 			stopAfterReturn()
+			if pendingCameraCommand then
+				local command = pendingCameraCommand
+				pendingCameraCommand = nil
+				if command.CommandId == acceptedCommandId then
+					startCameraMarkerFocus(command)
+				end
+			end
+			if pendingDuelCameraCommand then
+				local command = pendingDuelCameraCommand
+				pendingDuelCameraCommand = nil
+				local session = followSession
+				if session and session.IsActive() then
+					session.Focus({
+						TargetCFrame = command.CameraCFrame,
+						TransitionDuration = command.TransitionDuration,
+						FieldOfView = command.FieldOfView,
+						OnCompleted = function()
+							local acknowledged = MonsterDuelCameraRemoteClient.Acknowledge(
+								command
+							)
+							if not acknowledged then
+								warn("攻击方决斗镜头完成回执发送失败")
+							end
+						end,
+					})
+				end
+			end
 			if followSession and followSession.IsActive() and callbacks.OnFollowStarted then
 				callbacks.OnFollowStarted(monster)
 			end
@@ -276,6 +469,9 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 		stopInput()
 		stopCrosshair()
 		restoreBrowseCamera()
+		if reason ~= "CommandAccepted" then
+			disconnectCameraPresentation()
+		end
 		diagnostics.End(reason)
 		if reason == "Cancelled" then
 			AnalyticsIntentClient.Record(
@@ -289,6 +485,11 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 			callbacks.OnClosed(reason)
 		end
 	end
+
+	cameraPresentationConnection = MonsterAttackCameraRemoteClient.Observe(focusCameraMarker)
+	duelCameraPresentationConnection = MonsterDuelCameraRemoteClient.Observe(
+		handleDuelCameraCommand
+	)
 
 	if soloTarget then
 		panelSession = SoloAttackPanelCoordinator.Open(spawnPointId, soloTarget, {

@@ -16,6 +16,8 @@ export type SessionOptions = {
 	TraceId: string,
 	TargetRegionId: string,
 	TowerAccess: DefenseTowerAccess.Access,
+	-- 可选的接敌触发点；用于进攻出生点位于区域 Bounds 外的布置。
+	TriggerPosition: Vector3?,
 	OnDefeated: ((Player, string, MonsterDamageCoordinator.DamageSource) -> ())?,
 	OnTowerHit: ((string, number) -> ())?,
 }
@@ -47,7 +49,7 @@ end
 
 -- 输入：唯一防守玩家、唯一进攻怪兽和防御访问接口。
 -- 输出：可轮询的防御会话；塔防在独立循环持续结算，Poll 最多预约一只守城怪兽。
--- 内部算法：防御塔独立按冷却攻击；进攻怪兽进入对应区域 Bounds 后，
+-- 内部算法：防御塔独立按冷却攻击；进攻怪兽进入对应区域 Bounds 或到达显式接敌触发点后，
 -- 选择该区域最近的空闲守城怪兽并切换为 Defending，不再限制守城槽位距离。
 function CityDefenseCoordinator.Begin(
 	defender: Player,
@@ -69,6 +71,7 @@ function CityDefenseCoordinator.Begin(
 
 	local closed = false
 	local attackerDefeated = false
+	local triggerReached = false
 	local towerNextAttackAt: { [string]: number } = {}
 
 	local function applyTowerDamage()
@@ -155,6 +158,12 @@ function CityDefenseCoordinator.Begin(
 			return { Kind = "AttackerDefeated", DefenderSpawnPointId = nil }
 		end
 		local attackerPosition = attackerRecord.Model:GetPivot().Position
+		local triggerPosition = options.TriggerPosition
+		if triggerPosition
+			and horizontalDistance(attackerPosition, triggerPosition) <= 2
+		then
+			triggerReached = true
+		end
 
 		local candidates = {}
 		for _, record in MonsterRosterCoordinator.List(defender) do
@@ -163,7 +172,10 @@ function CityDefenseCoordinator.Begin(
 				and definition.RegionId == options.TargetRegionId
 				and record.State == "IdleAtSpawn"
 				and record.Model
-				and isInsideDefenseRegion(defender, definition.RegionId, attackerPosition)
+				and (
+					isInsideDefenseRegion(defender, definition.RegionId, attackerPosition)
+					or triggerReached
+				)
 			then
 				table.insert(candidates, {
 					TargetId = record.SpawnPointId,

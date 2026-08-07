@@ -24,6 +24,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local ExpandedPresentationPublisher = require(script.Parent.ExpandedPresentationPublisher)
 local MonsterBuildPresentationPublisher = require(
 	script.Parent.MonsterBuildPresentationPublisher
 )
@@ -32,6 +33,7 @@ local MonsterBuildButtonPresentationService = require(
 )
 local MonsterIncubatorBuildCoordinator = require(script.Parent.MonsterIncubatorBuildCoordinator)
 local MonsterIncubatorCoordinator = require(script.Parent.MonsterIncubatorCoordinator)
+local MonsterLevelUpVFXController = require(script.Parent.MonsterLevelUpVFXController)
 local MonsterRosterCoordinator = require(script.Parent.MonsterRosterCoordinator)
 local MonsterSpawnPointStateService = require(script.Parent.MonsterSpawnPointStateService)
 local MonsterTemplateResolver = require(script.Parent.MonsterTemplateResolver)
@@ -120,6 +122,19 @@ local INITIAL_LEVEL = 1
 local loadedPlots: { [Player]: Model } = setmetatable({}, { __mode = "k" })
 local loadedPoints: { [Player]: { [string]: BasePart } } = setmetatable({}, { __mode = "k" })
 local started = false
+
+local function playLevelUpVFX(plot: Model, homeCFrame: CFrame)
+	local called, playback = pcall(
+		MonsterLevelUpVFXController.Play,
+		plot,
+		homeCFrame
+	)
+	if not called then
+		warn("怪兽升级特效播放异常：", playback)
+	elseif not playback.Succeeded then
+		warn("怪兽升级特效未播放：", playback.Reason or "Unknown")
+	end
+end
 
 local function refreshBuildButtons(player: Player, plot: Model)
 	local called, refreshed, reason = pcall(
@@ -732,6 +747,15 @@ function PlayerMonsterRuntimeCoordinator.Build(player: Player, spawnPointId: str
 	loadedPoints[player] = loadedPoints[player] or {}
 	loadedPoints[player][spawnPointId] = plan.Point
 	refreshBuildButtons(player, plan.Plot)
+	local published = ExpandedPresentationPublisher.PublishIncubatorBuilt(player, spawnPointId)
+	if not published.Succeeded then
+		warn(string.format(
+			"发布培养罐建造提示失败：%s/%s (%s)",
+			player.Name,
+			spawnPointId,
+			published.Reason or "Unknown"
+		))
+	end
 	return result(true, nil, created.Record, nil)
 end
 
@@ -801,6 +825,7 @@ function PlayerMonsterRuntimeCoordinator.Upgrade(
 			targetLevel,
 			plan.MonsterKey
 		)
+		playLevelUpVFX(plan.Plot, homeCFrame)
 		return result(true, nil, upgraded.Record, nil)
 	end
 
@@ -887,6 +912,7 @@ function PlayerMonsterRuntimeCoordinator.Upgrade(
 			presented.Reason or "Unknown"
 		))
 	end
+	playLevelUpVFX(plan.Plot, homeCFrame)
 	return result(true, nil, upgraded.Record, nil)
 end
 

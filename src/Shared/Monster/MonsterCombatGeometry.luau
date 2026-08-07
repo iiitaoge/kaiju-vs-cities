@@ -6,6 +6,16 @@ local MonsterCombatGeometry = {}
 
 export type AttackPose = HorizontalBoundsGeometry.Pose
 
+local function modelBounds(model: Model): HorizontalBoundsGeometry.MovingBounds
+	local pivot = model:GetPivot()
+	local boundsCFrame, boundsSize = model:GetBoundingBox()
+	return {
+		Pivot = pivot,
+		CFrame = boundsCFrame,
+		Size = boundsSize,
+	}
+end
+
 -- 输入：两个怪兽模型。
 -- 输出：双方水平包围盒之间的边缘距离；重叠时为零。
 -- 内部算法：沿双方中心连线计算两个有向包围盒的支撑半径。
@@ -13,14 +23,14 @@ function MonsterCombatGeometry.GetGap(attacker: Model, target: Model): number
 	assert(attacker:IsA("Model"), "attacker 必须是 Model")
 	assert(target:IsA("Model"), "target 必须是 Model")
 
-	local attackerCFrame, attackerSize = attacker:GetBoundingBox()
-	local targetCFrame, targetSize = target:GetBoundingBox()
+	local attackerBounds = modelBounds(attacker)
+	local targetBounds = modelBounds(target)
 	return HorizontalBoundsGeometry.GetGap({
-		CFrame = attackerCFrame,
-		Size = attackerSize,
+		CFrame = attackerBounds.CFrame,
+		Size = attackerBounds.Size,
 	}, {
-		CFrame = targetCFrame,
-		Size = targetSize,
+		CFrame = targetBounds.CFrame,
+		Size = targetBounds.Size,
 	}, attacker:GetPivot().LookVector)
 end
 
@@ -36,17 +46,42 @@ function MonsterCombatGeometry.ResolvePose(
 	assert(target:IsA("Model"), "target 必须是 Model")
 	assert(type(desiredGap) == "number" and desiredGap >= 0, "desiredGap 无效")
 
-	local pivot = attacker:GetPivot()
-	local attackerBounds, attackerSize = attacker:GetBoundingBox()
-	local targetBounds, targetSize = target:GetBoundingBox()
+	local attackerBounds = modelBounds(attacker)
+	local targetBoundsCFrame, targetBoundsSize = target:GetBoundingBox()
 	return HorizontalBoundsGeometry.ResolvePose({
-		Pivot = pivot,
-		CFrame = attackerBounds,
-		Size = attackerSize,
+		Pivot = attackerBounds.Pivot,
+		CFrame = attackerBounds.CFrame,
+		Size = attackerBounds.Size,
 	}, {
-		CFrame = targetBounds,
-		Size = targetSize,
+		CFrame = targetBoundsCFrame,
+		Size = targetBoundsSize,
 	}, desiredGap)
+end
+
+-- 输入：移动怪兽、固定目标点、期望边缘间距和移动怪兽所在一侧的离开方向。
+-- 输出：按真实包围盒/Pivot 偏移计算的精确站位与朝向点。
+-- 内部算法：把目标点作为零尺寸包围盒，复用统一的有向包围盒站位算法。
+function MonsterCombatGeometry.ResolvePoseToPoint(
+	monster: Model,
+	targetCFrame: CFrame,
+	desiredGap: number,
+	awayDirection: Vector3
+): AttackPose
+	assert(monster:IsA("Model"), "monster 必须是 Model")
+	assert(typeof(targetCFrame) == "CFrame", "targetCFrame 必须是 CFrame")
+	assert(type(desiredGap) == "number" and desiredGap >= 0, "desiredGap 无效")
+	assert(typeof(awayDirection) == "Vector3", "awayDirection 必须是 Vector3")
+
+	local bounds = modelBounds(monster)
+	return HorizontalBoundsGeometry.ResolvePoseWithAway(
+		bounds,
+		{
+			CFrame = targetCFrame,
+			Size = Vector3.zero,
+		},
+		desiredGap,
+		Vector2.new(awayDirection.X, awayDirection.Z)
+	)
 end
 
 return MonsterCombatGeometry

@@ -440,6 +440,10 @@ function PlayerDefenseMonsterRuntimeCoordinator.ReturnToSlot(player: Player, spa
 				ModelMover.Snap(model, spawnCFrame)
 				moved = true
 			end
+			if moved and model.Parent then
+				-- MoveTo 只保证到达出生点位置；最终用出生点 CFrame 校正朝向。
+				ModelMover.Snap(model, spawnCFrame)
+			end
 			return { Succeeded = moved, Reason = if moved then nil else "DefenseMonsterReturnFailed" }
 		end,
 		OnReturned = function(_player, _spawnPointId, model)

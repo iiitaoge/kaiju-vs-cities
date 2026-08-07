@@ -16,6 +16,15 @@ local followCamera = table.freeze({
 	Responsiveness = 8,
 })
 
+local markerCamera = table.freeze({
+	MarkerName = "CameraMarker",
+	ResolveTimeout = 5,
+	TransitionDuration = 1.5,
+	CompletionTimeout = 8,
+	RestoreDuration = 0.75,
+	FieldOfView = 70,
+})
+
 local crosshair = table.freeze({
 	TemplateName = "Crosshair",
 	AnimationAssetId = 100062745080464,
@@ -25,5 +34,6 @@ local crosshair = table.freeze({
 return table.freeze({
 	BrowseCamera = browseCamera,
 	FollowCamera = followCamera,
+	MarkerCamera = markerCamera,
 	Crosshair = crosshair,
 })

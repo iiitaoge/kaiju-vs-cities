@@ -53,6 +53,50 @@ local function supportRadius(cframe: CFrame, size: Vector3, direction: Vector2):
 		+ math.abs(direction:Dot(look)) * size.Z * 0.5
 end
 
+local function resolvePoseWithAway(
+	moving: MovingBounds,
+	target: Bounds,
+	desiredGap: number,
+	away: Vector2
+): Pose
+	assertBounds(moving, "moving")
+	assert(typeof(moving.Pivot) == "CFrame", "moving.Pivot 必须是 CFrame")
+	assertBounds(target, "target")
+	assert(type(desiredGap) == "number" and desiredGap >= 0, "desiredGap 必须大于等于 0")
+
+	local targetCenter = horizontal(target.CFrame.Position)
+	local normalizedAway = unitOrFallback(
+		away,
+		-horizontal(moving.Pivot.LookVector)
+	)
+	local relativeBounds = moving.Pivot:ToObjectSpace(moving.CFrame)
+	local facingRotation = CFrame.lookAt(
+		Vector3.zero,
+		Vector3.new(-normalizedAway.X, 0, -normalizedAway.Y)
+	).Rotation
+	local targetMovingBoundsRotation = facingRotation * relativeBounds.Rotation
+	local rotatedOffset = horizontal(
+		facingRotation:VectorToWorldSpace(relativeBounds.Position)
+	)
+	local targetRadius = supportRadius(target.CFrame, target.Size, normalizedAway)
+	local movingRadius = supportRadius(
+		targetMovingBoundsRotation,
+		moving.Size,
+		normalizedAway
+	)
+	local pivotDistance = targetRadius
+		+ movingRadius
+		+ desiredGap
+		- rotatedOffset:Dot(normalizedAway)
+	local position2 = targetCenter + normalizedAway * pivotDistance
+	local pivotY = moving.Pivot.Position.Y
+
+	return {
+		Position = Vector3.new(position2.X, pivotY, position2.Y),
+		LookAtPosition = Vector3.new(targetCenter.X, pivotY, targetCenter.Y),
+	}
+end
+
 function HorizontalBoundsGeometry.GetGap(
 	first: Bounds,
 	second: Bounds,
@@ -90,28 +134,20 @@ function HorizontalBoundsGeometry.ResolvePose(
 		movingCenter - targetCenter,
 		-horizontal(moving.Pivot.LookVector)
 	)
-	local relativeBounds = moving.Pivot:ToObjectSpace(moving.CFrame)
-	local facingRotation = CFrame.lookAt(
-		Vector3.zero,
-		Vector3.new(-away.X, 0, -away.Y)
-	).Rotation
-	local targetMovingBoundsRotation = facingRotation * relativeBounds.Rotation
-	local rotatedOffset = horizontal(
-		facingRotation:VectorToWorldSpace(relativeBounds.Position)
-	)
-	local targetRadius = supportRadius(target.CFrame, target.Size, away)
-	local movingRadius = supportRadius(targetMovingBoundsRotation, moving.Size, away)
-	local pivotDistance = targetRadius
-		+ movingRadius
-		+ desiredGap
-		- rotatedOffset:Dot(away)
-	local position2 = targetCenter + away * pivotDistance
-	local pivotY = moving.Pivot.Position.Y
+	return resolvePoseWithAway(moving, target, desiredGap, away)
+end
 
-	return {
-		Position = Vector3.new(position2.X, pivotY, position2.Y),
-		LookAtPosition = Vector3.new(targetCenter.X, pivotY, targetCenter.Y),
-	}
+-- 输入：移动对象的包围盒、目标包围盒、期望边缘间距和明确的离开方向。
+-- 输出：保持移动对象高度的精确站位与朝向点。
+-- 内部算法：复用 ResolvePose 的有向包围盒计算，但不从当前模型位置推断站位侧。
+-- 用于目标中心是一个固定场景点，或两个对象初始位置不适合推断相对方向的场景。
+function HorizontalBoundsGeometry.ResolvePoseWithAway(
+	moving: MovingBounds,
+	target: Bounds,
+	desiredGap: number,
+	away: Vector2
+): Pose
+	return resolvePoseWithAway(moving, target, desiredGap, away)
 end
 
 return table.freeze(HorizontalBoundsGeometry)

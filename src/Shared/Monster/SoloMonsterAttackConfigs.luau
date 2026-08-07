@@ -8,4 +8,5 @@ return table.freeze({
 	BoundsPartName = "AttackViewBounds",
 	DisplayName = "Empty Plot",
 	AttackDuration = 3,
+	CameraFallbackRegionId = "R1",
 })

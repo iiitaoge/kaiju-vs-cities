@@ -22,6 +22,7 @@ local SoloMonsterAttackCommandCoordinator = {}
 export type Area = {
 	CFrame: CFrame,
 	Size: Vector3,
+	PlotName: string?,
 }
 
 export type AreaAccess = {
@@ -33,6 +34,7 @@ export type CommandContext = {
 	Player: Player,
 	SpawnPointId: string,
 	EntryPoint: Vector3,
+	TargetPlotName: string?,
 	StartedAt: number,
 }
 
@@ -160,6 +162,7 @@ function SoloMonsterAttackCommandCoordinator.Execute(
 		Player = player,
 		SpawnPointId = spawnPointId,
 		EntryPoint = entryPoint,
+		TargetPlotName = area.PlotName,
 		StartedAt = workspace:GetServerTimeNow(),
 	})
 	setActiveCommand(player, spawnPointId, commandId)

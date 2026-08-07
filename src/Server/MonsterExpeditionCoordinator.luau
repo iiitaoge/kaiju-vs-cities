@@ -9,6 +9,8 @@ local MonsterAttackCoordinator = require(script.Parent.MonsterAttackCoordinator)
 local MonsterCombatCoordinator = require(script.Parent.MonsterCombatCoordinator)
 local MonsterDamageCoordinator = require(script.Parent.MonsterDamageCoordinator)
 local MonsterCombatDiagnosticLog = require(script.Parent.MonsterCombatDiagnosticLog)
+local MonsterDuelSceneCoordinator = require(script.Parent.MonsterDuelSceneCoordinator)
+local MonsterEncounterCoordinator = require(script.Parent.MonsterEncounterCoordinator)
 local MonsterExpeditionAttackPhaseCoordinator = require(
 	script.Parent.MonsterExpeditionAttackPhaseCoordinator
 )
@@ -20,6 +22,8 @@ local MonsterExpeditionCoordinator = {}
 export type ExecuteOptions = {
 	TraceId: string,
 	TargetRegionId: string,
+	ApproachPosition: Vector3?,
+	EncounterCFrame: CFrame,
 	HouseAccess: HouseAttackTargetAccess.Access,
 	ModelAnimationConfig: MonsterAttackCoordinator.ModelAnimationConfig,
 	MonsterAttackConfig: MonsterAttackCoordinator.MonsterAttackConfig,
@@ -66,10 +70,10 @@ local function updatePhase(player: Player, spawnPointId: string, phase: string)
 	end
 end
 
--- 输入：唯一进攻玩家、唯一防守玩家、进攻怪兽出生点、已验证落点和目标区域。
+-- 输入：唯一进攻玩家、唯一防守玩家、进攻怪兽出生点、房屋选区落点和目标区域。
 -- 输出：完整出征结果、摧毁房屋和奖励总额。
--- 内部算法：先移动到落点，再逐只清空目标区域守卫；随后固定在落点持续发射激光，
--- 发射中转向并按距离逐栋消耗一次建筑伤害预算，最后一栋允许残血。
+-- 内部算法：先抵达区域进攻出生点，双方在相遇中心逐只清空目标区域守卫；
+-- 战斗胜利后保持在相遇位置发射激光，按选区落点逐栋消耗建筑伤害预算，最后一栋允许残血。
 function MonsterExpeditionCoordinator.Execute(
 	attacker: Player,
 	defender: Player,
@@ -85,6 +89,7 @@ function MonsterExpeditionCoordinator.Execute(
 		type(options.TargetRegionId) == "string" and options.TargetRegionId ~= "",
 		"TargetRegionId 无效"
 	)
+	assert(typeof(options.EncounterCFrame) == "CFrame", "EncounterCFrame 无效")
 	assert(type(options.ResolveCombatConfig) == "function", "ResolveCombatConfig 必须是 function")
 	assert(type(options.OnDefeated) == "function", "OnDefeated 必须是 function")
 	assert(type(options.OnReturnRequired) == "function", "OnReturnRequired 必须是 function")
@@ -173,6 +178,7 @@ function MonsterExpeditionCoordinator.Execute(
 		{
 			TraceId = options.TraceId,
 			TargetRegionId = options.TargetRegionId,
+			TriggerPosition = options.ApproachPosition,
 			TowerAccess = options.Defense.TowerAccess,
 			OnDefeated = onDefeated,
 			OnTowerHit = function(_towerId, damageApplied)
@@ -192,6 +198,7 @@ function MonsterExpeditionCoordinator.Execute(
 		entryPoint,
 		{
 			TargetRegionId = options.TargetRegionId,
+			ApproachPosition = options.ApproachPosition,
 			HouseAccess = options.HouseAccess,
 			ModelAnimationConfig = options.ModelAnimationConfig,
 			MonsterAttackConfig = options.MonsterAttackConfig,
@@ -274,6 +281,137 @@ function MonsterExpeditionCoordinator.Execute(
 				local defenderDefinition = if defenderBeforeCombat
 					then MonsterCatalog.Get(defenderBeforeCombat.MonsterKey)
 					else nil
+				local resumeState = if attackerBeforeCombat
+					then attackerBeforeCombat.State
+					else "MovingToTarget"
+				activeDefenderSpawnPointId = event.DefenderSpawnPointId
+				local encountered = MonsterEncounterCoordinator.Execute(
+					{
+						Player = attacker,
+						SpawnPointId = attackerSpawnPointId,
+					},
+					{
+						Player = defender,
+						SpawnPointId = event.DefenderSpawnPointId,
+					},
+					{
+						TraceId = options.TraceId,
+						EncounterCFrame = options.EncounterCFrame,
+						AttackerMovement = attackerConfig.Movement,
+						DefenderMovement = defenderConfig.Movement,
+						SetMoving = options.SetCombatantMoving,
+						IsCancelled = function()
+							return expeditionExpired
+								or (options.IsCancelled and options.IsCancelled())
+								or false
+						end,
+					}
+				)
+				if not encountered.Succeeded then
+					activeDefenderSpawnPointId = nil
+					local defenderAfterEncounter = MonsterRosterCoordinator.Get(
+						defender,
+						event.DefenderSpawnPointId
+					)
+					if defenderAfterEncounter
+						and defenderAfterEncounter.Model
+						and defenderAfterEncounter.State == "Defending"
+					then
+						local returned = options.OnDefenderReturnRequired(
+							defender,
+							event.DefenderSpawnPointId
+						)
+						if not returned.Succeeded then
+							warn("相遇失败后防守怪兽回位失败：", returned.Reason)
+						end
+					end
+					return {
+						Continue = false,
+						Reason = encountered.Reason or "MonsterEncounterFailed",
+					}
+				end
+				local attackerAtEncounter = MonsterRosterCoordinator.Get(
+					attacker,
+					attackerSpawnPointId
+				)
+				local defenderAtEncounter = MonsterRosterCoordinator.Get(
+					defender,
+					event.DefenderSpawnPointId
+				)
+				if not attackerAtEncounter
+					or not attackerAtEncounter.Model
+					or not defenderAtEncounter
+					or not defenderAtEncounter.Model
+				then
+					activeDefenderSpawnPointId = nil
+					if defenderAtEncounter
+						and defenderAtEncounter.Model
+						and (defenderAtEncounter.State == "Encountering"
+							or defenderAtEncounter.State == "Defending")
+					then
+						local returned = options.OnDefenderReturnRequired(
+							defender,
+							event.DefenderSpawnPointId
+						)
+						if not returned.Succeeded then
+							warn("相遇后决斗对象丢失，防守怪兽回位失败：", returned.Reason)
+						end
+					end
+					return {
+						Continue = false,
+						Reason = "EncounterCombatantUnavailable",
+					}
+				end
+				local duelEntered = MonsterDuelSceneCoordinator.Enter(
+					{
+						Player = attacker,
+						SpawnPointId = attackerSpawnPointId,
+					},
+					{
+						Player = defender,
+						SpawnPointId = event.DefenderSpawnPointId,
+					},
+					{
+						TraceId = options.TraceId,
+						AttackerReturnCFrame = attackerAtEncounter.Model:GetPivot(),
+						DefenderReturnCFrame = defenderAtEncounter.Model:GetPivot(),
+						AttackerFailureState = resumeState,
+						DefenderFailureState = "Defending",
+						AttackerMovement = attackerConfig.Movement,
+						DefenderMovement = defenderConfig.Movement,
+						SetMoving = options.SetCombatantMoving,
+						IsCancelled = function()
+							return expeditionExpired
+								or (options.IsCancelled and options.IsCancelled())
+								or false
+						end,
+					}
+				)
+				if not duelEntered.Succeeded or not duelEntered.Session then
+					activeDefenderSpawnPointId = nil
+					local defenderAfterDuelEnter = MonsterRosterCoordinator.Get(
+						defender,
+						event.DefenderSpawnPointId
+					)
+					if defenderAfterDuelEnter
+						and defenderAfterDuelEnter.Model
+						and (defenderAfterDuelEnter.State == "Defending"
+							or defenderAfterDuelEnter.State == "Encountering")
+					then
+						local returned = options.OnDefenderReturnRequired(
+							defender,
+							event.DefenderSpawnPointId
+						)
+						if not returned.Succeeded then
+							warn("决斗场景进入失败后防守怪兽回位失败：", returned.Reason)
+						end
+					end
+					return {
+						Continue = false,
+						Reason = duelEntered.Reason or "DuelSceneEnterFailed",
+					}
+				end
+				local duelSession = duelEntered.Session
 				MonsterCombatDiagnosticLog.Emit("DUEL_MATCHED", {
 					TraceId = options.TraceId,
 					AttackerUserId = attacker.UserId,
@@ -307,11 +445,8 @@ function MonsterExpeditionCoordinator.Execute(
 					AttackerAttackInterval = attackerConfig.AttackInterval,
 					DefenderAttackInterval = defenderConfig.AttackInterval,
 				})
-				local resumeState = if attackerBeforeCombat
-					then attackerBeforeCombat.State
-					else "MovingToTarget"
-				activeDefenderSpawnPointId = event.DefenderSpawnPointId
-				local combatResult = MonsterCombatCoordinator.Execute(
+				local combatCallSucceeded, combatResultOrError = pcall(
+					MonsterCombatCoordinator.Execute,
 					{
 						Player = attacker,
 						SpawnPointId = attackerSpawnPointId,
@@ -325,6 +460,8 @@ function MonsterExpeditionCoordinator.Execute(
 						AttackerConfig = attackerConfig,
 						DefenderConfig = defenderConfig,
 						ApproachingSide = "Defender",
+						-- 决斗场已让双方从各自出生点相向走到真实接敌位置。
+						Prepositioned = true,
 						FirstStrike = options.CombatFirstStrike,
 						AttackerResumeState = resumeState,
 						DefenderResumeState = "Defending",
@@ -339,6 +476,41 @@ function MonsterExpeditionCoordinator.Execute(
 						WatchdogDuration = options.DuelWatchdogDuration,
 					}
 				)
+				local attackerWonDuel = combatCallSucceeded
+					and type(combatResultOrError) == "table"
+					and combatResultOrError.Succeeded == true
+					and combatResultOrError.Winner == "Attacker"
+				local duelExited = MonsterDuelSceneCoordinator.Exit(duelSession, {
+					RestoreAttackerToRegion = attackerWonDuel,
+				})
+				if not duelExited.Succeeded then
+					warn("决斗场景退出失败：", duelExited.Reason)
+				end
+				if not combatCallSucceeded then
+					warn("怪兽决斗执行异常：", combatResultOrError)
+					activeDefenderSpawnPointId = nil
+					local defenderAfterCombatError = MonsterRosterCoordinator.Get(
+						defender,
+						event.DefenderSpawnPointId
+					)
+					if defenderAfterCombatError
+						and defenderAfterCombatError.Model
+						and defenderAfterCombatError.State == "Defending"
+					then
+						local returned = options.OnDefenderReturnRequired(
+							defender,
+							event.DefenderSpawnPointId
+						)
+						if not returned.Succeeded then
+							warn("决斗异常后防守怪兽回位失败：", returned.Reason)
+						end
+					end
+					return {
+						Continue = false,
+						Reason = "MonsterCombatFailed",
+					}
+				end
+				local combatResult = combatResultOrError
 				lastCombatResult = {
 					Succeeded = combatResult.Succeeded,
 					Reason = combatResult.Reason or "None",

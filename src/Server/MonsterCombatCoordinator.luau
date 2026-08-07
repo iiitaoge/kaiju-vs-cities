@@ -48,6 +48,7 @@ export type ExecuteOptions = {
 	AttackerConfig: CombatConfig,
 	DefenderConfig: CombatConfig,
 	ApproachingSide: "Attacker" | "Defender",
+	Prepositioned: boolean?,
 	FirstStrike: "Attacker" | "Defender",
 	AttackerResumeState: string,
 	DefenderResumeState: string,
@@ -223,6 +224,45 @@ local function positionCombatants(
 		FinalGap = finalGap,
 		MaxAllowedGap = maxAllowedGap,
 		InRange = finalGap <= maxAllowedGap,
+	})
+	if finalGap > maxAllowedGap then
+		return false, "CombatPositionOutOfRange"
+	end
+	return true, nil
+end
+
+local function validatePrepositioned(
+	attacker: Combatant,
+	defender: Combatant,
+	options: ExecuteOptions
+): (boolean, string?)
+	local attackerRecord = MonsterRosterCoordinator.Get(attacker.Player, attacker.SpawnPointId)
+	local defenderRecord = MonsterRosterCoordinator.Get(defender.Player, defender.SpawnPointId)
+	if not attackerRecord or not attackerRecord.Model then
+		return false, "AttackerUnavailable"
+	end
+	if not defenderRecord or not defenderRecord.Model then
+		return false, "DefenderUnavailable"
+	end
+	local finalGap = MonsterCombatGeometry.GetGap(
+		attackerRecord.Model,
+		defenderRecord.Model
+	)
+	local maxAllowedGap = math.min(
+		options.AttackerConfig.Movement.MaxGap,
+		options.DefenderConfig.Movement.MaxGap
+	)
+	MonsterCombatDiagnosticLog.Emit("DUEL_POSITIONED", {
+		TraceId = options.TraceId,
+		ApproachingSide = "Both",
+		DesiredGap = math.max(
+			options.AttackerConfig.Movement.DesiredGap,
+			options.DefenderConfig.Movement.DesiredGap
+		),
+		FinalGap = finalGap,
+		MaxAllowedGap = maxAllowedGap,
+		InRange = finalGap <= maxAllowedGap,
+		Prepositioned = true,
 	})
 	if finalGap > maxAllowedGap then
 		return false, "CombatPositionOutOfRange"
@@ -494,7 +534,12 @@ function MonsterCombatCoordinator.Execute(
 		))
 	end
 
-	local positioned, positionReason = positionCombatants(attacker, defender, options)
+	local positioned, positionReason
+	if options.Prepositioned then
+		positioned, positionReason = validatePrepositioned(attacker, defender, options)
+	else
+		positioned, positionReason = positionCombatants(attacker, defender, options)
+	end
 	if not positioned then
 		if resolutionRequested then
 			return resolveByLevel()
