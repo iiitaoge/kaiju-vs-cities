@@ -1,7 +1,7 @@
 --[[
-	职责：维护本地玩家 HUD 的现金余额与自动收入总速率。
+	职责：维护本地玩家 HUD 的现金、钻石余额与自动收入总速率。
 	输入：Start；余额和总速率来自 Player 上的服务器权威镜像 Attributes。
-	输出：HUD.UpData.Money.Val 与 HUD.UpData.Add.Val 的紧凑数字文本。
+	输出：HUD.UpData.Money.Val、可选的 HUD.UpData.Diamond.Val 与 HUD.UpData.Add.Val 的紧凑数字文本。
 	内部算法：监听两个 Attribute，并统一使用 CompactNumberFormatter 格式化。
 	不负责：计算单栋收入、自动领取、修改余额、创建 HUD 或显示其他玩家数据。
 ]]
@@ -12,6 +12,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CompactNumberFormatter = require(
 	ReplicatedStorage.Shared.UI.CompactNumberFormatter
 )
+local DiamondProtocol = require(ReplicatedStorage.Shared.Economy.DiamondProtocol)
 local MoneyProtocol = require(ReplicatedStorage.Shared.Economy.MoneyProtocol)
 local UIModeVisibilityRules = require(
 	ReplicatedStorage.Shared.UI.UIModeVisibilityRules
@@ -23,6 +24,7 @@ local EconomyHUDController = {}
 type HUDReferences = {
 	UpData: GuiObject,
 	MoneyValue: TextLabel,
+	DiamondValue: TextLabel?,
 	AutoIncomeValue: TextLabel,
 }
 
@@ -42,8 +44,10 @@ local function resolveHUD(playerGui: PlayerGui): (HUDReferences?, string?)
 	local hud = playerGui:FindFirstChild("HUD")
 	local upData = hud and hud:FindFirstChild("UpData")
 	local money = upData and upData:FindFirstChild("Money")
+	local diamond = upData and upData:FindFirstChild("Diamond")
 	local add = upData and upData:FindFirstChild("Add")
 	local moneyValue = money and money:FindFirstChild("Val")
+	local diamondValue = diamond and diamond:FindFirstChild("Val")
 	local autoIncomeValue = add and add:FindFirstChild("Val")
 
 	if not hud or not hud:IsA("ScreenGui") then
@@ -62,6 +66,9 @@ local function resolveHUD(playerGui: PlayerGui): (HUDReferences?, string?)
 	return {
 		UpData = upData,
 		MoneyValue = moneyValue,
+		DiamondValue = if diamondValue and diamondValue:IsA("TextLabel")
+			then diamondValue
+			else nil,
 		AutoIncomeValue = autoIncomeValue,
 	}, nil
 end
@@ -73,6 +80,17 @@ local function refreshBalance()
 	end
 	local balance = localPlayer:GetAttribute(MoneyProtocol.BalanceAttributeName)
 	current.MoneyValue.Text = CompactNumberFormatter.Format(
+		if finiteNonNegative(balance) then balance else 0
+	)
+end
+
+local function refreshDiamond()
+	local current = references
+	if not current or not current.DiamondValue then
+		return
+	end
+	local balance = localPlayer:GetAttribute(DiamondProtocol.BalanceAttributeName)
+	current.DiamondValue.Text = CompactNumberFormatter.Format(
 		if finiteNonNegative(balance) then balance else 0
 	)
 end
@@ -112,9 +130,13 @@ function EconomyHUDController.Start()
 		resolved.UpData.Visible
 	)
 	refreshBalance()
+	refreshDiamond()
 	refreshAutomaticIncome()
 	localPlayer:GetAttributeChangedSignal(MoneyProtocol.BalanceAttributeName):Connect(
 		refreshBalance
+	)
+	localPlayer:GetAttributeChangedSignal(DiamondProtocol.BalanceAttributeName):Connect(
+		refreshDiamond
 	)
 	localPlayer:GetAttributeChangedSignal(
 		MoneyProtocol.AutomaticIncomeRateAttributeName

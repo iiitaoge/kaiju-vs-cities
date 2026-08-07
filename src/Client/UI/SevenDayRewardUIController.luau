@@ -1,0 +1,437 @@
+--[[
+	职责：把七日奖励配置和服务器状态展示到 Main.Check，并发送领取请求。
+	输入：PlayerGui.Main.Check、ReplicatedStorage 中的奖励 RemoteFunction、七日奖励配置和货币图标数据树。
+	输出：每次客户端加入游戏时自动显示七日奖励面板；七张奖励卡的图标/数值/可用状态、关闭按钮行为，
+	以及成功领取后的最新 UI 状态。
+	内部算法：启动时先显示面板，再读取所有配置并向服务器请求当前状态；只有服务器报告的当前可领取档位启用按钮；
+	领取后使用服务器返回状态重新渲染，并在本地冷却结束时重新同步一次。
+	不负责：计算奖励、判断冷却、修改货币、创建存档或创建整套 UI。
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local CurrencyIconConfigs = require(
+	ReplicatedStorage.Shared.Economy.CurrencyIconConfigs
+)
+local SevenDayRewardConfigs = require(
+	ReplicatedStorage.Shared.Reward.SevenDayRewardConfigs
+)
+local SevenDayRewardProtocol = require(
+	ReplicatedStorage.Shared.Reward.SevenDayRewardProtocol
+)
+
+local SevenDayRewardUIController = {}
+
+type DayCardReferences = {
+	Button: GuiButton,
+	Icon: ImageLabel,
+	Day: TextLabel,
+	Value: TextLabel,
+}
+
+type References = {
+	Root: GuiObject,
+	CloseButton: GuiButton,
+	Cards: { [number]: DayCardReferences },
+}
+
+type RewardState = {
+	Status: string,
+	Day: number,
+	Available: boolean,
+	NextClaimAt: number,
+	RemainingSeconds: number,
+	Reward: { Day: number, Type: string, Amount: number }?,
+}
+
+type ServerResponse = {
+	Succeeded: boolean,
+	Reason: string?,
+	State: RewardState?,
+}
+
+local localPlayer = Players.LocalPlayer
+local references: References? = nil
+local remote: RemoteFunction? = nil
+local currentState: RewardState? = nil
+local stateReceivedServerTime = 0
+local claimInFlight = false
+local started = false
+
+local function resolveChild(parent: Instance?, name: string): Instance?
+	if not parent then
+		return nil
+	end
+	return parent:FindFirstChild(name)
+end
+
+local function resolveGuiObject(parent: Instance?, name: string): GuiObject?
+	local child = resolveChild(parent, name)
+	if child and child:IsA("GuiObject") then
+		return child
+	end
+	return nil
+end
+
+local function resolveButton(parent: Instance?, name: string): GuiButton?
+	local child = resolveChild(parent, name)
+	if child and child:IsA("GuiButton") then
+		return child
+	end
+	return nil
+end
+
+local function resolveTextLabel(parent: Instance?, name: string): TextLabel?
+	local child = resolveChild(parent, name)
+	if child and child:IsA("TextLabel") then
+		return child
+	end
+	return nil
+end
+
+local function resolveImageLabel(parent: Instance?, name: string): ImageLabel?
+	local child = resolveChild(parent, name)
+	if child and child:IsA("ImageLabel") then
+		return child
+	end
+	return nil
+end
+
+local function resolveCard(dayFrame: Instance?, day: number): (DayCardReferences?, string?)
+	local button = resolveButton(dayFrame, "Button")
+	local icon = resolveImageLabel(button, "Icon")
+	local dayLabel = resolveTextLabel(button, "Day")
+	local valueLabel = resolveTextLabel(button, "Val")
+
+	if not dayFrame then
+		return nil, string.format("Day%dUnavailable", day)
+	end
+	if not button then
+		return nil, string.format("Day%dButtonUnavailable", day)
+	end
+	if not icon then
+		return nil, string.format("Day%dIconUnavailable", day)
+	end
+	if not dayLabel then
+		return nil, string.format("Day%dLabelUnavailable", day)
+	end
+	if not valueLabel then
+		return nil, string.format("Day%dValueUnavailable", day)
+	end
+
+	return {
+		Button = button,
+		Icon = icon,
+		Day = dayLabel,
+		Value = valueLabel,
+	}, nil
+end
+
+local function resolveReferences(playerGui: PlayerGui): (References?, string?)
+	local mainGui = playerGui:FindFirstChild("Main")
+	if not mainGui or not mainGui:IsA("ScreenGui") then
+		return nil, "MainGuiUnavailable"
+	end
+
+	local check = resolveGuiObject(mainGui, "Check")
+	local mainAll = resolveGuiObject(check, "MainAll")
+	local title = resolveGuiObject(mainAll, "Title")
+	local main = resolveGuiObject(mainAll, "Main")
+	local six = resolveGuiObject(main, "Six")
+	local seven = resolveGuiObject(main, "Seven")
+	local closeButton = resolveButton(title, "Close")
+
+	if not check then
+		return nil, "CheckUnavailable"
+	end
+	if not mainAll then
+		return nil, "MainAllUnavailable"
+	end
+	if not title then
+		return nil, "TitleUnavailable"
+	end
+	if not main then
+		return nil, "MainUnavailable"
+	end
+	if not six then
+		return nil, "SixUnavailable"
+	end
+	if not seven then
+		return nil, "SevenUnavailable"
+	end
+	if not closeButton then
+		return nil, "CloseUnavailable"
+	end
+
+	local cards: { [number]: DayCardReferences } = {}
+	for day = 1, 6 do
+		local dayFrame = resolveGuiObject(six, string.format("Day%d", day))
+		local card, reason = resolveCard(dayFrame, day)
+		if not card then
+			return nil, reason
+		end
+		cards[day] = card
+	end
+	local daySevenCard, reason = resolveCard(seven, 7)
+	if not daySevenCard then
+		return nil, reason
+	end
+	cards[7] = daySevenCard
+
+	return {
+		Root = check,
+		CloseButton = closeButton,
+		Cards = cards,
+	}, nil
+end
+
+local function resolveRemote(): RemoteFunction?
+	local remotes = ReplicatedStorage:WaitForChild("Remotes", 10)
+	local candidate = remotes and remotes:WaitForChild(
+		SevenDayRewardProtocol.RemoteName,
+		10
+	)
+	if candidate and candidate:IsA("RemoteFunction") then
+		return candidate
+	end
+	return nil
+end
+
+local function resolveInstanceByPath(root: Instance, path: { string }): Instance?
+	local current: Instance? = root
+	for _, name in path do
+		current = resolveChild(current, name)
+		if not current then
+			return nil
+		end
+	end
+	return current
+end
+
+local function copyImageProperties(target: ImageLabel, source: Instance)
+	if not source:IsA("ImageLabel") and not source:IsA("ImageButton") then
+		return
+	end
+
+	target.ImageRectOffset = source.ImageRectOffset
+	target.ImageRectSize = source.ImageRectSize
+	target.ScaleType = source.ScaleType
+	target.ImageColor3 = source.ImageColor3
+	target.ImageTransparency = source.ImageTransparency
+	target.SliceCenter = source.SliceCenter
+	target.SliceScale = source.SliceScale
+	target.TileSize = source.TileSize
+end
+
+local function readImageAsset(source: Instance): (string?, Instance?)
+	if source:IsA("ImageLabel") or source:IsA("ImageButton") then
+		return source.Image, source
+	end
+	if source:IsA("Decal") or source:IsA("Texture") then
+		return source.Texture, source
+	end
+	if source:IsA("StringValue") then
+		return source.Value, source
+	end
+
+	local iconChild = source:FindFirstChild("Icon")
+	if iconChild then
+		return readImageAsset(iconChild)
+	end
+	return nil, nil
+end
+
+local function applyCurrencyIcon(target: ImageLabel, currencyType: string)
+	local iconName = CurrencyIconConfigs.IconNames[currencyType]
+	if type(iconName) ~= "string" then
+		warn("七日奖励没有配置货币图标名称：" .. tostring(currencyType))
+		return
+	end
+
+	local iconRoot = resolveInstanceByPath(
+		ReplicatedStorage,
+		CurrencyIconConfigs.RootPath
+	)
+	local source = iconRoot and iconRoot:FindFirstChild(iconName)
+	if not source then
+		warn(string.format("七日奖励货币图标不存在：%s", iconName))
+		return
+	end
+
+	local image, imageSource = readImageAsset(source)
+	if type(image) ~= "string" or image == "" then
+		warn(string.format("七日奖励货币图标没有有效 Image：%s", iconName))
+		return
+	end
+
+	target.Image = image
+	target.Visible = true
+	if imageSource then
+		copyImageProperties(target, imageSource)
+	end
+end
+
+local function renderConfiguredRewards()
+	local current = references
+	if not current then
+		return
+	end
+
+	for day = 1, SevenDayRewardConfigs.TotalDays do
+		local reward = SevenDayRewardConfigs.Days[day]
+		local card = current.Cards[day]
+		if reward and card then
+			card.Day.Text = string.format("Day %d", day)
+			card.Value.Text = tostring(reward.Amount)
+			applyCurrencyIcon(card.Icon, reward.Type)
+		end
+	end
+end
+
+local function secondsSinceStateReceived(): number
+	return math.max(
+		0,
+		math.floor(workspace:GetServerTimeNow() - stateReceivedServerTime)
+	)
+end
+
+local function setCardEnabled(card: DayCardReferences, enabled: boolean)
+	card.Button.Active = enabled
+	card.Button.AutoButtonColor = enabled
+	card.Button.Selectable = enabled
+end
+
+local function renderState(state: RewardState)
+	local current = references
+	if not current then
+		return
+	end
+
+	currentState = state
+	stateReceivedServerTime = workspace:GetServerTimeNow()
+	for day = 1, SevenDayRewardConfigs.TotalDays do
+		local card = current.Cards[day]
+		local enabled = state.Status == SevenDayRewardProtocol.Statuses.Claimable
+			and state.Day == day
+			and state.Available
+		setCardEnabled(card, enabled)
+	end
+end
+
+local function invoke(requestKind: string): ServerResponse?
+	local currentRemote = remote
+	if not currentRemote then
+		return nil
+	end
+
+	local succeeded, response = pcall(function()
+		return currentRemote:InvokeServer(requestKind)
+	end)
+	if not succeeded or type(response) ~= "table" then
+		warn("七日奖励 UI 请求失败：" .. tostring(response))
+		return nil
+	end
+	return response :: ServerResponse
+end
+
+local function refreshState()
+	local response = invoke(SevenDayRewardProtocol.RequestKinds.GetState)
+	if not response then
+		return
+	end
+	if response.State then
+		renderState(response.State)
+	end
+	if not response.Succeeded then
+		warn("七日奖励状态不可用：" .. tostring(response.Reason))
+		if response.Reason == SevenDayRewardProtocol.Reasons.PlayerDataNotReady then
+			task.delay(1, function()
+				if started then
+					refreshState()
+				end
+			end)
+		end
+	end
+end
+
+local function claim(day: number)
+	if claimInFlight then
+		return
+	end
+
+	local state = currentState
+	if not state
+		or state.Status ~= SevenDayRewardProtocol.Statuses.Claimable
+		or not state.Available
+		or state.Day ~= day
+	then
+		return
+	end
+
+	claimInFlight = true
+	local response = invoke(SevenDayRewardProtocol.RequestKinds.Claim)
+	claimInFlight = false
+	if not response then
+		return
+	end
+	if response.State then
+		renderState(response.State)
+	end
+	if not response.Succeeded then
+		warn("七日奖励领取失败：" .. tostring(response.Reason))
+	end
+end
+
+local function refreshWhenCooldownEnds()
+	while started do
+		task.wait(1)
+		local state = currentState
+		if state
+			and state.Status == SevenDayRewardProtocol.Statuses.Cooldown
+			and state.RemainingSeconds - secondsSinceStateReceived() <= 0
+		then
+			refreshState()
+		end
+	end
+end
+
+function SevenDayRewardUIController.Start()
+	if started then
+		return
+	end
+	started = true
+
+	local playerGui = localPlayer:WaitForChild("PlayerGui") :: PlayerGui
+	playerGui:WaitForChild("Main", 10)
+	local resolved, reason = resolveReferences(playerGui)
+	if not resolved then
+		warn("七日奖励 UI 路径无效：" .. tostring(reason))
+		return
+	end
+	references = resolved
+	-- 进入游戏时自动弹出；关闭按钮只影响本次客户端会话。
+	resolved.Root.Visible = true
+
+	remote = resolveRemote()
+	if not remote then
+		warn("七日奖励 RemoteFunction 不存在：" .. SevenDayRewardProtocol.RemoteName)
+		return
+	end
+
+	resolved.CloseButton.Activated:Connect(function()
+		resolved.Root.Visible = false
+	end)
+	for day = 1, SevenDayRewardConfigs.TotalDays do
+		local card = resolved.Cards[day]
+		card.Button.Activated:Connect(function()
+			claim(day)
+		end)
+	end
+
+	renderConfiguredRewards()
+	refreshState()
+	task.spawn(refreshWhenCooldownEnds)
+end
+
+return SevenDayRewardUIController

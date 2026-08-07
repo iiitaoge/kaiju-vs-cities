@@ -38,6 +38,9 @@ local RebirthButtonController = require(
 )
 local StudioSaveResetController = require(script.Parent.StudioSaveResetController)
 local TutorialController = require(script.Parent.Tutorial.TutorialController)
+local SevenDayRewardUIController = require(
+	script.Parent.UI.SevenDayRewardUIController
+)
 
 -- 输入：服务器意外返回的旧式客户端 Action。
 -- 输出：无；立即报错，避免重新引入只在本机生成建筑的链路。
@@ -49,6 +52,7 @@ end
 GameAnalyticsClientService.Start()
 AnalyticsIntentClient.Start()
 StudioSaveResetController.Start()
+task.spawn(SevenDayRewardUIController.Start)
 TutorialController.Start()
 AttackSelectionHUDController.Start()
 EconomyHUDController.Start()
