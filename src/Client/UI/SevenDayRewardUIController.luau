@@ -3,8 +3,8 @@
 	输入：PlayerGui.Main.Check、ReplicatedStorage 中的奖励 RemoteFunction、七日奖励配置和货币图标数据树。
 	输出：每次客户端加入游戏时自动显示七日奖励面板；七张奖励卡的图标/数值/可用状态、关闭按钮行为，
 	以及成功领取后的最新 UI 状态。
-	内部算法：启动时先显示面板，再读取所有配置并向服务器请求当前状态；只有服务器报告的当前可领取档位启用按钮；
-	领取后使用服务器返回状态重新渲染，并在本地冷却结束时重新同步一次。
+	内部算法：启动时先显示面板，再读取所有配置并向服务器请求当前状态；已领取档位变暗且不可点击，
+	其余档位保持可点击；点击当前可领取档位发送领取请求，点击其他未领取档位显示英文等待提示，并在本地冷却结束时重新同步一次。
 	不负责：计算奖励、判断冷却、修改货币、创建存档或创建整套 UI。
 ]]
 
@@ -20,14 +20,23 @@ local SevenDayRewardConfigs = require(
 local SevenDayRewardProtocol = require(
 	ReplicatedStorage.Shared.Reward.SevenDayRewardProtocol
 )
+local TipBlackController = require(script.Parent.TipBlackController)
 
 local SevenDayRewardUIController = {}
 
 type DayCardReferences = {
 	Button: GuiButton,
 	Icon: ImageLabel,
+	BackgroundImage: ImageLabel?,
 	Day: TextLabel,
 	Value: TextLabel,
+	Tip: TextLabel?,
+	BaseButtonBackgroundColor: Color3,
+	BaseBackgroundImageColor: Color3?,
+	BaseIconColor: Color3,
+	BaseDayTextColor: Color3,
+	BaseValueTextColor: Color3,
+	BaseTipTextColor: Color3?,
 }
 
 type References = {
@@ -58,6 +67,10 @@ local currentState: RewardState? = nil
 local stateReceivedServerTime = 0
 local claimInFlight = false
 local started = false
+
+local function darkenColor(color: Color3): Color3
+	return color:Lerp(Color3.new(0, 0, 0), 0.55)
+end
 
 local function resolveChild(parent: Instance?, name: string): Instance?
 	if not parent then
@@ -101,8 +114,10 @@ end
 local function resolveCard(dayFrame: Instance?, day: number): (DayCardReferences?, string?)
 	local button = resolveButton(dayFrame, "Button")
 	local icon = resolveImageLabel(button, "Icon")
+	local backgroundImage = resolveImageLabel(button, "BG")
 	local dayLabel = resolveTextLabel(button, "Day")
 	local valueLabel = resolveTextLabel(button, "Val")
+	local tipLabel = resolveTextLabel(button, "Tip")
 
 	if not dayFrame then
 		return nil, string.format("Day%dUnavailable", day)
@@ -123,8 +138,18 @@ local function resolveCard(dayFrame: Instance?, day: number): (DayCardReferences
 	return {
 		Button = button,
 		Icon = icon,
+		BackgroundImage = backgroundImage,
 		Day = dayLabel,
 		Value = valueLabel,
+		Tip = tipLabel,
+		BaseButtonBackgroundColor = button.BackgroundColor3,
+		BaseBackgroundImageColor = if backgroundImage
+			then backgroundImage.ImageColor3
+			else nil,
+		BaseIconColor = icon.ImageColor3,
+		BaseDayTextColor = dayLabel.TextColor3,
+		BaseValueTextColor = valueLabel.TextColor3,
+		BaseTipTextColor = if tipLabel then tipLabel.TextColor3 else nil,
 	}, nil
 end
 
@@ -285,6 +310,7 @@ local function renderConfiguredRewards()
 			card.Day.Text = string.format("Day %d", day)
 			card.Value.Text = tostring(reward.Amount)
 			applyCurrencyIcon(card.Icon, reward.Type)
+			card.BaseIconColor = card.Icon.ImageColor3
 		end
 	end
 end
@@ -296,10 +322,87 @@ local function secondsSinceStateReceived(): number
 	)
 end
 
+local function formatDuration(totalSeconds: number): string
+	local seconds = math.max(0, math.floor(totalSeconds))
+	local hours = math.floor(seconds / 3600)
+	local minutes = math.floor((seconds % 3600) / 60)
+	local remainder = seconds % 60
+	return string.format("%02d:%02d:%02d", hours, minutes, remainder)
+end
+
+local function showUnavailableMessage(day: number, state: RewardState)
+	if state.Status == SevenDayRewardProtocol.Statuses.Cooldown then
+		local localRemaining = math.max(
+			0,
+			state.RemainingSeconds - secondsSinceStateReceived()
+		)
+		local daysAhead = math.max(0, day - state.Day)
+		local earliestRemaining = localRemaining
+			+ daysAhead * SevenDayRewardConfigs.CooldownSeconds
+		if daysAhead == 0 then
+			TipBlackController.ShowMessage(
+				string.format("Reward available in %s.", formatDuration(earliestRemaining))
+			)
+		else
+			TipBlackController.ShowMessage(
+				string.format(
+					"Reward available after claiming Day %d. Earliest in %s.",
+					state.Day,
+					formatDuration(earliestRemaining)
+				)
+			)
+		end
+		return
+	end
+
+	if state.Status == SevenDayRewardProtocol.Statuses.Claimable and day > state.Day then
+		local earliestRemaining = (day - state.Day)
+			* SevenDayRewardConfigs.CooldownSeconds
+		TipBlackController.ShowMessage(
+			string.format(
+				"Claim Day %d first. Earliest in %s.",
+				state.Day,
+				formatDuration(earliestRemaining)
+			)
+		)
+	end
+end
+
 local function setCardEnabled(card: DayCardReferences, enabled: boolean)
 	card.Button.Active = enabled
 	card.Button.AutoButtonColor = enabled
 	card.Button.Selectable = enabled
+end
+
+local function setCardCompleted(card: DayCardReferences, completed: boolean)
+	if completed then
+		card.Button.BackgroundColor3 = darkenColor(
+			card.BaseButtonBackgroundColor
+		)
+		if card.BackgroundImage and card.BaseBackgroundImageColor then
+			card.BackgroundImage.ImageColor3 = darkenColor(
+				card.BaseBackgroundImageColor
+			)
+		end
+		card.Icon.ImageColor3 = darkenColor(card.BaseIconColor)
+		card.Day.TextColor3 = darkenColor(card.BaseDayTextColor)
+		card.Value.TextColor3 = darkenColor(card.BaseValueTextColor)
+		if card.Tip and card.BaseTipTextColor then
+			card.Tip.TextColor3 = darkenColor(card.BaseTipTextColor)
+		end
+		return
+	end
+
+	card.Button.BackgroundColor3 = card.BaseButtonBackgroundColor
+	if card.BackgroundImage and card.BaseBackgroundImageColor then
+		card.BackgroundImage.ImageColor3 = card.BaseBackgroundImageColor
+	end
+	card.Icon.ImageColor3 = card.BaseIconColor
+	card.Day.TextColor3 = card.BaseDayTextColor
+	card.Value.TextColor3 = card.BaseValueTextColor
+	if card.Tip and card.BaseTipTextColor then
+		card.Tip.TextColor3 = card.BaseTipTextColor
+	end
 end
 
 local function renderState(state: RewardState)
@@ -312,10 +415,9 @@ local function renderState(state: RewardState)
 	stateReceivedServerTime = workspace:GetServerTimeNow()
 	for day = 1, SevenDayRewardConfigs.TotalDays do
 		local card = current.Cards[day]
-		local enabled = state.Status == SevenDayRewardProtocol.Statuses.Claimable
-			and state.Day == day
-			and state.Available
-		setCardEnabled(card, enabled)
+		local completed = day < state.Day
+		setCardEnabled(card, not completed)
+		setCardCompleted(card, completed)
 	end
 end
 
@@ -361,11 +463,15 @@ local function claim(day: number)
 	end
 
 	local state = currentState
-	if not state
-		or state.Status ~= SevenDayRewardProtocol.Statuses.Claimable
+	if not state or day < state.Day then
+		return
+	end
+
+	if state.Status ~= SevenDayRewardProtocol.Statuses.Claimable
 		or not state.Available
 		or state.Day ~= day
 	then
+		showUnavailableMessage(day, state)
 		return
 	end
 
