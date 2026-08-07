@@ -15,6 +15,7 @@ local CombatHealthBarController = require(
 	script.Parent.UI.CombatHealthBarController
 )
 local EconomyHUDController = require(script.Parent.UI.EconomyHUDController)
+local ExpandedController = require(script.Parent.UI.ExpandedController)
 local IncomeGainPresentationController = require(
 	script.Parent.UI.IncomeGainPresentationController
 )
@@ -27,11 +28,24 @@ local LocalPlayerBuildingInteractionCoordinator = require(
 local IncomeHouseWorldUIController = require(
 	script.Parent.Building.IncomeHouseWorldUIController
 )
+local TipBlackController = require(script.Parent.UI.TipBlackController)
 local MonsterBuildPresentationController = require(
 	script.Parent.Monster.MonsterBuildPresentationController
 )
+local MonsterDuelCameraController = require(
+	script.Parent.Monster.MonsterDuelCameraController
+)
+local MonsterDuelWatchButtonController = require(
+	script.Parent.Monster.MonsterDuelWatchButtonController
+)
+local MonsterExpeditionProgressUIController = require(
+	script.Parent.Monster.MonsterExpeditionProgressUIController
+)
 local MonsterIncubatorUIController = require(
 	script.Parent.Monster.MonsterIncubatorUIController
+)
+local MonsterAttackRosterUIController = require(
+	script.Parent.Monster.MonsterAttackRosterUIController
 )
 local RebirthButtonController = require(
 	script.Parent.Progression.RebirthButtonController
@@ -60,11 +74,17 @@ IncomeGainPresentationController.Start()
 CombatHealthBarController.Start()
 CityBuildingPresentationController.Start()
 MonsterBuildPresentationController.Start()
+MonsterDuelCameraController.Start()
+MonsterDuelWatchButtonController.Start()
+MonsterExpeditionProgressUIController.Start()
 MonsterIncubatorUIController.Start()
+MonsterAttackRosterUIController.Start()
 DefenseMonsterUIController.Start()
 task.spawn(RebirthButtonController.Start)
 LocalPlayerBuildingInteractionCoordinator.Start(
 	IncomeGainPresentationController.PlayTouchContact
 )
 IncomeHouseWorldUIController.Start()
+TipBlackController.Start()
+ExpandedController.Start()
 ButtonController.Start(rejectLegacyClientAction)
