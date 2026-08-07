@@ -3,7 +3,7 @@
 
 	输入：Destroy 接收在线防守玩家和当前 Alive 的 HouseId。
 	输出：是否成功、稳定失败原因、RespawnAt 和被摧毁时等级。
-	内部算法：状态摧毁 → 移除单栋 Model → 全员拆除表现 → 监视区域敌方怪兽占用；
+	内部算法：状态摧毁 → 生成服务器废墟并移除单栋 Model → 监视区域敌方怪兽占用；
 		占用解除后重新等待完整时长，再恢复最新等级 Model → Rebuilding → 全员升起表现 → Alive；
 		恢复失败保持 Destroyed 并重试，升起期间再次被占用则中止本次重建。
 
@@ -26,6 +26,7 @@ local BuildPresentationTiming = require(
 	ReplicatedStorage.Shared.Building.BuildPresentationTiming
 )
 local HouseCatalog = require(ReplicatedStorage.Shared.Building.HouseCatalog)
+local HouseRuinRuntimeService = require(script.Parent.HouseRuinRuntimeService)
 local RuntimeBuildingIdentity = require(
 	ReplicatedStorage.Shared.Building.RuntimeBuildingIdentity
 )
@@ -132,6 +133,35 @@ end
 
 local scheduleRebuild
 
+local function ensureRuin(player: Player, houseId: string): boolean
+	local ruin, reason = HouseRuinRuntimeService.Ensure(player, houseId)
+	if not ruin then
+		warn(string.format(
+			"恢复房屋废墟失败：%s/%s (%s)",
+			player.Name,
+			houseId,
+			reason or "Unknown"
+		))
+		return false
+	end
+	return true
+end
+
+local function abortRebuildAndSchedule(
+	player: Player,
+	houseId: string,
+	respawnAt: number,
+	observedOccupied: boolean
+): boolean
+	local _, aborted = HouseStateService.AbortRebuild(player, houseId, respawnAt)
+	if not aborted then
+		return false
+	end
+	ensureRuin(player, houseId)
+	scheduleRebuild(player, houseId, respawnAt, observedOccupied)
+	return true
+end
+
 local function isRegionOccupied(player: Player, houseId: string): boolean
 	local definition = HouseCatalog.Get(houseId)
 	return definition ~= nil
@@ -177,10 +207,7 @@ local function finishRebuild(
 		end
 
 		local retryAt = os.time() + config.RebuildDelaySeconds
-		local _, aborted = HouseStateService.AbortRebuild(player, houseId, retryAt)
-		if aborted then
-			scheduleRebuild(player, houseId, retryAt, true)
-		end
+		abortRebuildAndSchedule(player, houseId, retryAt, true)
 		return
 	end
 
@@ -215,10 +242,7 @@ local function finishRebuild(
 	end
 
 	local retryAt = os.time() + config.RetryDelaySeconds
-	local _, aborted = HouseStateService.AbortRebuild(player, houseId, retryAt)
-	if aborted then
-		scheduleRebuild(player, houseId, retryAt, false)
-	end
+	abortRebuildAndSchedule(player, houseId, retryAt, false)
 end
 
 local monitorRebuild
@@ -267,6 +291,22 @@ local function attemptRebuild(
 		clearScheduled(player, houseId, schedule)
 		return
 	end
+
+	local removedRuin, ruinReason = HouseRuinRuntimeService.Remove(player, houseId)
+	if not removedRuin then
+		warn(string.format(
+			"重建房屋移除废墟失败，将回到 Destroyed 重试：%s/%s (%s)",
+			player.Name,
+			houseId,
+			ruinReason or "Unknown"
+		))
+		PlayerCityRuntimeCoordinator.RemoveBuilding(player, houseId, model)
+		clearScheduled(player, houseId, schedule)
+		local retryAt = os.time() + config.RetryDelaySeconds
+		abortRebuildAndSchedule(player, houseId, retryAt, false)
+		return
+	end
+
 	HouseWorldUIPresentationService.Refresh(player, houseId, model)
 	clearScheduled(player, houseId, schedule)
 
@@ -362,7 +402,7 @@ end
 
 -- 输入：在线防守玩家和当前 Alive 的 HouseId。
 -- 输出：摧毁是否提交，以及自动重建的时间和旧建筑等级。
--- 内部算法：先提交状态，再移除预期 Model；移除失败会回滚 Alive。
+-- 内部算法：先提交状态，再生成废墟并移除预期 Model；任一步失败会回滚 Alive。
 function HouseLifecycleCoordinator.Destroy(
 	player: Player,
 	houseId: string
@@ -400,9 +440,29 @@ function HouseLifecycleCoordinator.Destroy(
 	if not destroyed then
 		return result(false, "HouseNotAlive", nil, nil)
 	end
+	local ruin, ruinReason = HouseRuinRuntimeService.Ensure(player, houseId)
+	if not ruin then
+		local _, rolledBack = HouseStateService.RollbackDestroy(player, houseId, os.time())
+		if not rolledBack then
+			warn(string.format("房屋废墟创建失败且状态回滚失败：%s/%s", player.Name, houseId))
+		else
+			AutomaticIncomeRatePresentationService.Refresh(player)
+			HouseWorldUIPresentationService.Refresh(player, houseId, model)
+		end
+		return result(false, "RuinCreateFailed:" .. (ruinReason or "Unknown"), nil, nil)
+	end
 	AutomaticIncomeRatePresentationService.Refresh(player)
 	local removal = PlayerCityRuntimeCoordinator.RemoveBuilding(player, houseId, model)
 	if not removal.Succeeded then
+		local removedRuin, removedRuinReason = HouseRuinRuntimeService.Remove(player, houseId)
+		if not removedRuin then
+			warn(string.format(
+				"房屋摧毁移除失败且废墟清理失败：%s/%s (%s)",
+				player.Name,
+				houseId,
+				removedRuinReason or "Unknown"
+			))
+		end
 		local _, rolledBack = HouseStateService.RollbackDestroy(player, houseId, os.time())
 		if not rolledBack then
 			warn(string.format("房屋摧毁移除失败且状态回滚失败：%s/%s", player.Name, houseId))

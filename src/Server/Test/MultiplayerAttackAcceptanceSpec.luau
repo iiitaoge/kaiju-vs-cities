@@ -9,7 +9,6 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ServerStorage = game:GetService("ServerStorage")
 
 local HouseLifecycleConfigs = require(script.Parent.Parent.HouseLifecycleConfigs)
 local HouseStateService = require(script.Parent.Parent.HouseStateService)
@@ -116,6 +115,23 @@ end
 local function runtimeIsEmpty(plot: Model): boolean
 	local runtime = plot:FindFirstChild("Runtime")
 	return runtime ~= nil and #runtime:GetChildren() == 0
+end
+
+local function findRuin(player: Player, houseId: string): Model?
+	local plot = PlayerPlotAssignmentService.GetPlot(player)
+	if not plot then
+		return nil
+	end
+	local runtime = plot:FindFirstChild("Runtime")
+	if not runtime or not runtime:IsA("Folder") then
+		return nil
+	end
+	local ruins = runtime:FindFirstChild("Ruins")
+	if not ruins or not ruins:IsA("Folder") then
+		return nil
+	end
+	local ruin = ruins:FindFirstChild(houseId)
+	return if ruin and ruin:IsA("Model") then ruin else nil
 end
 
 function MultiplayerAttackAcceptanceSpec.Run(players: { Player })
@@ -506,8 +522,18 @@ function MultiplayerAttackAcceptanceSpec.Run(players: { Player })
 		local normalRequest = sendAttack(attackerA, entryPoint)
 		local normalResponse = waitAttack(attackerA, normalRequest)
 		waitHouseState("Destroyed")
+		waitFor(function()
+			return findRuin(defender, HOUSE_ID) ~= nil
+		end, REQUEST_TIMEOUT, "摧毁后生成服务器废墟")
+		expect(
+			PlayerCityRuntimeCoordinator.ResolveBuilding(defender, HOUSE_ID) == nil,
+			"摧毁后服务器建筑仍存在"
+		)
 		waitPresentation("HouseDestroyed", 1)
 		waitHouseState("Alive")
+		waitFor(function()
+			return findRuin(defender, HOUSE_ID) == nil
+		end, REBUILD_TIMEOUT, "重建后清理服务器废墟")
 		waitPresentation("HouseRebuilding", 1)
 		waitMonsterIdle(attackerA)
 		local normalReport = waitReport(attackerA, normalResponse.CommandId)
@@ -674,11 +700,9 @@ function MultiplayerAttackAcceptanceSpec.Run(players: { Player })
 			return defender.Parent ~= Players
 		end, REQUEST_TIMEOUT, "防守玩家离开服务器")
 		waitFor(function()
-			local pool = ServerStorage:FindFirstChild("AvailablePlayerPlots")
 			return defenderPlot:GetAttribute("OwnerUserId") == 0
 				and runtimeIsEmpty(defenderPlot)
-				and pool ~= nil
-				and defenderPlot.Parent == pool
+				and defenderPlot.Parent == workspace.PlayerPlots
 		end, REQUEST_TIMEOUT, "离服后 Plot Runtime 清理")
 		waitMonsterIdle(attackerB)
 
@@ -694,14 +718,14 @@ function MultiplayerAttackAcceptanceSpec.Run(players: { Player })
 		expect(defenderPlot:GetAttribute("OwnerUserId") == 0, "异步任务重新占用了已释放 Plot")
 		expect(runtimeIsEmpty(defenderPlot), "异步任务在已释放 Plot 留下孤儿 Model")
 		expect(
-			defenderPlot.Parent == ServerStorage:FindFirstChild("AvailablePlayerPlots"),
-			"离服后的 Plot 没有回到服务器空闲池"
+			defenderPlot.Parent == workspace.PlayerPlots,
+			"离服后的 Plot 没有留在 Workspace"
 		)
 		table.insert(report.Scenarios, {
 			Name = "DefenderLeavesDuringRebuilding",
 			PlotReleased = true,
 			RuntimeEmpty = true,
-			PlotParked = true,
+			PlotDisplayed = true,
 			ReservationReleased = true,
 			AttackerFinalState = "IdleAtSpawn",
 		})

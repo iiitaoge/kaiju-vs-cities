@@ -33,6 +33,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local AutomaticIncomeRatePresentationService = require(
 	script.Parent.AutomaticIncomeRatePresentationService
 )
+local HouseRuinRuntimeService = require(script.Parent.HouseRuinRuntimeService)
 local HouseStateService = require(script.Parent.HouseStateService)
 local HouseWorldUIPresentationService = require(script.Parent.HouseWorldUIPresentationService)
 local PlayerDataReadyService = require(script.Parent.PlayerDataReadyService)
@@ -457,6 +458,7 @@ function PlayerCityRuntimeCoordinator.Load(player: Player): LoadResult
 	if not plot then
 		return result(false, plotReason or "PlayerHasNoPlot", nil, 0)
 	end
+	HouseRuinRuntimeService.ClearPlot(plot)
 	local buildingsRoot, runtimeReason = getBuildingsRoot(plot)
 	if not buildingsRoot then
 		return result(false, runtimeReason or "MissingBuildingsRuntime", plot, 0)
@@ -589,6 +591,9 @@ function PlayerCityRuntimeCoordinator.Unload(player: Player): number
 	if buildings and buildings:IsA("Folder") then
 		-- 客户端只订阅一次固定 Buildings Folder；重生/显式重载必须保留目录身份。
 		clearFolder(buildings)
+	end
+	if plot then
+		HouseRuinRuntimeService.ClearPlot(plot)
 	end
 	return removedCount
 end

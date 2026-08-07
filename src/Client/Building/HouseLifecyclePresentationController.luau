@@ -2,7 +2,8 @@
 	职责：在客户端呈现一栋服务器权威房屋的摧毁或重建。
 	输入：已通过协议验证的 HouseDestroyed / HouseRebuilding Command。
 	输出：无业务返回；表现失败只记录警告。
-	内部算法：按 Owner/Zone/House/Level 解析 Slot 与模板，复用拆除或升起动画。
+	内部算法：HouseDestroyed 由服务器 Runtime 中的 Ruin Model 直接呈现；
+		HouseRebuilding 按 Owner/Zone/House/Level 解析 Slot 与模板，复用升起动画。
 	不负责：不修改服务器状态、不创建持久建筑、不决定何时重建。
 ]]
 
@@ -20,7 +21,6 @@ local IncomeBuildingProgressionRules = require(
 	ReplicatedStorage.Shared.Building.IncomeBuildingProgressionRules
 )
 local BuildingTemplateResolver = require(script.Parent.BuildingTemplateResolver)
-local LocalBuildingDemolitionAnimation = require(script.Parent.LocalBuildingDemolitionAnimation)
 local LocalBuildingRiseAnimation = require(script.Parent.LocalBuildingRiseAnimation)
 local LocalBuildingVisibility = require(script.Parent.LocalBuildingVisibility)
 local LocalPlayerCityRuntimeAccess = require(script.Parent.LocalPlayerCityRuntimeAccess)
@@ -57,20 +57,6 @@ local function resolve(command, config)
 		"找不到房屋等级模板：" .. command.HouseId
 	)
 	return plot, slot, template, BuildingPlacement.GetTargetPivot(template, slot.CFrame)
-end
-
-local function presentDestroyed(command, config)
-	local plot, slot, template, targetPivot = resolve(command, config)
-	local authoritativeModel = LocalPlayerCityRuntimeAccess.FindBuilding(plot, command.HouseId)
-	if authoritativeModel then
-		LocalBuildingVisibility.Hide(authoritativeModel)
-	end
-	LocalBuildingDemolitionAnimation.Play(
-		template,
-		targetPivot,
-		slot.Position.Y,
-		config.Demolish
-	)
 end
 
 local function presentRebuilding(command, config)
@@ -119,10 +105,6 @@ function HouseLifecyclePresentationController.Present(command)
 	end
 	local scaledConfig = {
 		ResolveTimeout = config.ResolveTimeout,
-		Demolish = BuildPresentationTiming.ScaleMotion(
-			config.Demolish,
-			command.BuildSpeedMultiplier
-		),
 		Rise = BuildPresentationTiming.ScaleMotion(
 			config.Rise,
 			command.BuildSpeedMultiplier
@@ -131,7 +113,8 @@ function HouseLifecyclePresentationController.Present(command)
 
 	local succeeded, message = xpcall(function()
 		if command.Kind == "HouseDestroyed" then
-			presentDestroyed(command, scaledConfig)
+			-- 服务器已在 Plot/Runtime/Ruins 中完成替换，直接依赖复制结果。
+			return
 		else
 			presentRebuilding(command, scaledConfig)
 		end
