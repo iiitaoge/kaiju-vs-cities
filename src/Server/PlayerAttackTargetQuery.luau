@@ -5,7 +5,7 @@
 	输出：Succeeded、Reason、玩家目标数组，以及可选的 SoloTarget 快照。
 	内部算法：排除自己，读取每名在线玩家的总 AttackView 和已解锁 Territory；
 	缺少 Plot、总视野或有效领地的玩家不会进入结果；只有服务器中确实没有其他玩家时，
-	才读取唯一展示空 Plot 的 AttackViewBounds 作为视野和可点击范围。
+	才读取某一块展示空 Plot 的 AttackViewBounds 作为视野和可点击范围。
 
 	不负责：选择当前目标、校验最终落点、执行攻击或改变怪兽状态。
 ]]

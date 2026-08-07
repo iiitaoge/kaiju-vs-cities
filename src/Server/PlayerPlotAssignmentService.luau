@@ -1,9 +1,8 @@
 --[[
 	职责：
-	- 把在线玩家分配到 Workspace/PlayerPlots 下预先放置的固定 Plot。
+	- 把在线玩家分配到 Workspace/PlayerPlots 下的独占 Plot。
 	- 以 Plot 的 OwnerUserId Attribute 保存服务器权威占用关系。
-	- 始终把一块未占用 Plot 留在 Workspace 展示，其余空 Plot 停放到 ServerStorage。
-	- 分配时优先使用 ServerStorage 中的空 Plot，容量将满时才分配展示 Plot。
+	- 所有 Plot 始终留在 Workspace 展示；未占用 Plot 恢复为新手默认区域。
 
 	场景合同：
 	- PlayerPlots (Folder)
@@ -19,13 +18,12 @@
 	输出：
 	- Assign/GetPlot：Plot Model，失败时附原因。
 	- Release：是否释放成功。
-	- GetDisplayedAvailablePlot：当前留在 Workspace 的唯一空 Plot。
+	- GetDisplayedAvailablePlot：Workspace 中当前可用的空 Plot。
 
 	内部算法：
-	- 合并 Workspace 活跃 Plot 与 ServerStorage 空闲池，按 PlotId 稳定排序。
-	- 选择空 Plot 时先取空闲池，池耗尽后才取 Workspace 展示 Plot。
-	- 分配或释放后重新维持“有剩余容量时恰好展示一块空 Plot”的不变量。
-	- 分配和释放时清空 Runtime，永远不修改 Zones 等静态场景。
+	- 合并 Workspace 与 ServerStorage 中的合法 Plot，按 PlotId 稳定排序并全部激活到 Workspace。
+	- 分配和释放时清空 Runtime；释放或重新分配前恢复 ZoneCatalog.InitialUnlocked 默认可见性。
+	- OwnerUserId 只表示占用关系，不决定 Plot 是否在 Workspace。
 ]]
 
 local Players = game:GetService("Players")
@@ -34,6 +32,7 @@ local ServerStorage = game:GetService("ServerStorage")
 local PlayerRuntimeLoadReporter = require(
 	script.Parent.Analytics.PlayerRuntimeLoadReporter
 )
+local PlotSceneVisibilityService = require(script.Parent.PlotSceneVisibilityService)
 
 local PlayerPlotAssignmentService = {}
 
@@ -123,10 +122,6 @@ local function activate(plot: Model): (boolean, string?)
 	return true, nil
 end
 
-local function park(plot: Model)
-	plot.Parent = getAvailablePool()
-end
-
 local function getOwnerUserId(plot: Model): number
 	local value = plot:GetAttribute(OWNER_ATTRIBUTE)
 	-- Studio 多客户端测试可能使用负 UserId；仅 0 表示未分配。
@@ -141,43 +136,6 @@ local function clearRuntime(plot: Model)
 	for _, child in runtime:GetChildren() do
 		child:Destroy()
 	end
-end
-
--- 输入：当前全部合法 Plot。
--- 输出：有剩余容量时，Workspace 中按名称最小的唯一空 Plot；满员时返回 nil。
--- 内部算法：优先保留已经展示的空 Plot，停放多余展示 Plot；若没有则激活第一个空 Plot。
-local function ensureSingleDisplayedAvailablePlot(): Model?
-	local root = getRoot()
-	if not root then
-		return nil
-	end
-
-	local availablePlots = {}
-	local displayedPlots = {}
-	for _, plot in listPlots() do
-		if getOwnerUserId(plot) == 0 then
-			table.insert(availablePlots, plot)
-			if plot.Parent == root then
-				table.insert(displayedPlots, plot)
-			end
-		end
-	end
-	if #availablePlots == 0 then
-		return nil
-	end
-
-	local displayed = displayedPlots[1]
-	if not displayed then
-		displayed = availablePlots[1]
-		local activated, reason = activate(displayed)
-		assert(activated, reason)
-	end
-	for _, plot in displayedPlots do
-		if plot ~= displayed then
-			park(plot)
-		end
-	end
-	return displayed
 end
 
 local function findOwnedPlot(player: Player): Model?
@@ -214,24 +172,16 @@ function PlayerPlotAssignmentService.Assign(player: Player): (Model?, string?)
 	if #plots == 0 then
 		return nil, "NoValidPlot"
 	end
-	local availablePool = getAvailablePool()
 	local selected = nil
 	for _, plot in plots do
-		if getOwnerUserId(plot) == 0 and plot.Parent == availablePool then
+		if getOwnerUserId(plot) == 0 then
 			selected = plot
 			break
 		end
 	end
-	if not selected then
-		for _, plot in plots do
-			if getOwnerUserId(plot) == 0 then
-				selected = plot
-				break
-			end
-		end
-	end
 	if selected then
 		clearRuntime(selected)
+		PlotSceneVisibilityService.ApplyDefault(selected)
 		selected:SetAttribute(OWNER_ATTRIBUTE, player.UserId)
 		local activated, activateReason = activate(selected)
 		if not activated then
@@ -239,7 +189,6 @@ function PlayerPlotAssignmentService.Assign(player: Player): (Model?, string?)
 			return nil, activateReason
 		end
 		assignments[player] = selected
-		ensureSingleDisplayedAvailablePlot()
 		return selected, nil
 	end
 
@@ -278,8 +227,16 @@ function PlayerPlotAssignmentService.Release(player: Player): boolean
 
 	clearRuntime(plot)
 	plot:SetAttribute(OWNER_ATTRIBUTE, 0)
-	park(plot)
-	ensureSingleDisplayedAvailablePlot()
+	local activated, activateReason = activate(plot)
+	if not activated then
+		warn(string.format(
+			"玩家离开后恢复 Plot 失败：%s (%s)",
+			plot.Name,
+			activateReason or "Unknown"
+		))
+		return false
+	end
+	PlotSceneVisibilityService.ApplyDefault(plot)
 	return true
 end
 
@@ -296,7 +253,9 @@ function PlayerPlotAssignmentService.Start()
 		if not player or claimedUserIds[ownerUserId] then
 			clearRuntime(plot)
 			plot:SetAttribute(OWNER_ATTRIBUTE, 0)
-			park(plot)
+			local activated, reason = activate(plot)
+			assert(activated, reason)
+			PlotSceneVisibilityService.ApplyDefault(plot)
 		else
 			claimedUserIds[ownerUserId] = true
 			local activated, reason = activate(plot)
@@ -304,7 +263,6 @@ function PlayerPlotAssignmentService.Start()
 			assignments[player] = plot
 		end
 	end
-	ensureSingleDisplayedAvailablePlot()
 
 	Players.PlayerAdded:Connect(function(player)
 		local plot, reason = PlayerPlotAssignmentService.Assign(player)

@@ -3,8 +3,8 @@
 
 	输入：Apply 接收 Player、ZoneId；ApplyAll 接收 Player；Start 注册玩家加载生命周期。
 	输出：Apply 返回是否成功、Reason，以及 Decoration/按钮处理数量。
-	内部算法：前置满足的锁定 Zone 只显示 <ZoneId>-Unlock-Button；未满足前置时全部隐藏；
-		解锁后显示 Decoration 和其他按钮，同时隐藏 Unlock。属性恢复委托 ZoneSceneVisibility。
+	内部算法：读取玩家 Zone 状态，委托 PlotSceneVisibilityService 应用场景规则；
+		前置满足的锁定 Zone 只显示 <ZoneId>-Unlock-Button，解锁后显示 Decoration 和其他按钮。
 
 	不负责：扣款、修改 Unlocked/Level、创建房屋、创建或复制场景内容。
 ]]
@@ -14,17 +14,13 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local PlayerDataReadyService = require(script.Parent.PlayerDataReadyService)
 local PlayerPlotAssignmentService = require(script.Parent.PlayerPlotAssignmentService)
-local ZoneSceneVisibility = require(script.Parent.ZoneSceneVisibility)
+local PlotSceneVisibilityService = require(script.Parent.PlotSceneVisibilityService)
 local ZoneStateService = require(script.Parent.ZoneStateService)
 local ZoneCatalog = require(ReplicatedStorage.Shared.World.ZoneCatalog)
 
 local PlayerZoneSceneVisibilityService = {}
 
 local started = false
-
-local function isContainer(instance: Instance?): boolean
-	return instance ~= nil and (instance:IsA("Model") or instance:IsA("Folder"))
-end
 
 function PlayerZoneSceneVisibilityService.Apply(player: Player, zoneId: string)
 	assert(
@@ -49,49 +45,34 @@ function PlayerZoneSceneVisibilityService.Apply(player: Player, zoneId: string)
 			ButtonCount = 0,
 		}
 	end
-	local zones = plot:FindFirstChild("Zones")
-	local zone = zones and zones:FindFirstChild(zoneId)
-	if not isContainer(zone) then
-		return { Succeeded = false, Reason = "ZoneSceneUnavailable", DecorationCount = 0, ButtonCount = 0 }
-	end
+	local applied = PlotSceneVisibilityService.ApplyZone(plot, zoneId, function(requestedZoneId)
+		return {
+			Unlocked = ZoneStateService.GetUnlocked(player, requestedZoneId),
+			Level = ZoneStateService.GetLevel(player, requestedZoneId),
+		}
+	end)
 
-	local unlocked = ZoneStateService.GetUnlocked(player, zoneId)
-	local prerequisiteZoneId = definition.UnlockPrerequisiteZoneId
-	local prerequisiteLevel = definition.UnlockPrerequisiteLevel
-	local prerequisiteMet = prerequisiteZoneId == nil
-		or (ZoneStateService.GetUnlocked(player, prerequisiteZoneId)
-			and ZoneStateService.GetLevel(player, prerequisiteZoneId)
-				>= assert(prerequisiteLevel))
-	local decorationCount = 0
-	local decoration = zone:FindFirstChild("Decoration")
-	if isContainer(decoration) then
-		ZoneSceneVisibility.SetVisible(decoration, unlocked)
-		decorationCount = 1
+	-- Plot 在应用过程中可能因玩家离服而被释放；可见 Plot 必须回到默认状态。
+	if player.Parent ~= Players then
+		PlotSceneVisibilityService.ApplyDefault(plot)
+		return {
+			Succeeded = false,
+			Reason = "PlayerUnavailable",
+			DecorationCount = 0,
+			ButtonCount = 0,
+		}
 	end
-
-	local buttonCount = 0
-	local buttons = zone:FindFirstChild("Buttons")
-	if buttons and buttons:IsA("Folder") then
-		local unlockButtonName = zoneId .. "-Unlock-Button"
-		for _, child in buttons:GetChildren() do
-			if not child:IsA("Model") then
-				continue
-			end
-			local isUnlockButton = child.Name == unlockButtonName
-			local visible = if unlocked
-				then not isUnlockButton
-				else isUnlockButton and prerequisiteMet
-			ZoneSceneVisibility.SetVisible(child, visible)
-			buttonCount += 1
-		end
+	local currentPlot, currentPlotReason = PlayerPlotAssignmentService.GetPlot(player)
+	if currentPlot ~= plot then
+		PlotSceneVisibilityService.ApplyDefault(plot)
+		return {
+			Succeeded = false,
+			Reason = currentPlotReason or "PlayerPlotChanged",
+			DecorationCount = 0,
+			ButtonCount = 0,
+		}
 	end
-
-	return {
-		Succeeded = true,
-		Reason = nil,
-		DecorationCount = decorationCount,
-		ButtonCount = buttonCount,
-	}
+	return applied
 end
 
 function PlayerZoneSceneVisibilityService.ApplyAll(player: Player)
