@@ -11,7 +11,7 @@
 
 	输出：
 	- GetPlayerState：玩家状态 Folder。
-	- GetSection：Economy / Zones / Houses / Monsters Folder。
+	- GetSection：Economy / Progression / Rewards / Zones / Houses / Monsters Folder。
 	- GetEntity：Zone 或业务实体的状态 Folder。
 
 	内部结构：
@@ -19,6 +19,7 @@
 		- PlayerReference (ObjectValue)
 		- Economy (Folder)
 		- Progression (Folder + Rebirth Attributes)
+		- Rewards (Folder + DailyReward Attributes)
 		- Zones (Folder)
 			- <ZoneId> (Folder + Attributes)
 		- Houses (Folder)
@@ -41,6 +42,7 @@ local PlayerStateService = {}
 export type SectionName =
 	"Economy"
 	| "Progression"
+	| "Rewards"
 	| "Zones"
 	| "Houses"
 	| "Monsters"
@@ -54,6 +56,7 @@ local PLAYER_REFERENCE_NAME = "PlayerReference"
 local VALID_SECTIONS = {
 	Economy = true,
 	Progression = true,
+	Rewards = true,
 	Zones = true,
 	Houses = true,
 	Monsters = true,

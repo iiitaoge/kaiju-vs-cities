@@ -9,6 +9,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local HouseStateService = require(script.Parent.HouseStateService)
+local DiamondService = require(script.Parent.DiamondService)
 local MoneyService = require(script.Parent.MoneyService)
 local DefenseMonsterSpawnPointStateService = require(
 	script.Parent.DefenseMonsterSpawnPointStateService
@@ -20,6 +21,7 @@ local RegionStateService = require(script.Parent.RegionStateService)
 local RegionUpgradeConfigs = require(script.Parent.RegionUpgradeConfigs)
 local TutorialProgressStateService = require(script.Parent.TutorialProgressStateService)
 local ZoneStateService = require(script.Parent.ZoneStateService)
+local SevenDayRewardStateService = require(script.Parent.SevenDayRewardStateService)
 local HouseCatalog = require(ReplicatedStorage.Shared.Building.HouseCatalog)
 local DefenseMonsterSlotCatalog = require(
 	ReplicatedStorage.Shared.Monster.DefenseMonsterSlotCatalog
@@ -95,6 +97,12 @@ function PlayerSaveStateAdapter.Apply(player: Player, data, now: number?)
 	local restoredAt = now or os.time()
 
 	MoneyService.Set(player, data.Economy.Money)
+	DiamondService.Set(player, data.Economy.Diamond)
+	SevenDayRewardStateService.Restore(
+		player,
+		data.DailyReward.Day,
+		data.DailyReward.NextClaimAt
+	)
 	RebirthStateService.Restore(
 		player,
 		data.Rebirth.Count,
@@ -244,7 +252,11 @@ function PlayerSaveStateAdapter.Capture(player: Player, now: number?)
 		Version = PlayerSaveSchema.CurrentVersion,
 		ContentRevision = PlayerSaveSchema.ContentRevision,
 		SavedAt = now or os.time(),
-		Economy = { Money = MoneyService.Get(player) },
+		Economy = {
+			Money = MoneyService.Get(player),
+			Diamond = DiamondService.Get(player),
+		},
+		DailyReward = SevenDayRewardStateService.Get(player),
 		Rebirth = {
 			Count = rebirth.Count,
 			RunEarnings = rebirth.RunEarnings,

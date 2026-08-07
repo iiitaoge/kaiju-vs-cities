@@ -13,6 +13,8 @@ local PlayerSaveSchema = {}
 PlayerSaveSchema.CurrentVersion = 1
 PlayerSaveSchema.ContentRevision = 7
 
+local DAILY_REWARD_COMPLETED_DAY = 8
+
 local function nonNegative(value, fallback: number): number
 	return if ValueValidation.IsFiniteNumber(value) and value >= 0
 		then value
@@ -92,12 +94,31 @@ local function normalizeSpawnPoints(values)
 	return result
 end
 
+local function normalizeDailyReward(values)
+	local source = if type(values) == "table" then values else {}
+	local day = math.clamp(
+		nonNegativeInteger(source.Day, 1),
+		1,
+		DAILY_REWARD_COMPLETED_DAY
+	)
+	return {
+		Day = day,
+		NextClaimAt = if day == DAILY_REWARD_COMPLETED_DAY
+			then 0
+			else nonNegativeInteger(source.NextClaimAt, 0),
+	}
+end
+
 function PlayerSaveSchema.Default()
 	return {
 		Version = PlayerSaveSchema.CurrentVersion,
 		ContentRevision = PlayerSaveSchema.ContentRevision,
 		SavedAt = 0,
-		Economy = { Money = 0 },
+		Economy = { Money = 0, Diamond = 0 },
+		DailyReward = {
+			Day = 1,
+			NextClaimAt = 0,
+		},
 		Rebirth = {
 			Count = 0,
 			RunEarnings = 0,
@@ -120,7 +141,8 @@ local function migrateV0(raw)
 		Version = 1,
 		ContentRevision = raw.ContentRevision,
 		SavedAt = raw.SavedAt,
-		Economy = raw.Economy or { Money = raw.Money },
+		Economy = raw.Economy or { Money = raw.Money, Diamond = raw.Diamond },
+		DailyReward = raw.DailyReward,
 		Rebirth = raw.Rebirth,
 		Tutorial = raw.Tutorial,
 		Zones = raw.Zones,
@@ -160,6 +182,7 @@ function PlayerSaveSchema.Normalize(raw)
 	end
 
 	local economy = if type(raw.Economy) == "table" then raw.Economy else {}
+	local dailyReward = if type(raw.DailyReward) == "table" then raw.DailyReward else {}
 	local rebirth = if type(raw.Rebirth) == "table" then raw.Rebirth else {}
 	local tutorial = if type(raw.Tutorial) == "table" then raw.Tutorial else {}
 	local monsters = if type(raw.Monsters) == "table" then raw.Monsters else {}
@@ -170,7 +193,9 @@ function PlayerSaveSchema.Normalize(raw)
 		SavedAt = nonNegativeInteger(raw.SavedAt, 0),
 		Economy = {
 			Money = nonNegative(economy.Money, 0),
+			Diamond = nonNegative(economy.Diamond, 0),
 		},
+		DailyReward = normalizeDailyReward(dailyReward),
 		Rebirth = {
 			Count = nonNegativeInteger(rebirth.Count, 0),
 			RunEarnings = nonNegative(rebirth.RunEarnings, 0),

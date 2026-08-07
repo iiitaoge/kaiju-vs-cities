@@ -5,12 +5,14 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local Server = ServerScriptService.Server
 local HouseStateService = require(Server.HouseStateService)
 local DefenseMonsterSpawnPointStateService = require(Server.DefenseMonsterSpawnPointStateService)
+local DiamondService = require(Server.DiamondService)
 local MoneyService = require(Server.MoneyService)
 local MonsterSpawnPointStateService = require(Server.MonsterSpawnPointStateService)
 local MonsterStateService = require(Server.MonsterStateService)
 local PlayerSaveStateAdapter = require(Server.PlayerSaveStateAdapter)
 local RebirthStateService = require(Server.RebirthStateService)
 local RegionStateService = require(Server.RegionStateService)
+local SevenDayRewardStateService = require(Server.SevenDayRewardStateService)
 local TutorialProgressStateService = require(Server.TutorialProgressStateService)
 local PlayerSaveSchema = require(ReplicatedStorage.Shared.Persistence.PlayerSaveSchema)
 local MonsterSpawnPointCatalog = require(ReplicatedStorage.Shared.Monster.MonsterSpawnPointCatalog)
@@ -29,6 +31,8 @@ function PlayerSaveStateAdapterSpec.Run(player: Player?): boolean
 	assert(testPlayer, "PlayerSaveStateAdapterSpec 需要服务器中的测试玩家")
 
 	MoneyService.Set(testPlayer, 123)
+	DiamondService.Set(testPlayer, 77)
+	SevenDayRewardStateService.Set(testPlayer, 3, 123456)
 	RebirthStateService.Restore(testPlayer, 3, 4567)
 	TutorialProgressStateService.Restore(testPlayer, TutorialProgression.CurrentVersion)
 	RegionStateService.SetUnlocked(testPlayer, "R1", true)
@@ -52,6 +56,12 @@ function PlayerSaveStateAdapterSpec.Run(player: Player?): boolean
 	local normalized = PlayerSaveSchema.Normalize(captured)
 	expect(normalized ~= nil, "快照必须符合 V1 Schema")
 	expect(normalized.Rebirth.Count == 3, "重生次数没有进入存档")
+	expect(normalized.Economy.Diamond == 77, "钻石没有进入存档")
+	expect(
+		normalized.DailyReward.Day == 3
+			and normalized.DailyReward.NextClaimAt == 123456,
+		"七日奖励状态没有进入存档"
+	)
 	expect(normalized.Rebirth.RunEarnings == 4567, "本轮累计收入没有进入存档")
 	expect(
 		normalized.Tutorial.Version == TutorialProgression.CurrentVersion,
@@ -65,6 +75,8 @@ function PlayerSaveStateAdapterSpec.Run(player: Player?): boolean
 	expect(normalized.Zones.R1.BoostPurchased, "Boost 状态没有进入存档")
 
 	MoneyService.Set(testPlayer, 0)
+	DiamondService.Set(testPlayer, 0)
+	SevenDayRewardStateService.Set(testPlayer, 1, 0)
 	RebirthStateService.Restore(testPlayer, 0, 0)
 	TutorialProgressStateService.Restore(testPlayer, 0)
 	HouseStateService.RestoreDurable(testPlayer, "R1-H1", false, 0, 300)
@@ -72,6 +84,13 @@ function PlayerSaveStateAdapterSpec.Run(player: Player?): boolean
 	PlayerSaveStateAdapter.Apply(testPlayer, normalized, 300)
 
 	expect(MoneyService.Get(testPlayer) == 123, "金钱恢复错误")
+	expect(DiamondService.Get(testPlayer) == 77, "钻石恢复错误")
+	local restoredDailyReward = SevenDayRewardStateService.Get(testPlayer)
+	expect(
+		restoredDailyReward.Day == 3
+			and restoredDailyReward.NextClaimAt == 123456,
+		"七日奖励状态恢复错误"
+	)
 	local restoredRebirth = RebirthStateService.Get(testPlayer)
 	expect(restoredRebirth.Count == 3, "重生次数恢复错误")
 	expect(restoredRebirth.RunEarnings == 4567, "本轮累计收入恢复错误")

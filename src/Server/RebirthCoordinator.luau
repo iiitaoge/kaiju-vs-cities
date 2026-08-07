@@ -13,6 +13,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local AutomaticIncomeRatePresentationService = require(
 	script.Parent.AutomaticIncomeRatePresentationService
 )
+local DiamondService = require(script.Parent.DiamondService)
 local MonsterExpeditionReportService = require(script.Parent.MonsterExpeditionReportService)
 local PlayerJourneyAnalyticsCoordinator = require(
 	script.Parent.Analytics.PlayerJourneyAnalyticsCoordinator
@@ -39,6 +40,7 @@ local RebirthResetRules = require(
 local RebirthStateMachine = require(
 	ReplicatedStorage.Shared.Progression.RebirthStateMachine
 )
+local SevenDayRewardStateService = require(script.Parent.SevenDayRewardStateService)
 
 local RebirthCoordinator = {}
 
@@ -172,7 +174,10 @@ local function executeLocked(player: Player)
 		return snapshot(player, "Failed", confirmed.Reason)
 	end
 
-	local resetData = RebirthResetRules.Create(query.Count, os.time())
+	local resetData = RebirthResetRules.Create(query.Count, os.time(), {
+		Diamond = DiamondService.Get(player),
+		DailyReward = SevenDayRewardStateService.Get(player),
+	})
 	local committed = PlayerPersistenceCoordinator.CommitReplacement(player, resetData)
 	if not committed.Succeeded then
 		local eventKind = if committed.Uncertain then "CommitUncertain" else "CommitFailed"

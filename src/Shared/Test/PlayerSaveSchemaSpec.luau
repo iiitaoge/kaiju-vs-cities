@@ -10,7 +10,16 @@ end
 
 function PlayerSaveSchemaSpec.Run(): boolean
 	local default = PlayerSaveSchema.Normalize(nil)
-	expect(default.Version == 1 and default.Economy.Money == 0, "默认档错误")
+	expect(
+		default.Version == 1
+			and default.Economy.Money == 0
+			and default.Economy.Diamond == 0,
+		"默认经济档错误"
+	)
+	expect(
+		default.DailyReward.Day == 1 and default.DailyReward.NextClaimAt == 0,
+		"默认七日奖励状态错误"
+	)
 	expect(default.Rebirth.Count == 0, "默认重生次数必须为 0")
 	expect(default.Rebirth.RunEarnings == 0, "默认本轮累计收入必须为 0")
 	expect(default.Tutorial.Version == 0, "默认引导版本必须为 0")
@@ -32,6 +41,11 @@ function PlayerSaveSchemaSpec.Run(): boolean
 		},
 	})
 	expect(migrated.Version == 1 and migrated.Economy.Money == 75, "V0 金钱迁移错误")
+	expect(migrated.Economy.Diamond == 0, "旧存档钻石默认值错误")
+	expect(
+		migrated.DailyReward.Day == 1 and migrated.DailyReward.NextClaimAt == 0,
+		"旧存档七日奖励默认值错误"
+	)
 	expect(migrated.Rebirth.Count == 0, "旧存档重生次数应默认为 0")
 	expect(migrated.Tutorial.Version == 0, "旧存档引导版本应默认为 0")
 	expect(migrated.Monsters.Capacity == 4, "V0 容量迁移错误")
@@ -66,6 +80,26 @@ function PlayerSaveSchemaSpec.Run(): boolean
 		Tutorial = { Version = -1 },
 	})
 	expect(invalidTutorial.Tutorial.Version == 0, "非法引导版本必须回退为 0")
+
+	local rewards = PlayerSaveSchema.Normalize({
+		Version = 1,
+		Economy = { Diamond = 42 },
+		DailyReward = { Day = 3, NextClaimAt = 123456 },
+	})
+	expect(rewards.Economy.Diamond == 42, "钻石规范化错误")
+	expect(
+		rewards.DailyReward.Day == 3
+			and rewards.DailyReward.NextClaimAt == 123456,
+		"七日奖励状态规范化错误"
+	)
+	local completed = PlayerSaveSchema.Normalize({
+		Version = 1,
+		DailyReward = { Day = 99, NextClaimAt = 123456 },
+	})
+	expect(
+		completed.DailyReward.Day == 8 and completed.DailyReward.NextClaimAt == 0,
+		"七日奖励完成状态规范化错误"
+	)
 
 	local invalid, reason = PlayerSaveSchema.Normalize({ Version = 99 })
 	expect(invalid == nil and reason == "FutureSaveVersion", "未来版本必须拒绝")

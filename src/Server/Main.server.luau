@@ -23,6 +23,7 @@ local IncomeAutoCollectionService = require(script.Parent.IncomeAutoCollectionSe
 local IncomeGainPresentationPublisher = require(
 	script.Parent.IncomeGainPresentationPublisher
 )
+local DiamondService = require(script.Parent.DiamondService)
 local MoneyService = require(script.Parent.MoneyService)
 local DefenseMonsterSpawnPointStateService = require(
 	script.Parent.DefenseMonsterSpawnPointStateService
@@ -49,6 +50,7 @@ local PlayerZoneSceneVisibilityService = require(
 )
 local RegionStateService = require(script.Parent.RegionStateService)
 local RebirthService = require(script.Parent.RebirthService)
+local SevenDayRewardService = require(script.Parent.SevenDayRewardService)
 local StudioMoneyCheatService = require(script.Parent.StudioMoneyCheatService)
 local StudioSaveResetService = require(script.Parent.StudioSaveResetService)
 local ZoneStateService = require(script.Parent.ZoneStateService)
@@ -75,10 +77,12 @@ PlayerCharacterMovementService.Start()
 CityBuildingPresentationPublisher.Start()
 MonsterBuildPresentationPublisher.Start()
 IncomeGainPresentationPublisher.Start()
+DiamondService.Start()
 MoneyService.Start()
 StudioMoneyCheatService.Start()
 RegionStateService.Start()
 AutomaticIncomeRatePresentationService.Start()
+SevenDayRewardService.Start()
 RebirthService.Start()
 PlayerZoneSceneVisibilityService.Start()
 PlayerCityRuntimeCoordinator.Start()
