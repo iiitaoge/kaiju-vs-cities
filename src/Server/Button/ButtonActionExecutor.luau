@@ -37,17 +37,17 @@ local ButtonPresentationQuery = require(script.Parent.ButtonPresentationQuery)
 local handlers = {
 	IncomeZonePrimary = function(player, action)
 		local outcome = IncomeZonePrimaryCoordinator.Execute(player, action.RegionId)
-		return nil, outcome.NextButtonState
+		return nil, outcome.NextButtonState, outcome.Reason
 	end,
 
 	IncomeZoneUnlock = function(player, action)
 		local outcome = IncomeZoneUnlockCoordinator.Execute(player, action.RegionId)
-		return nil, outcome.NextButtonState
+		return nil, outcome.NextButtonState, outcome.Reason
 	end,
 
 	IncomeZoneBoost = function(player, action)
 		local outcome = IncomeZoneBoostCoordinator.Execute(player, action.RegionId)
-		return nil, outcome.NextButtonState
+		return nil, outcome.NextButtonState, outcome.Reason
 	end,
 
 	MonsterSpawnPointBuild = function(player, action)
@@ -55,7 +55,7 @@ local handlers = {
 			player,
 			action.SpawnPointId
 		)
-		return nil, outcome.NextButtonState
+		return nil, outcome.NextButtonState, outcome.Reason
 	end,
 
 	DefenseMonsterBuild = function(player, action)
@@ -63,7 +63,7 @@ local handlers = {
 			player,
 			action.SpawnPointId
 		)
-		return nil, outcome.NextButtonState
+		return nil, outcome.NextButtonState, outcome.Reason
 	end,
 }
 

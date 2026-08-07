@@ -34,6 +34,7 @@ local UIModeVisibilityRules = require(
 local LocalUIVisibilityGate = require(
 	script.Parent.Parent.UI.LocalUIVisibilityGate
 )
+local TipBlackController = require(script.Parent.Parent.UI.TipBlackController)
 local AnalyticsIntentProtocol = require(
 	ReplicatedStorage.Shared.Analytics.AnalyticsIntentProtocol
 )
@@ -180,11 +181,14 @@ function DefenseMonsterUIController.Start()
 			local canInteract = state.Mode == "Managing" and snapshot ~= nil
 			setButtonEnabled(
 				refs.MoneyButton,
-				canInteract and snapshot.Upgrade.Allowed and snapshot.Upgrade.Affordable
+				canInteract and snapshot.Upgrade.Allowed
 			)
 		end
 
-		management = MonsterManagementCoordinator.Create({ Render = render })
+		management = MonsterManagementCoordinator.Create({
+			Render = render,
+			OnInsufficientMoney = TipBlackController.ShowInsufficientMoney,
+		})
 		refs.MoneyButton.Activated:Connect(function()
 			if selectedSpawnPointId then
 				AnalyticsIntentClient.Record(

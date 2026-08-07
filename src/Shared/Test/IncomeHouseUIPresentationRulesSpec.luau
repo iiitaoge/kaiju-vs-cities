@@ -32,8 +32,12 @@ function IncomeHouseUIPresentationRulesSpec.Run(): boolean
 	local automatic = IncomeHouseUIPresentationRules.Resolve(autoInput)
 	assert(automatic.Money.Text == "+5/s", "自动收入每秒产量错误")
 	assert(
-		not automatic.Texts.Text2.Visible and not automatic.Texts.Text3.Visible,
-		"自动收入房屋重复显示产速或 HP"
+		not automatic.Texts.Text2.Visible,
+		"自动收入房屋重复显示产速"
+	)
+	assert(
+		automatic.Texts.Text3.Visible and automatic.Texts.Text3.Text == "750/1K HP",
+		"自动收入房屋未显示生命值"
 	)
 
 	local destroyedInput = input()

@@ -32,6 +32,7 @@ export type Options = {
 	Query: ((string) -> any)?,
 	Upgrade: ((string) -> any)?,
 	OpenAttackSelection: ((string, AttackCallbacks) -> AttackSession?)?,
+	OnInsufficientMoney: (() -> ())?,
 }
 
 export type Session = {
@@ -59,6 +60,12 @@ function MonsterManagementCoordinator.Create(options: Options): Session
 
 	local function render()
 		options.Render(current)
+	end
+
+	local function notifyInsufficientMoney(reason: string?)
+		if reason == "InsufficientMoney" and options.OnInsufficientMoney then
+			options.OnInsufficientMoney()
+		end
 	end
 
 	local function nextRequestId(): number
@@ -89,6 +96,7 @@ function MonsterManagementCoordinator.Create(options: Options): Session
 				end
 				return
 			end
+			notifyInsufficientMoney(responseOrError.Reason)
 
 			if resolvedKind == "SnapshotLoaded" then
 				if responseOrError.Succeeded then
@@ -184,7 +192,9 @@ function MonsterManagementCoordinator.Create(options: Options): Session
 			return dispatch({ Kind = "Open", SpawnPointId = spawnPointId })
 		end,
 		ChooseUpgrade = function()
-			return dispatch({ Kind = "ChooseUpgrade" })
+			local transition = dispatch({ Kind = "ChooseUpgrade" })
+			notifyInsufficientMoney(transition.Reason)
+			return transition
 		end,
 		ChooseAttack = function()
 			return dispatch({ Kind = "ChooseAttack" })

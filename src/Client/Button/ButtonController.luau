@@ -7,6 +7,7 @@ local InstancePath = require(ReplicatedStorage.Shared.InstancePath)
 local LocalButtonController = require(script.Parent.LocalButtonController)
 local LocalPlotButtonAccess = require(script.Parent.LocalPlotButtonAccess)
 local LocalButtonWorldUIController = require(script.Parent.LocalButtonWorldUIController)
+local TipBlackController = require(script.Parent.Parent.UI.TipBlackController)
 
 local buttonRequest = InstancePath.Get("ReplicatedStorage/Remotes/ButtonRequest")
 assert(buttonRequest:IsA("RemoteFunction"), "ButtonRequest 必须是 RemoteFunction")
@@ -27,7 +28,7 @@ local function getButton(buttonName: string, config, ownPlot: Model?): Model?
 end
 
 local function request(buttonName: string, requestKind: string)
-	local succeeded, action, state, presentation = pcall(
+	local succeeded, action, state, presentation, reason = pcall(
 		buttonRequest.InvokeServer,
 		buttonRequest,
 		buttonName,
@@ -37,7 +38,7 @@ local function request(buttonName: string, requestKind: string)
 		warn(string.format("按钮请求失败：%s/%s (%s)", buttonName, requestKind, tostring(action)))
 		return nil, "Locked", { Enabled = false }
 	end
-	return action, state or "Locked", presentation
+	return action, state or "Locked", presentation, reason
 end
 
 function ButtonController.Start(runAction)
@@ -122,7 +123,13 @@ function ButtonController.Start(runAction)
 			binding.IsBusy = true
 			binding.Handle:SetState("Processing")
 
-			local action, nextState, presentation = request(buttonName, "Execute")
+			local action, nextState, presentation, reason = request(buttonName, "Execute")
+			if reason == "InsufficientMoney" then
+				TipBlackController.ShowInsufficientMoney()
+			end
+			if config.ActionId == "R3Unlock" and reason == nil then
+				TipBlackController.ShowJeepUnlocked()
+			end
 			if action then
 				runAction(action)
 			end

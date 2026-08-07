@@ -133,7 +133,7 @@ function LocalIncomeGainEffectPlayer.PlayPopup(
 	label.Size = UDim2.new(0, 125, 1, 0)
 	label.Text = text
 	label.TextScaled = true
-	label.TextStrokeTransparency = 0.15
+	label.TextStrokeTransparency = 0
 	label.Parent = content
 
 	label.TextColor3 = Color3.fromRGB(85, 255, 120)

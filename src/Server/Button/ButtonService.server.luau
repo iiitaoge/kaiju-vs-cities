@@ -96,10 +96,11 @@ buttonRequest.OnServerInvoke = function(player, buttonName, requestKind)
 
 	local clientAction
 	local actionState
+	local actionReason
 	if action.RunOn == "Client" then
 		clientAction = action
 	else
-		clientAction, actionState = ButtonActionExecutor.Run(player, action)
+		clientAction, actionState, actionReason = ButtonActionExecutor.Run(player, action)
 	end
 
 	if action.Repeat then
@@ -108,7 +109,8 @@ buttonRequest.OnServerInvoke = function(player, buttonName, requestKind)
 			or buttonConfig.InitialState
 		return clientAction,
 			nextState,
-			ButtonActionExecutor.GetPresentation(player, action)
+			ButtonActionExecutor.GetPresentation(player, action),
+			actionReason
 	end
 
 	progress[buttonName] = index + 1
@@ -117,5 +119,6 @@ buttonRequest.OnServerInvoke = function(player, buttonName, requestKind)
 		if nextAction then "Ready" else "Locked",
 		if nextAction
 			then ButtonActionExecutor.GetPresentation(player, nextAction)
-			else { Enabled = false }
+			else { Enabled = false },
+		actionReason
 end

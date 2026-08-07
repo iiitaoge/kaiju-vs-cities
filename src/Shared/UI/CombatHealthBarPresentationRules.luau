@@ -13,6 +13,7 @@ local CombatHealthBarPresentationRules = {}
 local visibleMonsterStates = table.freeze({
 	Releasing = true,
 	MovingToTarget = true,
+	Encountering = true,
 	AttackingStructure = true,
 	Defending = true,
 	FightingMonster = true,

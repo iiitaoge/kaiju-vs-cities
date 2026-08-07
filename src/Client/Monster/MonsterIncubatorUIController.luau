@@ -38,6 +38,7 @@ local UIModeVisibilityRules = require(
 local LocalUIVisibilityGate = require(
 	script.Parent.Parent.UI.LocalUIVisibilityGate
 )
+local TipBlackController = require(script.Parent.Parent.UI.TipBlackController)
 local AnalyticsIntentProtocol = require(
 	ReplicatedStorage.Shared.Analytics.AnalyticsIntentProtocol
 )
@@ -243,7 +244,7 @@ function MonsterIncubatorUIController.Start()
 			)
 			setButtonEnabled(
 				refs.MoneyButton,
-				canInteract and snapshot.Upgrade.Allowed and snapshot.Upgrade.Affordable
+				canInteract and snapshot.Upgrade.Allowed
 			)
 
 			retryToken += 1
@@ -327,6 +328,7 @@ function MonsterIncubatorUIController.Start()
 			management = MonsterManagementCoordinator.Create({
 				Render = render,
 				OpenAttackSelection = AttackSelectionHUDController.Open,
+				OnInsufficientMoney = TipBlackController.ShowInsufficientMoney,
 			})
 			local session = management
 			table.insert(uiConnections, resolved.StartButton.Activated:Connect(function()

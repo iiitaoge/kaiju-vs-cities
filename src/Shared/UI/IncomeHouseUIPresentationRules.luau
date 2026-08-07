@@ -2,7 +2,7 @@
 	职责：把单栋产钱房屋的只读收入状态映射为 WorldObjectUI 显示快照。
 	输入：LifeState、自动收入、产速、累计基数、结算时间、当前时间和生命值。
 	输出：Billboard 是否启用、Text1～Text5 与 Money.Val 的可见性和文本。
-	内部算法：Alive 才显示；非自动显示产速、HP 并按时间推算待领取，自动只显示每秒产量。
+	内部算法：Alive 才显示；始终显示 HP；非自动额外显示产速并按时间推算待领取，自动显示每秒产量。
 	不负责：读取 Instance、结算收入、战斗血条或定位 UI。
 ]]
 
@@ -56,7 +56,11 @@ function IncomeHouseUIPresentationRules.Resolve(input)
 
 	local moneyText
 	local incomeText = hiddenText()
-	local healthText = hiddenText()
+	local healthText = visibleText(string.format(
+		"%s/%s HP",
+		CompactNumberFormatter.Format(math.clamp(input.CurrentHealth, 0, input.MaxHealth)),
+		CompactNumberFormatter.Format(input.MaxHealth)
+	))
 	if input.AutoIncome then
 		moneyText = "+" .. CompactNumberFormatter.Format(input.IncomePerSecond) .. "/s"
 	else
@@ -68,11 +72,6 @@ function IncomeHouseUIPresentationRules.Resolve(input)
 		incomeText = visibleText(
 			"+" .. CompactNumberFormatter.Format(input.IncomePerSecond) .. "/s"
 		)
-		healthText = visibleText(string.format(
-			"%s/%s HP",
-			CompactNumberFormatter.Format(math.clamp(input.CurrentHealth, 0, input.MaxHealth)),
-			CompactNumberFormatter.Format(input.MaxHealth)
-		))
 	end
 
 	return {
