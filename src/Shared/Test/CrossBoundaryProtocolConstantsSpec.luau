@@ -9,7 +9,12 @@ local EightPlayerCapacityAcceptanceProtocol = require(
 local IncomeHouseWorldUIProtocol = require(
 	ReplicatedStorage.Shared.Building.IncomeHouseWorldUIProtocol
 )
+local CurrencyProtocol = require(ReplicatedStorage.Shared.Economy.CurrencyProtocol)
+local DiamondProtocol = require(ReplicatedStorage.Shared.Economy.DiamondProtocol)
 local MoneyProtocol = require(ReplicatedStorage.Shared.Economy.MoneyProtocol)
+local ExpandedPresentationProtocol = require(
+	ReplicatedStorage.Shared.UI.ExpandedPresentationProtocol
+)
 local IncomeGainPresentationProtocol = require(
 	ReplicatedStorage.Shared.Economy.IncomeGainPresentationProtocol
 )
@@ -22,6 +27,9 @@ local MonsterAttackProtocol = require(
 local MonsterBuildPresentationProtocol = require(
 	ReplicatedStorage.Shared.Monster.MonsterBuildPresentationProtocol
 )
+local MonsterExpeditionProgressProtocol = require(
+	ReplicatedStorage.Shared.Monster.MonsterExpeditionProgressProtocol
+)
 local MonsterManagementProtocol = require(
 	ReplicatedStorage.Shared.Monster.MonsterManagementProtocol
 )
@@ -30,6 +38,9 @@ local MultiplayerAttackAcceptanceProtocol = require(
 )
 local StudioSaveResetProtocol = require(
 	ReplicatedStorage.Shared.Persistence.StudioSaveResetProtocol
+)
+local SevenDayRewardProtocol = require(
+	ReplicatedStorage.Shared.Reward.SevenDayRewardProtocol
 )
 local RebirthProtocol = require(ReplicatedStorage.Shared.Progression.RebirthProtocol)
 local TutorialProtocol = require(ReplicatedStorage.Shared.Tutorial.TutorialProtocol)
@@ -61,16 +72,46 @@ function CrossBoundaryProtocolConstantsSpec.Run(): boolean
 	expect(MonsterAttackProtocol.CommandRemoteName == "MonsterAttackCommand", "怪兽攻击 Remote 名称漂移")
 	expect(MonsterManagementProtocol.RemoteName == "MonsterManagementRequest", "怪兽管理 Remote 名称漂移")
 	expect(RebirthProtocol.RemoteName == "RebirthRequest", "重生 Remote 名称漂移")
+	expect(
+		SevenDayRewardProtocol.RemoteName == "SevenDayRewardRequest",
+		"七日奖励 Remote 名称漂移"
+	)
 	expect(TutorialProtocol.SnapshotRemoteName == "TutorialSnapshot", "新手引导 Remote 名称漂移")
 	expect(
 		MonsterBuildPresentationProtocol.RemoteName == "MonsterBuildPresentation",
 		"怪兽建造表现 Remote 名称漂移"
 	)
 	expect(
+		MonsterExpeditionProgressProtocol.RemoteName == "MonsterExpeditionProgressPresentation",
+		"防守方出征进度 Remote 名称漂移"
+	)
+	expect(
+		MonsterExpeditionProgressProtocol.QueryRemoteName == "MonsterExpeditionProgressQuery",
+		"防守方出征进度查询 Remote 名称漂移"
+	)
+	expect(
+		MonsterExpeditionProgressProtocol.StartedKind == "ExpeditionStarted"
+			and MonsterExpeditionProgressProtocol.EndedKind == "ExpeditionEnded",
+		"防守方出征进度 Kind 漂移"
+	)
+	expect(
+		ExpandedPresentationProtocol.RemoteName == "ExpandedPresentation",
+		"区域扩展提示 Remote 名称漂移"
+	)
+	expect(
+		ExpandedPresentationProtocol.Kinds.RegionExpanded == "RegionExpanded"
+			and ExpandedPresentationProtocol.Kinds.IncubatorBuilt == "IncubatorBuilt",
+		"区域扩展提示 Kind 漂移"
+	)
+	expect(
 		StudioSaveResetProtocol.RemoteName == "StudioSaveReset",
 		"Studio 删档 Remote 名称漂移"
 	)
 	expect(MoneyProtocol.BalanceAttributeName == "MoneyBalance", "余额 Attribute 名称漂移")
+	expect(
+		DiamondProtocol.BalanceAttributeName == "DiamondBalance",
+		"钻石余额 Attribute 名称漂移"
+	)
 	expect(
 		MoneyProtocol.AutomaticIncomeRateAttributeName == "AutomaticIncomeRate",
 		"自动收入总速率 Attribute 名称漂移"
@@ -115,10 +156,14 @@ function CrossBoundaryProtocolConstantsSpec.Run(): boolean
 		CityBuildingPresentation = CityBuildingPresentationProtocol.RemoteName,
 		IncomeGainPresentation = IncomeGainPresentationProtocol.RemoteName,
 		MonsterBuildPresentation = MonsterBuildPresentationProtocol.RemoteName,
+		MonsterExpeditionProgress = MonsterExpeditionProgressProtocol.RemoteName,
+		MonsterExpeditionProgressQuery = MonsterExpeditionProgressProtocol.QueryRemoteName,
+		ExpandedPresentation = ExpandedPresentationProtocol.RemoteName,
 		MonsterAttackTargets = MonsterAttackProtocol.TargetQueryRemoteName,
 		MonsterAttackCommand = MonsterAttackProtocol.CommandRemoteName,
 		MonsterManagement = MonsterManagementProtocol.RemoteName,
 		Rebirth = RebirthProtocol.RemoteName,
+		SevenDayReward = SevenDayRewardProtocol.RemoteName,
 		Tutorial = TutorialProtocol.SnapshotRemoteName,
 		StudioSaveReset = StudioSaveResetProtocol.RemoteName,
 		ModelMovementVisual = ModelMovementVisualProtocol.RemoteName,
@@ -126,6 +171,7 @@ function CrossBoundaryProtocolConstantsSpec.Run(): boolean
 	}, "Remote 名称")
 	expectUniqueNonEmpty({
 		Money = MoneyProtocol.BalanceAttributeName,
+		Diamond = DiamondProtocol.BalanceAttributeName,
 		AutomaticIncomeRate = MoneyProtocol.AutomaticIncomeRateAttributeName,
 		LifeState = IncomeHouseWorldUIProtocol.LifeStateAttributeName,
 		AutoIncome = IncomeHouseWorldUIProtocol.AutoIncomeAttributeName,
@@ -139,6 +185,8 @@ function CrossBoundaryProtocolConstantsSpec.Run(): boolean
 	for label, protocol in {
 		CityBuildingPresentation = CityBuildingPresentationProtocol,
 		MonsterBuildPresentation = MonsterBuildPresentationProtocol,
+		MonsterExpeditionProgress = MonsterExpeditionProgressProtocol,
+		ExpandedPresentation = ExpandedPresentationProtocol,
 		IncomeHouseWorldUI = IncomeHouseWorldUIProtocol,
 		IncomeGainPresentation = IncomeGainPresentationProtocol,
 		MonsterAttack = MonsterAttackProtocol,
@@ -181,6 +229,10 @@ function CrossBoundaryProtocolConstantsSpec.Run(): boolean
 	)
 	expect(table.isfrozen(StudioSaveResetProtocol), "Studio 删档协议必须只读")
 	expect(table.isfrozen(MoneyProtocol), "余额协议必须只读")
+	expect(table.isfrozen(DiamondProtocol), "钻石协议必须只读")
+	expect(table.isfrozen(CurrencyProtocol), "货币协议必须只读")
+	expect(table.isfrozen(CurrencyProtocol.Types), "货币类型协议必须只读")
+	expect(table.isfrozen(SevenDayRewardProtocol), "七日奖励协议必须只读")
 	expect(table.isfrozen(IncomeGainPresentationProtocol.Kinds), "房屋收入表现 Kind 表必须只读")
 	expect(table.isfrozen(ModelMovementVisualProtocol.Kinds), "模型移动 Kind 表必须只读")
 	expect(
