@@ -10,6 +10,8 @@
 ]]
 
 local IncomeZoneActionQuery = require(script.Parent.IncomeZoneActionQuery)
+local ExpandedPresentationPublisher = require(script.Parent.ExpandedPresentationPublisher)
+local JeepRuntimeService = require(script.Parent.JeepRuntimeService)
 local PlayerRegionTransactionLock = require(script.Parent.PlayerRegionTransactionLock)
 local PlayerZoneSceneVisibilityService = require(
 	script.Parent.PlayerZoneSceneVisibilityService
@@ -57,6 +59,25 @@ local function executeLocked(player: Player, regionId: string)
 			player.Name,
 			regionId,
 			visibility.Reason or "Unknown"
+		))
+	end
+	if regionId == "R3" then
+		local jeep = JeepRuntimeService.Spawn(player)
+		if not jeep.Succeeded then
+			warn(string.format(
+				"R3 解锁后放置 Jeep 失败：%s (%s)",
+				player.Name,
+				jeep.Reason or "Unknown"
+			))
+		end
+	end
+	local published = ExpandedPresentationPublisher.PublishRegionExpanded(player, regionId)
+	if not published.Succeeded then
+		warn(string.format(
+			"发布区域扩展提示失败：%s/%s (%s)",
+			player.Name,
+			regionId,
+			published.Reason or "Unknown"
 		))
 	end
 	return result(true, nil, after)
