@@ -37,7 +37,7 @@ local function createButton(parent: Instance, isTouchEnabled: boolean): TextButt
 	button.TextColor3 = Color3.new(1, 1, 1)
 	button.Font = Enum.Font.GothamBold
 	button.TextSize = 16
-	button.Text = "一键删除测试存档"
+	button.Text = "Delete Test Save"
 	button.AutoButtonColor = true
 	button.Parent = parent
 
@@ -91,18 +91,18 @@ function StudioSaveResetController.Start()
 		end
 		busy = true
 		button.Interactable = false
-		button.Text = "正在删除测试存档..."
+		button.Text = "Deleting Test Save..."
 
 		local invoked, result = pcall(remote.InvokeServer, remote)
 		if invoked and result and result.Succeeded then
-			button.Text = "已删除，请重新 Play"
+			button.Text = "Deleted. Please Play Again"
 			button.BackgroundColor3 = Color3.fromRGB(55, 150, 75)
 			return
 		end
 
 		local reason = if invoked and result then result.Reason else tostring(result)
 		warn("Studio 测试删档失败：" .. tostring(reason))
-		button.Text = "删除失败，点击重试"
+		button.Text = "Delete Failed. Click to Retry"
 		button.Interactable = true
 		busy = false
 	end)

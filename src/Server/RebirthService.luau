@@ -37,24 +37,25 @@ function RebirthService.Start()
 	remote.OnServerInvoke = function(player, requestKind)
 		local readiness = PlayerDataReadyService.Get(player)
 		if readiness.Status ~= "Ready" or not readiness.CanSave then
-			return RebirthCoordinator.GetState(player), "PlayerDataNotReady"
+			return RebirthCoordinator.GetState(player), "PlayerDataNotReady", false
 		end
 		if requestKind == "GetState" then
 			local snapshot = RebirthCoordinator.GetState(player)
 			PlayerJourneyAnalyticsCoordinator.RecordRebirthState(player, snapshot)
-			return snapshot, nil
+			return snapshot, nil, nil
 		end
 		if requestKind ~= "Execute" then
 			SecurityAnalyticsAggregator.Record(player, "Rebirth", "InvalidRequestKind")
-			return RebirthCoordinator.GetState(player), "InvalidRequestKind"
+			return RebirthCoordinator.GetState(player), "InvalidRequestKind", false
 		end
 
 		local nearButton, buttonReason = RebirthButtonAccess.CheckActivation(player)
 		if not nearButton then
 			SecurityAnalyticsAggregator.Record(player, "Rebirth", "ActivationRejected")
-			return RebirthCoordinator.GetState(player), buttonReason
+			return RebirthCoordinator.GetState(player), buttonReason, false
 		end
-		return RebirthCoordinator.Execute(player), nil
+		local snapshot, succeeded = RebirthCoordinator.Execute(player)
+		return snapshot, if succeeded then nil else snapshot.Reason, succeeded
 	end
 end
 

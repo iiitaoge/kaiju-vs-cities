@@ -34,6 +34,14 @@ function MonsterIncubatorUIPresentationSpec.Run(): boolean
 		"参考视口应使用 1 倍缩放"
 	)
 	expectNear(
+		ResponsiveUIScale.ComputeRatio(
+			Vector2.new(480, 720),
+			Vector2.new(960, 720)
+		),
+		0.5,
+		"统一响应式缩放应取宽高比例中的较小值"
+	)
+	expectNear(
 		ResponsiveUIScale.Compute(Vector2.new(480, 360), false, scaleConfig),
 		0.85,
 		"小型非触屏视口应受最小缩放限制"

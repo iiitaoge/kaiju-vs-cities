@@ -11,15 +11,14 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local CurrencyIconConfigs = require(
-	ReplicatedStorage.Shared.Economy.CurrencyIconConfigs
-)
+local CurrencyIconRenderer = require(script.Parent.CurrencyIconRenderer)
 local SevenDayRewardConfigs = require(
 	ReplicatedStorage.Shared.Reward.SevenDayRewardConfigs
 )
 local SevenDayRewardProtocol = require(
 	ReplicatedStorage.Shared.Reward.SevenDayRewardProtocol
 )
+local SoundController = require(script.Parent.Parent.Sound.SoundController)
 local TipBlackController = require(script.Parent.TipBlackController)
 
 local SevenDayRewardUIController = {}
@@ -223,80 +222,6 @@ local function resolveRemote(): RemoteFunction?
 	return nil
 end
 
-local function resolveInstanceByPath(root: Instance, path: { string }): Instance?
-	local current: Instance? = root
-	for _, name in path do
-		current = resolveChild(current, name)
-		if not current then
-			return nil
-		end
-	end
-	return current
-end
-
-local function copyImageProperties(target: ImageLabel, source: Instance)
-	if not source:IsA("ImageLabel") and not source:IsA("ImageButton") then
-		return
-	end
-
-	target.ImageRectOffset = source.ImageRectOffset
-	target.ImageRectSize = source.ImageRectSize
-	target.ScaleType = source.ScaleType
-	target.ImageColor3 = source.ImageColor3
-	target.ImageTransparency = source.ImageTransparency
-	target.SliceCenter = source.SliceCenter
-	target.SliceScale = source.SliceScale
-	target.TileSize = source.TileSize
-end
-
-local function readImageAsset(source: Instance): (string?, Instance?)
-	if source:IsA("ImageLabel") or source:IsA("ImageButton") then
-		return source.Image, source
-	end
-	if source:IsA("Decal") or source:IsA("Texture") then
-		return source.Texture, source
-	end
-	if source:IsA("StringValue") then
-		return source.Value, source
-	end
-
-	local iconChild = source:FindFirstChild("Icon")
-	if iconChild then
-		return readImageAsset(iconChild)
-	end
-	return nil, nil
-end
-
-local function applyCurrencyIcon(target: ImageLabel, currencyType: string)
-	local iconName = CurrencyIconConfigs.IconNames[currencyType]
-	if type(iconName) ~= "string" then
-		warn("七日奖励没有配置货币图标名称：" .. tostring(currencyType))
-		return
-	end
-
-	local iconRoot = resolveInstanceByPath(
-		ReplicatedStorage,
-		CurrencyIconConfigs.RootPath
-	)
-	local source = iconRoot and iconRoot:FindFirstChild(iconName)
-	if not source then
-		warn(string.format("七日奖励货币图标不存在：%s", iconName))
-		return
-	end
-
-	local image, imageSource = readImageAsset(source)
-	if type(image) ~= "string" or image == "" then
-		warn(string.format("七日奖励货币图标没有有效 Image：%s", iconName))
-		return
-	end
-
-	target.Image = image
-	target.Visible = true
-	if imageSource then
-		copyImageProperties(target, imageSource)
-	end
-end
-
 local function renderConfiguredRewards()
 	local current = references
 	if not current then
@@ -309,7 +234,7 @@ local function renderConfiguredRewards()
 		if reward and card then
 			card.Day.Text = string.format("Day %d", day)
 			card.Value.Text = tostring(reward.Amount)
-			applyCurrencyIcon(card.Icon, reward.Type)
+			CurrencyIconRenderer.Apply(card.Icon, reward.Type)
 			card.BaseIconColor = card.Icon.ImageColor3
 		end
 	end
@@ -332,6 +257,7 @@ end
 
 local function showUnavailableMessage(day: number, state: RewardState)
 	if state.Status == SevenDayRewardProtocol.Statuses.Cooldown then
+		SoundController.Play("No")
 		local localRemaining = math.max(
 			0,
 			state.RemainingSeconds - secondsSinceStateReceived()
@@ -356,6 +282,7 @@ local function showUnavailableMessage(day: number, state: RewardState)
 	end
 
 	if state.Status == SevenDayRewardProtocol.Statuses.Claimable and day > state.Day then
+		SoundController.Play("No")
 		local earliestRemaining = (day - state.Day)
 			* SevenDayRewardConfigs.CooldownSeconds
 		TipBlackController.ShowMessage(
@@ -484,7 +411,10 @@ local function claim(day: number)
 	if response.State then
 		renderState(response.State)
 	end
-	if not response.Succeeded then
+	if response.Succeeded then
+		SoundController.Play("Yes")
+	elseif response.Reason ~= SevenDayRewardProtocol.Reasons.PlayerDataNotReady then
+		SoundController.Play("No")
 		warn("七日奖励领取失败：" .. tostring(response.Reason))
 	end
 end

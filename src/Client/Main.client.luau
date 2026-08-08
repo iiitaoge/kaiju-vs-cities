@@ -19,6 +19,12 @@ local ExpandedController = require(script.Parent.UI.ExpandedController)
 local IncomeGainPresentationController = require(
 	script.Parent.UI.IncomeGainPresentationController
 )
+local ButtonFeedbackController = require(
+	script.Parent.UI.ButtonFeedbackController
+)
+local ResponsiveScreenGuiController = require(
+	script.Parent.UI.ResponsiveScreenGuiController
+)
 local DefenseMonsterUIController = require(
 	script.Parent.Monster.DefenseMonsterUIController
 )
@@ -51,10 +57,15 @@ local RebirthButtonController = require(
 	script.Parent.Progression.RebirthButtonController
 )
 local StudioSaveResetController = require(script.Parent.StudioSaveResetController)
+local SoundController = require(script.Parent.Sound.SoundController)
 local TutorialController = require(script.Parent.Tutorial.TutorialController)
+local GroupRewardUIController = require(
+	script.Parent.UI.GroupRewardUIController
+)
 local SevenDayRewardUIController = require(
 	script.Parent.UI.SevenDayRewardUIController
 )
+local VehicleUIController = require(script.Parent.UI.VehicleUIController)
 
 -- 输入：服务器意外返回的旧式客户端 Action。
 -- 输出：无；立即报错，避免重新引入只在本机生成建筑的链路。
@@ -65,12 +76,17 @@ end
 
 GameAnalyticsClientService.Start()
 AnalyticsIntentClient.Start()
+SoundController.Start()
 StudioSaveResetController.Start()
 task.spawn(SevenDayRewardUIController.Start)
+task.spawn(GroupRewardUIController.Start)
+VehicleUIController.Start()
 TutorialController.Start()
 AttackSelectionHUDController.Start()
 EconomyHUDController.Start()
 IncomeGainPresentationController.Start()
+ButtonFeedbackController.Start()
+ResponsiveScreenGuiController.Start()
 CombatHealthBarController.Start()
 CityBuildingPresentationController.Start()
 MonsterBuildPresentationController.Start()

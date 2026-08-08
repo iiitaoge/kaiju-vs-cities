@@ -15,6 +15,25 @@ export type Config = {
 	TouchMinScale: number,
 }
 
+function ResponsiveUIScale.ComputeRatio(
+	viewportSize: Vector2,
+	referenceViewport: Vector2
+): number
+	assert(typeof(viewportSize) == "Vector2", "viewportSize 必须是 Vector2")
+	assert(viewportSize.X > 0 and viewportSize.Y > 0, "viewportSize 必须大于 0")
+	assert(
+		typeof(referenceViewport) == "Vector2"
+			and referenceViewport.X > 0
+			and referenceViewport.Y > 0,
+		"referenceViewport 无效"
+	)
+
+	return math.min(
+		viewportSize.X / referenceViewport.X,
+		viewportSize.Y / referenceViewport.Y
+	)
+end
+
 function ResponsiveUIScale.Compute(
 	viewportSize: Vector2,
 	isTouchEnabled: boolean,
@@ -42,9 +61,11 @@ function ResponsiveUIScale.Compute(
 		"TouchMinScale 无效"
 	)
 
-	local widthRatio = viewportSize.X / config.ReferenceViewport.X
-	local heightRatio = viewportSize.Y / config.ReferenceViewport.Y
-	local scale = math.clamp(math.min(widthRatio, heightRatio), config.MinScale, config.MaxScale)
+	local scale = math.clamp(
+		ResponsiveUIScale.ComputeRatio(viewportSize, config.ReferenceViewport),
+		config.MinScale,
+		config.MaxScale
+	)
 	if isTouchEnabled then
 		scale = math.max(scale, config.TouchMinScale)
 	end

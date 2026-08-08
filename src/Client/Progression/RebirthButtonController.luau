@@ -27,6 +27,7 @@ local UIModeVisibilityRules = require(
 local LocalUIVisibilityGate = require(
 	script.Parent.Parent.UI.LocalUIVisibilityGate
 )
+local SoundController = require(script.Parent.Parent.Sound.SoundController)
 local AnalyticsIntentProtocol = require(
 	ReplicatedStorage.Shared.Analytics.AnalyticsIntentProtocol
 )
@@ -125,19 +126,19 @@ function RebirthButtonController.Start()
 	end
 
 	local function request(requestKind: string)
-		local succeeded, snapshot, reason = pcall(
+		local succeeded, snapshot, reason, actionSucceeded = pcall(
 			remote.InvokeServer,
 			remote,
 			requestKind
 		)
 		if not succeeded then
 			warn("重生请求失败：" .. tostring(snapshot))
-			return nil
+			return nil, "RequestFailed", false
 		end
 		if reason then
 			warn("重生请求被拒绝：" .. tostring(reason))
 		end
-		return snapshot
+		return snapshot, reason, actionSucceeded
 	end
 
 	local function refresh()
@@ -160,6 +161,7 @@ function RebirthButtonController.Start()
 		if not visible then
 			return
 		end
+		SoundController.Play("Click")
 		AnalyticsIntentClient.Record(
 			AnalyticsIntentProtocol.Intents.RebirthOpened
 		)
@@ -212,7 +214,15 @@ function RebirthButtonController.Start()
 		ui.ActionButton.Active = false
 		ui.ActionButton.Selectable = false
 		ui.ActionValue.Text = "Processing..."
-		local snapshot = request("Execute")
+		local snapshot, reason, actionSucceeded = request("Execute")
+		if actionSucceeded == true then
+			SoundController.Play("Yes")
+		elseif reason
+			and reason ~= "PlayerDataNotReady"
+			and reason ~= "RequestFailed"
+		then
+			SoundController.Play("No")
+		end
 		busy = false
 		if snapshot then
 			applySnapshot(snapshot)
