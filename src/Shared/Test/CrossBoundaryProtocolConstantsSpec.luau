@@ -42,6 +42,9 @@ local StudioSaveResetProtocol = require(
 local SevenDayRewardProtocol = require(
 	ReplicatedStorage.Shared.Reward.SevenDayRewardProtocol
 )
+local GroupRewardProtocol = require(
+	ReplicatedStorage.Shared.Reward.GroupRewardProtocol
+)
 local RebirthProtocol = require(ReplicatedStorage.Shared.Progression.RebirthProtocol)
 local TutorialProtocol = require(ReplicatedStorage.Shared.Tutorial.TutorialProtocol)
 
@@ -75,6 +78,10 @@ function CrossBoundaryProtocolConstantsSpec.Run(): boolean
 	expect(
 		SevenDayRewardProtocol.RemoteName == "SevenDayRewardRequest",
 		"七日奖励 Remote 名称漂移"
+	)
+	expect(
+		GroupRewardProtocol.RemoteName == "GroupRewardRequest",
+		"群组奖励 Remote 名称漂移"
 	)
 	expect(TutorialProtocol.SnapshotRemoteName == "TutorialSnapshot", "新手引导 Remote 名称漂移")
 	expect(
@@ -164,6 +171,7 @@ function CrossBoundaryProtocolConstantsSpec.Run(): boolean
 		MonsterManagement = MonsterManagementProtocol.RemoteName,
 		Rebirth = RebirthProtocol.RemoteName,
 		SevenDayReward = SevenDayRewardProtocol.RemoteName,
+		GroupReward = GroupRewardProtocol.RemoteName,
 		Tutorial = TutorialProtocol.SnapshotRemoteName,
 		StudioSaveReset = StudioSaveResetProtocol.RemoteName,
 		ModelMovementVisual = ModelMovementVisualProtocol.RemoteName,
@@ -233,6 +241,7 @@ function CrossBoundaryProtocolConstantsSpec.Run(): boolean
 	expect(table.isfrozen(CurrencyProtocol), "货币协议必须只读")
 	expect(table.isfrozen(CurrencyProtocol.Types), "货币类型协议必须只读")
 	expect(table.isfrozen(SevenDayRewardProtocol), "七日奖励协议必须只读")
+	expect(table.isfrozen(GroupRewardProtocol), "群组奖励协议必须只读")
 	expect(table.isfrozen(IncomeGainPresentationProtocol.Kinds), "房屋收入表现 Kind 表必须只读")
 	expect(table.isfrozen(ModelMovementVisualProtocol.Kinds), "模型移动 Kind 表必须只读")
 	expect(

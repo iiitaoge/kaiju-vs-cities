@@ -6,17 +6,20 @@
 	内部算法：同玩家同区域加锁 → 校验 Unlock 权限/余额 → 扣款并写 Unlocked →
 		刷新整条 Zone 解锁链的静态场景；始终保持区域 Level 不变，不创建房屋。
 
-	不负责：区域建造/升级、Boost、按钮 Instance 查找、客户端表现或存档。
+	不负责：区域建造/升级、Boost、按钮 Instance 查找或客户端表现。
 ]]
 
 local IncomeZoneActionQuery = require(script.Parent.IncomeZoneActionQuery)
 local ExpandedPresentationPublisher = require(script.Parent.ExpandedPresentationPublisher)
-local JeepRuntimeService = require(script.Parent.JeepRuntimeService)
 local PlayerRegionTransactionLock = require(script.Parent.PlayerRegionTransactionLock)
+local PlayerPersistenceCoordinator = require(script.Parent.PlayerPersistenceCoordinator)
 local PlayerZoneSceneVisibilityService = require(
 	script.Parent.PlayerZoneSceneVisibilityService
 )
 local RegionUpgradeService = require(script.Parent.RegionUpgradeService)
+local VehicleDispatchService = require(script.Parent.VehicleDispatchService)
+local VehicleCrateService = require(script.Parent.VehicleCrateService)
+local VehicleCatalog = require(game:GetService("ReplicatedStorage").Shared.Vehicle.VehicleCatalog)
 
 local IncomeZoneUnlockCoordinator = {}
 
@@ -61,15 +64,25 @@ local function executeLocked(player: Player, regionId: string)
 			visibility.Reason or "Unknown"
 		))
 	end
-	if regionId == "R3" then
-		local jeep = JeepRuntimeService.Spawn(player)
-		if not jeep.Succeeded then
+	if regionId == VehicleCatalog.UnlockRegionId then
+		VehicleCrateService.RefreshFeatureUnlocked(player)
+		local initialized = VehicleDispatchService.InitializeUnlockedPlayer(player)
+		if not initialized.Succeeded then
 			warn(string.format(
-				"R3 解锁后放置 Jeep 失败：%s (%s)",
+				"R3 解锁后初始化载具失败：%s (%s)",
 				player.Name,
-				jeep.Reason or "Unknown"
+				initialized.Reason or "Unknown"
 			))
 		end
+	end
+	local queued, saveReason = PlayerPersistenceCoordinator.SavePlayer(player)
+	if not queued then
+		warn(string.format(
+			"区域解锁已应用但没有入队保存：%s/%s (%s)",
+			player.Name,
+			regionId,
+			saveReason or "Unknown"
+		))
 	end
 	local published = ExpandedPresentationPublisher.PublishRegionExpanded(player, regionId)
 	if not published.Succeeded then

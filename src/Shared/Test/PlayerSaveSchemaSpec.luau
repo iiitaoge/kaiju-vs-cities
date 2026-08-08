@@ -20,6 +20,7 @@ function PlayerSaveSchemaSpec.Run(): boolean
 		default.DailyReward.Day == 1 and default.DailyReward.NextClaimAt == 0,
 		"默认七日奖励状态错误"
 	)
+	expect(next(default.GroupRewardClaims) == nil, "默认群组奖励领取记录必须为空")
 	expect(default.Rebirth.Count == 0, "默认重生次数必须为 0")
 	expect(default.Rebirth.RunEarnings == 0, "默认本轮累计收入必须为 0")
 	expect(default.Tutorial.Version == 0, "默认引导版本必须为 0")
@@ -85,12 +86,23 @@ function PlayerSaveSchemaSpec.Run(): boolean
 		Version = 1,
 		Economy = { Diamond = 42 },
 		DailyReward = { Day = 3, NextClaimAt = 123456 },
+		GroupRewardClaims = {
+			GroupJoinRewardV1 = true,
+			["bad key"] = true,
+			NotClaimed = false,
+		},
 	})
 	expect(rewards.Economy.Diamond == 42, "钻石规范化错误")
 	expect(
 		rewards.DailyReward.Day == 3
 			and rewards.DailyReward.NextClaimAt == 123456,
 		"七日奖励状态规范化错误"
+	)
+	expect(
+		rewards.GroupRewardClaims.GroupJoinRewardV1
+		and rewards.GroupRewardClaims["bad key"] == nil
+		and rewards.GroupRewardClaims.NotClaimed == nil,
+		"群组奖励领取记录规范化错误"
 	)
 	local completed = PlayerSaveSchema.Normalize({
 		Version = 1,

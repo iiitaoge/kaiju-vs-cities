@@ -50,26 +50,26 @@ end
 
 buttonRequest.OnServerInvoke = function(player, buttonName, requestKind)
 	if PlayerDataReadyService.Get(player).Status ~= "Ready" then
-		return nil, "PlayerDataNotReady", { Enabled = false }
+		return nil, "PlayerDataNotReady", { Enabled = false }, "PlayerDataNotReady", false
 	end
 	if type(buttonName) ~= "string" then
 		SecurityAnalyticsAggregator.Record(player, "ButtonRequest", "InvalidButtonName")
-		return nil, "Locked", { Enabled = false }
+		return nil, "Locked", { Enabled = false }, "InvalidButtonName", false
 	end
 	requestKind = requestKind or "Execute"
 	if requestKind ~= "Execute" and requestKind ~= "GetState" then
 		SecurityAnalyticsAggregator.Record(player, "ButtonRequest", "InvalidRequestKind")
-		return nil, "Locked", { Enabled = false }
+		return nil, "Locked", { Enabled = false }, "InvalidRequestKind", false
 	end
 
 	local buttonConfig = ButtonConfigs[buttonName]
 	if not buttonConfig then
 		SecurityAnalyticsAggregator.Record(player, "ButtonRequest", "UnknownButton")
-		return nil, "Locked", { Enabled = false }
+		return nil, "Locked", { Enabled = false }, "UnknownButton", false
 	end
 	if not canUseConfiguredButton(player, buttonName, buttonConfig, requestKind == "Execute") then
 		SecurityAnalyticsAggregator.Record(player, "ButtonRequest", "ActivationRejected")
-		return nil, "Locked", { Enabled = false }
+		return nil, "Locked", { Enabled = false }, "ActivationRejected", false
 	end
 
 	local actions = assert(
@@ -83,7 +83,7 @@ buttonRequest.OnServerInvoke = function(player, buttonName, requestKind)
 	local index = progress[buttonName] or 1
 	local action = actions[index]
 	if not action then
-		return nil, "Locked", { Enabled = false }
+		return nil, "Locked", { Enabled = false }, "ActionUnavailable", false
 	end
 	if requestKind == "GetState" then
 		local state = if action.RunOn == "Server"
@@ -91,7 +91,9 @@ buttonRequest.OnServerInvoke = function(player, buttonName, requestKind)
 			else nil
 		return nil,
 			state or buttonConfig.InitialState,
-			ButtonActionExecutor.GetPresentation(player, action)
+			ButtonActionExecutor.GetPresentation(player, action),
+			nil,
+			nil
 	end
 
 	local clientAction
@@ -102,6 +104,9 @@ buttonRequest.OnServerInvoke = function(player, buttonName, requestKind)
 	else
 		clientAction, actionState, actionReason = ButtonActionExecutor.Run(player, action)
 	end
+	local actionSucceeded = if action.RunOn == "Client"
+		then true
+		else actionReason == nil
 
 	if action.Repeat then
 		local nextState = actionState
@@ -110,7 +115,8 @@ buttonRequest.OnServerInvoke = function(player, buttonName, requestKind)
 		return clientAction,
 			nextState,
 			ButtonActionExecutor.GetPresentation(player, action),
-			actionReason
+			actionReason,
+			actionSucceeded
 	end
 
 	progress[buttonName] = index + 1
@@ -120,5 +126,6 @@ buttonRequest.OnServerInvoke = function(player, buttonName, requestKind)
 		if nextAction
 			then ButtonActionExecutor.GetPresentation(player, nextAction)
 			else { Enabled = false },
-		actionReason
+		actionReason,
+		actionSucceeded
 end

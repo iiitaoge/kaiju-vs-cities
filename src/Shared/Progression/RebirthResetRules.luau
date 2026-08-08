@@ -1,7 +1,7 @@
 --[[
 	职责：创建一次重生提交使用的全新业务存档。
 	输入：当前重生次数、提交时间，以及可选的账号级持久字段。
-	输出：重生次数加一、本轮收入归零；钱和城市重置，钻石与七日奖励进度保留。
+	输出：重生次数加一、本轮收入归零；钱和城市重置，钻石、七日奖励和群组奖励领取记录保留。
 	内部算法：PlayerSaveSchema.Default → 复制账号级持久字段 → 写入永久次数和 SavedAt。
 	不负责：资格判断、DataStore、运行时重载、玩家或 UI。
 ]]
@@ -16,6 +16,23 @@ local function isFiniteNonNegativeInteger(value): boolean
 		and value < math.huge
 		and value >= 0
 		and value % 1 == 0
+end
+
+local function copyGroupRewardClaims(values)
+	local result = {}
+	if type(values) ~= "table" then
+		return result
+	end
+	for rewardId, claimed in values do
+		if type(rewardId) == "string"
+			and rewardId ~= ""
+			and string.match(rewardId, "^[A-Za-z0-9_.%-]+$") ~= nil
+			and claimed == true
+		then
+			result[rewardId] = true
+		end
+	end
+	return result
 end
 
 function RebirthResetRules.Create(currentCount: number, savedAt: number, preserved)
@@ -60,6 +77,7 @@ function RebirthResetRules.Create(currentCount: number, savedAt: number, preserv
 					else dailyReward.NextClaimAt,
 			}
 		end
+		data.GroupRewardClaims = copyGroupRewardClaims(preserved.GroupRewardClaims)
 	end
 	data.SavedAt = savedAt
 	data.Rebirth.Count = currentCount + 1

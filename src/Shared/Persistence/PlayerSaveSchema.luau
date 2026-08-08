@@ -7,11 +7,14 @@
 ]]
 
 local ValueValidation = require(script.Parent.Parent.ValueValidation)
+local VehicleProgressionConfigs = require(
+	script.Parent.Parent.Vehicle.VehicleProgressionConfigs
+)
 
 local PlayerSaveSchema = {}
 
 PlayerSaveSchema.CurrentVersion = 1
-PlayerSaveSchema.ContentRevision = 7
+PlayerSaveSchema.ContentRevision = 9
 
 local DAILY_REWARD_COMPLETED_DAY = 8
 
@@ -109,6 +112,57 @@ local function normalizeDailyReward(values)
 	}
 end
 
+local function isValidGroupRewardId(value): boolean
+	return type(value) == "string"
+		and value ~= ""
+		and string.match(value, "^[A-Za-z0-9_.%-]+$") ~= nil
+end
+
+local function normalizeGroupRewardClaims(values)
+	local result = {}
+	if type(values) ~= "table" then
+		return result
+	end
+	for rewardId, claimed in values do
+		if isValidGroupRewardId(rewardId) and claimed == true then
+			result[rewardId] = true
+		end
+	end
+	return result
+end
+
+local function normalizeVehicles(values)
+	local result = {}
+	if type(values) ~= "table" then
+		return result
+	end
+	for instanceId, value in values do
+		if type(instanceId) == "string"
+			and instanceId ~= ""
+			and string.match(instanceId, "^[A-Za-z0-9_.%-]+$") ~= nil
+			and type(value) == "table"
+		then
+			local vehicleId = value.VehicleId
+			local level = value.Level
+			if type(vehicleId) == "string"
+				and vehicleId ~= ""
+				and string.match(vehicleId, "^[A-Za-z0-9_.%-]+$") ~= nil
+				and type(level) == "number"
+				and level == level
+				and level < math.huge
+				and level >= 1
+				and level % 1 == 0
+			then
+				result[instanceId] = {
+					VehicleId = vehicleId,
+					Level = math.clamp(level, 1, VehicleProgressionConfigs.MaxLevel),
+				}
+			end
+		end
+	end
+	return result
+end
+
 function PlayerSaveSchema.Default()
 	return {
 		Version = PlayerSaveSchema.CurrentVersion,
@@ -119,6 +173,8 @@ function PlayerSaveSchema.Default()
 			Day = 1,
 			NextClaimAt = 0,
 		},
+		GroupRewardClaims = {},
+		Vehicles = {},
 		Rebirth = {
 			Count = 0,
 			RunEarnings = 0,
@@ -143,6 +199,8 @@ local function migrateV0(raw)
 		SavedAt = raw.SavedAt,
 		Economy = raw.Economy or { Money = raw.Money, Diamond = raw.Diamond },
 		DailyReward = raw.DailyReward,
+		GroupRewardClaims = raw.GroupRewardClaims,
+		Vehicles = raw.Vehicles,
 		Rebirth = raw.Rebirth,
 		Tutorial = raw.Tutorial,
 		Zones = raw.Zones,
@@ -183,6 +241,7 @@ function PlayerSaveSchema.Normalize(raw)
 
 	local economy = if type(raw.Economy) == "table" then raw.Economy else {}
 	local dailyReward = if type(raw.DailyReward) == "table" then raw.DailyReward else {}
+	local groupRewardClaims = normalizeGroupRewardClaims(raw.GroupRewardClaims)
 	local rebirth = if type(raw.Rebirth) == "table" then raw.Rebirth else {}
 	local tutorial = if type(raw.Tutorial) == "table" then raw.Tutorial else {}
 	local monsters = if type(raw.Monsters) == "table" then raw.Monsters else {}
@@ -196,6 +255,8 @@ function PlayerSaveSchema.Normalize(raw)
 			Diamond = nonNegative(economy.Diamond, 0),
 		},
 		DailyReward = normalizeDailyReward(dailyReward),
+		GroupRewardClaims = groupRewardClaims,
+		Vehicles = normalizeVehicles(raw.Vehicles),
 		Rebirth = {
 			Count = nonNegativeInteger(rebirth.Count, 0),
 			RunEarnings = nonNegative(rebirth.RunEarnings, 0),

@@ -3,7 +3,7 @@
 	输入：Capture 接收 player；Apply 接收 player、已由 PlayerSaveSchema 规范化的数据和时间。
 	输出：Capture 返回 V1 可序列化表；Apply 返回实际恢复的内容计数。
 	内部算法：只遍历当前 Catalog；新内容取配置默认值，旧存档中的未知内容被忽略。
-	不负责：DataStore、Plot/模型生成、攻击状态、临时生命值、奖励或表现。
+	不负责：DataStore、Plot/模型生成、攻击状态、临时生命值、奖励发放或 UI 表现。
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -19,9 +19,11 @@ local MonsterStateService = require(script.Parent.MonsterStateService)
 local RebirthStateService = require(script.Parent.RebirthStateService)
 local RegionStateService = require(script.Parent.RegionStateService)
 local RegionUpgradeConfigs = require(script.Parent.RegionUpgradeConfigs)
+local GroupRewardStateService = require(script.Parent.GroupRewardStateService)
 local TutorialProgressStateService = require(script.Parent.TutorialProgressStateService)
 local ZoneStateService = require(script.Parent.ZoneStateService)
 local SevenDayRewardStateService = require(script.Parent.SevenDayRewardStateService)
+local VehicleFleetService = require(script.Parent.VehicleFleetService)
 local HouseCatalog = require(ReplicatedStorage.Shared.Building.HouseCatalog)
 local DefenseMonsterSlotCatalog = require(
 	ReplicatedStorage.Shared.Monster.DefenseMonsterSlotCatalog
@@ -103,6 +105,7 @@ function PlayerSaveStateAdapter.Apply(player: Player, data, now: number?)
 		data.DailyReward.Day,
 		data.DailyReward.NextClaimAt
 	)
+	GroupRewardStateService.Restore(player, data.GroupRewardClaims)
 	RebirthStateService.Restore(
 		player,
 		data.Rebirth.Count,
@@ -112,6 +115,7 @@ function PlayerSaveStateAdapter.Apply(player: Player, data, now: number?)
 	for _, definition in ZoneCatalog.GetAll() do
 		restoreZone(player, definition, data.Zones[definition.ZoneId])
 	end
+	local vehicleCount = VehicleFleetService.Restore(player, data.Vehicles)
 
 	local houseCount = 0
 	for _, definition in HouseCatalog.GetAll() do
@@ -194,6 +198,7 @@ function PlayerSaveStateAdapter.Apply(player: Player, data, now: number?)
 		HouseCount = houseCount,
 		SpawnPointCount = spawnPointCount,
 		DefenseMonsterCount = defenseMonsterCount,
+		VehicleCount = vehicleCount,
 	}
 end
 
@@ -247,6 +252,7 @@ function PlayerSaveStateAdapter.Capture(player: Player, now: number?)
 			MonsterKey = state.MonsterKey,
 		}
 	end
+	local vehicles = VehicleFleetService.Capture(player)
 
 	return {
 		Version = PlayerSaveSchema.CurrentVersion,
@@ -257,6 +263,8 @@ function PlayerSaveStateAdapter.Capture(player: Player, now: number?)
 			Diamond = DiamondService.Get(player),
 		},
 		DailyReward = SevenDayRewardStateService.Get(player),
+		GroupRewardClaims = GroupRewardStateService.GetAll(player),
+		Vehicles = vehicles,
 		Rebirth = {
 			Count = rebirth.Count,
 			RunEarnings = rebirth.RunEarnings,

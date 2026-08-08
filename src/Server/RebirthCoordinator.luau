@@ -14,6 +14,7 @@ local AutomaticIncomeRatePresentationService = require(
 	script.Parent.AutomaticIncomeRatePresentationService
 )
 local DiamondService = require(script.Parent.DiamondService)
+local GroupRewardStateService = require(script.Parent.GroupRewardStateService)
 local MonsterExpeditionReportService = require(script.Parent.MonsterExpeditionReportService)
 local PlayerJourneyAnalyticsCoordinator = require(
 	script.Parent.Analytics.PlayerJourneyAnalyticsCoordinator
@@ -41,6 +42,7 @@ local RebirthStateMachine = require(
 	ReplicatedStorage.Shared.Progression.RebirthStateMachine
 )
 local SevenDayRewardStateService = require(script.Parent.SevenDayRewardStateService)
+local VehicleDispatchService = require(script.Parent.VehicleDispatchService)
 
 local RebirthCoordinator = {}
 
@@ -92,6 +94,7 @@ local function snapshot(player: Player, statusOverride: string?, reasonOverride:
 end
 
 local function reloadRuntime(player: Player, data): (boolean, string?)
+	VehicleDispatchService.ResetPlayer(player)
 	PlayerMonsterRuntimeCoordinator.Unload(player)
 	PlayerDefenseMonsterRuntimeCoordinator.Unload(player)
 	PlayerCityRuntimeCoordinator.Unload(player)
@@ -177,6 +180,7 @@ local function executeLocked(player: Player)
 	local resetData = RebirthResetRules.Create(query.Count, os.time(), {
 		Diamond = DiamondService.Get(player),
 		DailyReward = SevenDayRewardStateService.Get(player),
+		GroupRewardClaims = GroupRewardStateService.GetAll(player),
 	})
 	local committed = PlayerPersistenceCoordinator.CommitReplacement(player, resetData)
 	if not committed.Succeeded then
@@ -238,12 +242,12 @@ end
 function RebirthCoordinator.Execute(player: Player)
 	local releaseRegions = PlayerRegionTransactionLock.TryAcquireExclusive(player)
 	if not releaseRegions then
-		return snapshot(player, "Failed", "ActionBusy")
+		return snapshot(player, "Failed", "ActionBusy"), false
 	end
 	local releaseMonsters = MonsterSpawnPointPurchaseCoordinator.TryAcquireExclusive(player)
 	if not releaseMonsters then
 		releaseRegions()
-		return snapshot(player, "Failed", "ActionBusy")
+		return snapshot(player, "Failed", "ActionBusy"), false
 	end
 
 	local succeeded, resultOrError = xpcall(function()
@@ -257,9 +261,11 @@ function RebirthCoordinator.Execute(player: Player)
 	if not succeeded then
 		warn(string.format("玩家重生事务异常：%s (%s)", player.Name, tostring(resultOrError)))
 		recoverByRejoin(player, "重生状态需要安全恢复，请重新加入游戏。")
-		return snapshot(player, "Failed", "RebirthTransactionError")
+		return snapshot(player, "Failed", "RebirthTransactionError"), false
 	end
-	return resultOrError
+	local completed = currentState(player).Mode == "Idle"
+		and currentState(player).LastReason == nil
+	return resultOrError, completed
 end
 
 function RebirthCoordinator.Start()

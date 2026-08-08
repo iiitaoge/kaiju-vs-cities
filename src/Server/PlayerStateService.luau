@@ -19,7 +19,7 @@
 		- PlayerReference (ObjectValue)
 		- Economy (Folder)
 		- Progression (Folder + Rebirth Attributes)
-		- Rewards (Folder + DailyReward Attributes)
+		- Rewards (Folder + DailyReward Attributes + GroupRewardClaims)
 		- Zones (Folder)
 			- <ZoneId> (Folder + Attributes)
 		- Houses (Folder)

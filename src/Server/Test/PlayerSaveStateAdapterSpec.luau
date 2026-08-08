@@ -6,6 +6,7 @@ local Server = ServerScriptService.Server
 local HouseStateService = require(Server.HouseStateService)
 local DefenseMonsterSpawnPointStateService = require(Server.DefenseMonsterSpawnPointStateService)
 local DiamondService = require(Server.DiamondService)
+local GroupRewardStateService = require(Server.GroupRewardStateService)
 local MoneyService = require(Server.MoneyService)
 local MonsterSpawnPointStateService = require(Server.MonsterSpawnPointStateService)
 local MonsterStateService = require(Server.MonsterStateService)
@@ -32,6 +33,7 @@ function PlayerSaveStateAdapterSpec.Run(player: Player?): boolean
 
 	MoneyService.Set(testPlayer, 123)
 	DiamondService.Set(testPlayer, 77)
+	GroupRewardStateService.SetClaimed(testPlayer, "GroupJoinRewardV1", true)
 	SevenDayRewardStateService.Set(testPlayer, 3, 123456)
 	RebirthStateService.Restore(testPlayer, 3, 4567)
 	TutorialProgressStateService.Restore(testPlayer, TutorialProgression.CurrentVersion)
@@ -62,6 +64,10 @@ function PlayerSaveStateAdapterSpec.Run(player: Player?): boolean
 			and normalized.DailyReward.NextClaimAt == 123456,
 		"七日奖励状态没有进入存档"
 	)
+	expect(
+		normalized.GroupRewardClaims.GroupJoinRewardV1 == true,
+		"群组奖励领取记录没有进入存档"
+	)
 	expect(normalized.Rebirth.RunEarnings == 4567, "本轮累计收入没有进入存档")
 	expect(
 		normalized.Tutorial.Version == TutorialProgression.CurrentVersion,
@@ -76,6 +82,7 @@ function PlayerSaveStateAdapterSpec.Run(player: Player?): boolean
 
 	MoneyService.Set(testPlayer, 0)
 	DiamondService.Set(testPlayer, 0)
+	GroupRewardStateService.SetClaimed(testPlayer, "GroupJoinRewardV1", false)
 	SevenDayRewardStateService.Set(testPlayer, 1, 0)
 	RebirthStateService.Restore(testPlayer, 0, 0)
 	TutorialProgressStateService.Restore(testPlayer, 0)
@@ -85,6 +92,10 @@ function PlayerSaveStateAdapterSpec.Run(player: Player?): boolean
 
 	expect(MoneyService.Get(testPlayer) == 123, "金钱恢复错误")
 	expect(DiamondService.Get(testPlayer) == 77, "钻石恢复错误")
+	expect(
+		GroupRewardStateService.IsClaimed(testPlayer, "GroupJoinRewardV1"),
+		"群组奖励领取记录恢复错误"
+	)
 	local restoredDailyReward = SevenDayRewardStateService.Get(testPlayer)
 	expect(
 		restoredDailyReward.Day == 3
