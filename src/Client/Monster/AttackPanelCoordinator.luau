@@ -13,6 +13,7 @@ export type Territory = {
 	BoundsId: string,
 	CFrame: CFrame,
 	Size: Vector3,
+	AttackInProgress: boolean,
 }
 
 export type AttackView = {
@@ -48,6 +49,7 @@ export type Session = {
 	NextTarget: () -> Target?,
 	PreviousTarget: () -> Target?,
 	RefreshTargets: () -> Target?,
+	ValidateWorldPoint: (Vector3) -> (boolean, string?),
 	SubmitWorldPoint: (Vector3) -> RequestResult,
 	Cancel: () -> (),
 	GetCurrentTarget: () -> Target?,
@@ -128,6 +130,40 @@ function AttackPanelCoordinator.Open(
 			Kind = "TargetsLoaded",
 			TargetPlayerIds = targetPlayerIds,
 		})
+	end
+
+	local function checkWorldPoint(target: Target, worldPoint: Vector3): (boolean, string?)
+		local allowed = false
+		local validTerritoryCount = 0
+		local invalidPointReason = nil
+		for _, territory in target.UnlockedTerritories do
+			local pointCheck = TerritoryPointRules.Check(
+				territory.CFrame,
+				territory.Size,
+				worldPoint
+			)
+			if pointCheck.Reason == "InvalidEntryPoint" then
+				invalidPointReason = pointCheck.Reason
+				break
+			end
+			if pointCheck.Reason ~= "InvalidTerritory" then
+				validTerritoryCount += 1
+			end
+			if pointCheck.Allowed then
+				if territory.AttackInProgress then
+					return false, "RegionAttackInProgress"
+				end
+				allowed = true
+				break
+			end
+		end
+		if allowed then
+			return true, nil
+		end
+		return false, invalidPointReason
+			or if validTerritoryCount > 0
+				then "EntryPointOutsideTerritory"
+				else "TargetTerritoryUnavailable"
 	end
 
 	local function runRequest(effect): RequestResult
@@ -212,6 +248,23 @@ function AttackPanelCoordinator.Open(
 		return nil
 	end
 
+	local function validateWorldPoint(worldPoint: Vector3): (boolean, string?)
+		if current.Mode == "Closed" then
+			return false, "PanelClosed"
+		end
+		if current.Mode == "LoadingTargets" or current.Mode == "Submitting" then
+			return false, "RequestBusy"
+		end
+		local target = currentTarget()
+		if current.Mode ~= "Browsing" or not target then
+			return false, "TargetUnavailable"
+		end
+		if target.Player.Parent ~= Players then
+			return false, "TargetUnavailable"
+		end
+		return checkWorldPoint(target, worldPoint)
+	end
+
 	dispatch = function(event)
 		local transition = MonsterAttackSelectionStateMachine.Apply(current, event)
 		current = transition.State
@@ -261,32 +314,9 @@ function AttackPanelCoordinator.Open(
 			return failure("TargetUnavailable")
 		end
 
-		local allowed = false
-		local validTerritoryCount = 0
-		local invalidPointReason = nil
-		for _, territory in target.UnlockedTerritories do
-			local pointCheck = TerritoryPointRules.Check(
-				territory.CFrame,
-				territory.Size,
-				worldPoint
-			)
-			if pointCheck.Reason == "InvalidEntryPoint" then
-				invalidPointReason = pointCheck.Reason
-				break
-			end
-			if pointCheck.Reason ~= "InvalidTerritory" then
-				validTerritoryCount += 1
-			end
-			if pointCheck.Allowed then
-				allowed = true
-				break
-			end
-		end
+		local allowed, invalidPointReason = checkWorldPoint(target, worldPoint)
 		if not allowed then
-			local reason = invalidPointReason
-				or if validTerritoryCount > 0
-					then "EntryPointOutsideTerritory"
-					else "TargetTerritoryUnavailable"
+			local reason = invalidPointReason or "TargetTerritoryUnavailable"
 			dispatch({ Kind = "SubmitRejected", Reason = reason })
 			options.OnValidationFailed(reason)
 			return failure(reason)
@@ -312,6 +342,7 @@ function AttackPanelCoordinator.Open(
 			return shift("PreviousTarget")
 		end,
 		RefreshTargets = refresh,
+		ValidateWorldPoint = validateWorldPoint,
 		SubmitWorldPoint = submit,
 		Cancel = function()
 			if current.Mode ~= "Closed" then

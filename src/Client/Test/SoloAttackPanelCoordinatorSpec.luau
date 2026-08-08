@@ -60,6 +60,9 @@ function SoloAttackPanelCoordinatorSpec.Run(): boolean
 		end,
 	})
 
+	local previewAllowed, previewReason = session.ValidateWorldPoint(Vector3.new(10, 0, 20))
+	expect(previewAllowed and previewReason == nil, "合法单人预览落点校验错误")
+	expect(requestCount == 0, "预览合法落点不应发送攻击请求")
 	local outside = session.SubmitWorldPoint(Vector3.new(1_000, 0, 1_000))
 	expect(not outside.Succeeded, "越界单人落点不应被接受")
 	expect(outside.Reason == "EntryPointOutsideTerritory", "越界原因错误")

@@ -39,6 +39,7 @@ function SoloAttackTargetSnapshotMapper.Map(value)
 				BoundsId = SoloMonsterAttackConfigs.BoundsPartName,
 				CFrame = value.Bounds.CFrame,
 				Size = value.Bounds.Size,
+				AttackInProgress = false,
 			},
 		},
 	}

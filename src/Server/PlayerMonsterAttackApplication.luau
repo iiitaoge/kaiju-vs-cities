@@ -472,13 +472,13 @@ function PlayerMonsterAttackApplication.Execute(
 						WalkAnimation = configs.Expedition.Movement.WalkAnimation,
 						RewardAmount = configs.Expedition.RewardAmount,
 						MaxExpeditionDuration = MonsterExpeditionTimingConfigs.ExpeditionDuration,
-						DuelResolutionDuration = MonsterExpeditionTimingConfigs.DuelResolutionDuration,
+						DuelLaserDuration = MonsterExpeditionTimingConfigs.DuelLaserDuration,
+						DuelLaserPushDuration = MonsterExpeditionTimingConfigs.DuelLaserPushDuration,
 						DuelWatchdogDuration = MonsterExpeditionTimingConfigs.DuelWatchdogDuration,
 						Defense = {
 							TowerAccess = PlayerRuntimeDefenseTowerAccess,
 						},
 						ResolveCombatConfig = resolveCombatConfig,
-						CombatFirstStrike = "Defender",
 						SetCombatantMoving = setCombatantMoving,
 						IsCancelled = isCancelled,
 						OnDefeated = function(defeatedPlayer, defeatedSpawnPointId, _source)

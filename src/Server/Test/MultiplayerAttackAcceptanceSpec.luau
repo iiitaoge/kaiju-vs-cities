@@ -3,7 +3,7 @@
 	输入：Run 接收三名在线 Studio 测试玩家；前两名为攻击者，第三名为防守者。
 	输出：四个场景的状态轨迹和三客户端视觉摘要；全部约束满足时返回 Report。
 	内部算法：准备一栋正式房屋和两只正式怪兽，通过客户端调用正式攻击 Remote，依次覆盖
-		正常出征、同目标并发、摧毁等待期间正式区域升级、重建期间防守玩家离服。
+		正常出征、同区域互斥、摧毁等待期间正式区域升级、重建期间防守玩家离服。
 	不负责：修改正式数值、伪造攻击提交、增加出生点、连接 UI 或验证逐帧像素效果。
 ]]
 
@@ -41,6 +41,9 @@ local PlayerRuntimeHouseAttackAccess = require(
 )
 local PlayerSaveStateAdapter = require(script.Parent.Parent.PlayerSaveStateAdapter)
 local RegionEconomyConfigs = require(script.Parent.Parent.RegionEconomyConfigs)
+local RegionAttackActivityService = require(
+	script.Parent.Parent.RegionAttackActivityService
+)
 local RegionUpgradeCityCoordinator = require(
 	script.Parent.Parent.RegionUpgradeCityCoordinator
 )
@@ -249,6 +252,24 @@ function MultiplayerAttackAcceptanceSpec.Run(players: { Player })
 		expect(response.Succeeded, "正式攻击 Remote 被拒绝：" .. tostring(response.Reason))
 		expect(type(response.CommandId) == "number", "正式攻击响应缺少 CommandId")
 		expect(response.HasMonster, "正式攻击响应缺少怪兽 Model")
+		return response
+	end
+
+	local function waitRejectedAttack(
+		attacker: Player,
+		requestId: number,
+		expectedReason: string
+	)
+		local response = nil
+		waitFor(function()
+			response = clientStates[attacker].Responses[requestId]
+			return response ~= nil
+		end, REQUEST_TIMEOUT, tostring(activeScenarioId) .. " 攻击拒绝响应")
+		expect(response.QuerySucceeded, "拒绝攻击的正式目标查询失败：" .. tostring(response.Reason))
+		expect(response.QuerySawTarget, "拒绝攻击的正式目标查询没有返回防守玩家")
+		expect(not response.Succeeded, "忙碌区域的第二次攻击不应被接受")
+		expect(response.Reason == expectedReason, "攻击拒绝原因错误：" .. tostring(response.Reason))
+		expect(response.CommandId == nil, "被拒绝的攻击不应分配 CommandId")
 		return response
 	end
 
@@ -554,70 +575,52 @@ function MultiplayerAttackAcceptanceSpec.Run(players: { Player })
 			FinalHouseState = "Alive",
 		})
 
-		-- 并发验收要消除不同 Plot 到目标的路程差；否则第一栋已重建后第二只怪兽才到达，
-		-- 那会是两次合法生命周期，而不是同一栋 Alive 房屋的预约竞争。
+		-- 同一区域的第二次攻击必须在命令接受层被拒绝，避免两只怪兽进入同一远征。
 		positionMonsterNearTarget(attackerA, entryPoint, Vector3.new(8, 0, 0))
-		positionMonsterNearTarget(attackerB, entryPoint, Vector3.new(-8, 0, 0))
-		local attackerAStateHistory, attackerAStateConnection = watchMonsterStates(attackerA)
-		local attackerBStateHistory, attackerBStateConnection = watchMonsterStates(attackerB)
-		beginScenario("ConcurrentSameHouse")
+		beginScenario("RegionAttackLock")
 		local balanceA = MoneyService.Get(attackerA)
-		local balanceB = MoneyService.Get(attackerB)
 		local expectedRewardA = expectedReward(attackerA)
-		local expectedRewardB = expectedReward(attackerB)
-		local concurrentA = sendAttack(attackerA, entryPoint)
-		local concurrentB = sendAttack(attackerB, entryPoint)
-		local concurrentResponseA = waitAttack(attackerA, concurrentA)
-		local concurrentResponseB = waitAttack(attackerB, concurrentB)
+		local firstRequest = sendAttack(attackerA, entryPoint)
+		local firstResponse = waitAttack(attackerA, firstRequest)
+		expect(
+			RegionAttackActivityService.IsActive(defender, HOUSE_ZONE_ID),
+			"首个攻击命令接受后没有占用目标区域"
+		)
+		local blockedRequest = sendAttack(attackerB, entryPoint)
+		local blockedResponse = waitRejectedAttack(
+			attackerB,
+			blockedRequest,
+			"RegionAttackInProgress"
+		)
 		waitHouseState("Destroyed")
 		waitPresentation("HouseDestroyed", 1)
 		waitHouseState("Alive")
 		waitPresentation("HouseRebuilding", 1)
 		waitMonsterIdle(attackerA)
 		waitMonsterIdle(attackerB)
-		attackerAStateConnection:Disconnect()
-		attackerBStateConnection:Disconnect()
+		local attackerBState = assert(MonsterRosterCoordinator.Get(attackerB, SPAWN_POINT_ID))
+		expect(attackerBState.State == "IdleAtSpawn", "区域忙碌时第二只怪兽状态被错误改变")
+		local firstReport = waitReport(attackerA, firstResponse.CommandId)
+		expect(firstReport.EndReason == "Completed", "区域锁定场景首个远征未完成")
+		expect(firstReport.RewardGranted == expectedRewardA, "区域锁定场景首个远征奖励错误")
 		expect(
-			not historyContains(attackerAStateHistory, "FightingMonster"),
-			"并发出征时攻击者 A 错误进入怪兽互殴"
+			MoneyService.Get(attackerA) - balanceA == expectedRewardA,
+			"区域锁定场景奖励余额错误"
 		)
-		expect(
-			not historyContains(attackerBStateHistory, "FightingMonster"),
-			"并发出征时攻击者 B 错误进入怪兽互殴"
-		)
-		local concurrentReportA = waitReport(attackerA, concurrentResponseA.CommandId)
-		local concurrentReportB = waitReport(attackerB, concurrentResponseB.CommandId)
 		task.wait(0.2)
 		assertPresentation("HouseDestroyed", 1)
 		assertPresentation("HouseRebuilding", 1)
-		local rewardDeltaA = MoneyService.Get(attackerA) - balanceA
-		local rewardDeltaB = MoneyService.Get(attackerB) - balanceB
-		local concurrentRewardDelta = rewardDeltaA + rewardDeltaB
-		expect(
-			concurrentRewardDelta == expectedRewardA
-				or concurrentRewardDelta == expectedRewardB,
-			"并发最后一击奖励总额错误"
-		)
-		expect(
-			concurrentReportA.RewardGranted + concurrentReportB.RewardGranted
-				== concurrentRewardDelta,
-			"并发远征报告奖励总额错误"
-		)
-		expect(
-			#concurrentReportA.DestroyedHouseIds + #concurrentReportB.DestroyedHouseIds == 1,
-			"并发远征报告只能记录一次摧毁"
-		)
 		local returnedA = assert(MonsterRosterCoordinator.Get(attackerA, SPAWN_POINT_ID))
 		local returnedB = assert(MonsterRosterCoordinator.Get(attackerB, SPAWN_POINT_ID))
-		local returnedAModel = assert(returnedA.Model, "并发回罐后攻击者 A 模型缺失")
-		local returnedBModel = assert(returnedB.Model, "并发回罐后攻击者 B 模型缺失")
+		local returnedAModel = assert(returnedA.Model, "区域锁定后攻击者 A 模型缺失")
+		local returnedBModel = assert(returnedB.Model, "区域锁定后攻击者 B 模型缺失")
 		for label, returned in {
 			AttackerA = { Model = returnedAModel, SpawnCFrame = returnedA.SpawnCFrame },
 			AttackerB = { Model = returnedBModel, SpawnCFrame = returnedB.SpawnCFrame },
 		} do
 			expect(
 				(returned.Model:GetPivot().Position - returned.SpawnCFrame.Position).Magnitude <= 1,
-				label .. " 服务端模型没有回到权威罐位"
+				label .. " 服务端模型没有保持/回到权威罐位"
 			)
 			expect(
 				not hasPlayingMovementAnimation(returned.Model),
@@ -637,12 +640,11 @@ function MultiplayerAttackAcceptanceSpec.Run(players: { Player })
 			},
 		})
 		table.insert(report.Scenarios, {
-			Name = "ConcurrentSameHouse",
-			CommandIds = { concurrentResponseA.CommandId, concurrentResponseB.CommandId },
+			Name = "RegionAttackLock",
+			AcceptedCommandId = firstResponse.CommandId,
+			RejectedReason = blockedResponse.Reason,
 			SuccessfulDestroyCount = 1,
-			RewardDelta = concurrentRewardDelta,
 			FinalMonsterStates = { "IdleAtSpawn", "IdleAtSpawn" },
-			EnteredMonsterCombat = false,
 			VisualSnapshotRequestId = visualSnapshotRequestId,
 			AllClientsAtAuthoritativeSpawn = true,
 			AllClientsMovementStopped = true,

@@ -6,10 +6,12 @@ local GodzillaService = require(script.Parent.GodzillaService)
 local HouseAttackCommitter = require(script.Parent.HouseAttackCommitter)
 local HouseAttackTargetAccess = require(script.Parent.HouseAttackTargetAccess)
 local MonsterAttackCoordinator = require(script.Parent.MonsterAttackCoordinator)
-local MonsterCombatCoordinator = require(script.Parent.MonsterCombatCoordinator)
 local MonsterDamageCoordinator = require(script.Parent.MonsterDamageCoordinator)
 local MonsterCombatDiagnosticLog = require(script.Parent.MonsterCombatDiagnosticLog)
 local MonsterDuelSceneCoordinator = require(script.Parent.MonsterDuelSceneCoordinator)
+local MonsterDuelLaserCombatCoordinator = require(
+	script.Parent.MonsterDuelLaserCombatCoordinator
+)
 local MonsterEncounterCoordinator = require(script.Parent.MonsterEncounterCoordinator)
 local MonsterExpeditionAttackPhaseCoordinator = require(
 	script.Parent.MonsterExpeditionAttackPhaseCoordinator
@@ -34,11 +36,11 @@ export type ExecuteOptions = {
 	WalkAnimation: any?,
 	RewardAmount: number,
 	MaxExpeditionDuration: number,
-	DuelResolutionDuration: number,
+	DuelLaserDuration: number,
+	DuelLaserPushDuration: number,
 	DuelWatchdogDuration: number,
 	Defense: CityDefenseCoordinator.SessionOptions,
-	ResolveCombatConfig: (Player, string) -> MonsterCombatCoordinator.CombatConfig?,
-	CombatFirstStrike: "Attacker" | "Defender",
+	ResolveCombatConfig: (Player, string) -> MonsterDuelLaserCombatCoordinator.CombatConfig?,
 	SetCombatantMoving: ((Model, boolean, number?) -> ())?,
 	IsCancelled: (() -> boolean)?,
 	OnDefeated: (Player, string, MonsterDamageCoordinator.DamageSource) -> (),
@@ -446,7 +448,7 @@ function MonsterExpeditionCoordinator.Execute(
 					DefenderAttackInterval = defenderConfig.AttackInterval,
 				})
 				local combatCallSucceeded, combatResultOrError = pcall(
-					MonsterCombatCoordinator.Execute,
+					MonsterDuelLaserCombatCoordinator.Execute,
 					{
 						Player = attacker,
 						SpawnPointId = attackerSpawnPointId,
@@ -459,10 +461,10 @@ function MonsterExpeditionCoordinator.Execute(
 						TraceId = options.TraceId,
 						AttackerConfig = attackerConfig,
 						DefenderConfig = defenderConfig,
-						ApproachingSide = "Defender",
 						-- 决斗场已让双方从各自出生点相向走到真实接敌位置。
-						Prepositioned = true,
-						FirstStrike = options.CombatFirstStrike,
+						LaserDuration = options.DuelLaserDuration,
+						LaserPushDuration = options.DuelLaserPushDuration,
+						WatchdogDuration = options.DuelWatchdogDuration,
 						AttackerResumeState = resumeState,
 						DefenderResumeState = "Defending",
 						IsCancelled = function()
@@ -472,8 +474,6 @@ function MonsterExpeditionCoordinator.Execute(
 						end,
 						OnDefeated = onDefeated,
 						SetMoving = options.SetCombatantMoving,
-						ResolutionDuration = options.DuelResolutionDuration,
-						WatchdogDuration = options.DuelWatchdogDuration,
 					}
 				)
 				local attackerWonDuel = combatCallSucceeded

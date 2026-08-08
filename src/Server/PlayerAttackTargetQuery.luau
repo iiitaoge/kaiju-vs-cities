@@ -12,6 +12,7 @@
 
 local Players = game:GetService("Players")
 
+local RegionAttackActivityService = require(script.Parent.RegionAttackActivityService)
 local WorkspacePlayerWorldAccess = require(script.Parent.WorkspacePlayerWorldAccess)
 local WorkspaceSoloAttackAreaAccess = require(script.Parent.WorkspaceSoloAttackAreaAccess)
 
@@ -31,6 +32,7 @@ export type TargetSnapshot = {
 			BoundsId: string,
 			CFrame: CFrame,
 			Size: Vector3,
+			AttackInProgress: boolean,
 		}
 	},
 }
@@ -74,13 +76,26 @@ function PlayerAttackTargetQuery.Query(attacker: Player)
 		if not attackView or #territories == 0 then
 			continue
 		end
+		local territoriesWithActivity = {}
+		for _, territory in territories do
+			table.insert(territoriesWithActivity, {
+				ZoneId = territory.ZoneId,
+				BoundsId = territory.BoundsId,
+				CFrame = territory.CFrame,
+				Size = territory.Size,
+				AttackInProgress = RegionAttackActivityService.IsActive(
+					targetPlayer,
+					territory.ZoneId
+				),
+			})
+		end
 
 		table.insert(targets, {
 			TargetPlayerId = targetPlayer.UserId,
 			Name = targetPlayer.Name,
 			DisplayName = targetPlayer.DisplayName,
 			AttackView = attackView,
-			UnlockedTerritories = territories,
+			UnlockedTerritories = territoriesWithActivity,
 		})
 	end
 

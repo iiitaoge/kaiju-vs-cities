@@ -1,9 +1,9 @@
 --[[
 	职责：在攻击选择期间显示并移动本地世界准星。
-	输入：准星模板、旋转动画 ID、表面高度偏移；会话接收当前目标的合法领地。
-	输出：可切换合法领地并停止的本地表现会话。
-	内部算法：每帧把 GetMouseLocation 的 DeviceSafe viewport 坐标直接解析为世界点，复用 TerritoryPointRules 判定；合法时移动并显示 Clone。
-	不负责：提交攻击、切换目标、相机、服务器校验、触摸输入或修改源模板。
+	输入：准星模板、旋转动画 ID、表面高度偏移；会话接收当前目标的合法领地和移动端选定世界点。
+	输出：可切换合法领地、设置移动端落点并停止的本地表现会话。
+	内部算法：桌面每帧把 GetMouseLocation 的 DeviceSafe viewport 坐标解析为世界点；移动端使用点击解析出的固定世界点；两者都复用 TerritoryPointRules 判定，合法时移动并显示 Clone。
+	不负责：提交攻击、切换目标、相机、服务器校验或修改源模板。
 ]]
 
 local GuiService = game:GetService("GuiService")
@@ -34,6 +34,7 @@ export type Options = {
 
 export type Session = {
 	SetTerritories: ({ Territory }) -> (),
+	SetWorldPoint: (Vector3?) -> boolean,
 	Stop: () -> (),
 	IsActive: () -> boolean,
 }
@@ -141,6 +142,7 @@ function LocalAttackCrosshairPresenter.Start(
 	visual.Parent = workspace
 	local animationTrack = playAnimation(visual, options.AnimationAssetId)
 	local territories: { Territory } = {}
+	local touchWorldPoint: Vector3? = nil
 	local visible = false
 	local active = true
 	local frame = 0
@@ -159,6 +161,15 @@ function LocalAttackCrosshairPresenter.Start(
 				part.LocalTransparencyModifier = if nextVisible then 0 else 1
 			end
 		end
+	end
+
+	local function isAllowedWorldPoint(worldPoint: Vector3): boolean
+		for _, territory in territories do
+			if TerritoryPointRules.Check(territory.CFrame, territory.Size, worldPoint).Allowed then
+				return true
+			end
+		end
+		return false
 	end
 
 	local function stop()
@@ -190,16 +201,18 @@ function LocalAttackCrosshairPresenter.Start(
 		local allowed = false
 		local matchedTerritoryIndex = nil
 		local reason = "Ready"
-		if not active or not UserInputService.MouseEnabled or #territories == 0 then
+		if not active or #territories == 0 then
 			setVisible(false)
 			reason = if not active
 				then "Inactive"
-				else if not UserInputService.MouseEnabled then "MouseDisabled" else "NoTerritory"
+				else "NoTerritory"
 		else
-			point = WorldPointResolver.Resolve(resolverViewport)
+			point = if UserInputService.MouseEnabled
+				then WorldPointResolver.Resolve(resolverViewport)
+				else touchWorldPoint
 			if not point then
 				setVisible(false)
-				reason = "NoWorldPoint"
+				reason = if UserInputService.MouseEnabled then "NoWorldPoint" else "NoTouchPoint"
 			else
 				for territoryIndex, territory in territories do
 					if TerritoryPointRules.Check(territory.CFrame, territory.Size, point).Allowed then
@@ -259,6 +272,20 @@ function LocalAttackCrosshairPresenter.Start(
 				return
 			end
 			territories = table.clone(nextTerritories)
+			if touchWorldPoint and not isAllowedWorldPoint(touchWorldPoint) then
+				touchWorldPoint = nil
+			end
+		end,
+		SetWorldPoint = function(worldPoint: Vector3?): boolean
+			if not active then
+				return false
+			end
+			if not worldPoint or not isAllowedWorldPoint(worldPoint) then
+				touchWorldPoint = nil
+				return false
+			end
+			touchWorldPoint = worldPoint
+			return true
 		end,
 		Stop = stop,
 		IsActive = function()

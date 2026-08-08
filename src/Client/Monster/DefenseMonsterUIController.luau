@@ -35,6 +35,7 @@ local LocalUIVisibilityGate = require(
 	script.Parent.Parent.UI.LocalUIVisibilityGate
 )
 local TipBlackController = require(script.Parent.Parent.UI.TipBlackController)
+local SoundController = require(script.Parent.Parent.Sound.SoundController)
 local AnalyticsIntentProtocol = require(
 	ReplicatedStorage.Shared.Analytics.AnalyticsIntentProtocol
 )
@@ -188,6 +189,16 @@ function DefenseMonsterUIController.Start()
 		management = MonsterManagementCoordinator.Create({
 			Render = render,
 			OnInsufficientMoney = TipBlackController.ShowInsufficientMoney,
+			OnUpgradeResult = function(succeeded, reason)
+				if succeeded then
+					SoundController.Play("Yes")
+				elseif reason ~= "RequestFailed"
+					and reason ~= "InvalidServerResponse"
+					and reason ~= "PlayerDataNotReady"
+				then
+					SoundController.Play("No")
+				end
+			end,
 		})
 		refs.MoneyButton.Activated:Connect(function()
 			if selectedSpawnPointId then

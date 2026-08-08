@@ -33,6 +33,7 @@ export type Options = {
 	Upgrade: ((string) -> any)?,
 	OpenAttackSelection: ((string, AttackCallbacks) -> AttackSession?)?,
 	OnInsufficientMoney: (() -> ())?,
+	OnUpgradeResult: ((boolean, string?) -> ())?,
 }
 
 export type Session = {
@@ -74,6 +75,12 @@ function MonsterManagementCoordinator.Create(options: Options): Session
 	end
 
 	local function runRequest(effect, requestFunction, resolvedKind: string)
+		local function reportUpgradeResult(succeeded: boolean, reason: string?)
+			if resolvedKind == "UpgradeResolved" and options.OnUpgradeResult then
+				options.OnUpgradeResult(succeeded, reason)
+			end
+		end
+
 		local ownRequestId = nextRequestId()
 		task.spawn(function()
 			local called, responseOrError = pcall(requestFunction, effect.SpawnPointId)
@@ -87,6 +94,7 @@ function MonsterManagementCoordinator.Create(options: Options): Session
 						Reason = if called then "InvalidServerResponse" else "RequestFailed",
 					})
 				else
+					reportUpgradeResult(false, if called then "InvalidServerResponse" else "RequestFailed")
 					dispatch({
 						Kind = "UpgradeResolved",
 						Succeeded = false,
@@ -105,6 +113,10 @@ function MonsterManagementCoordinator.Create(options: Options): Session
 					dispatch({ Kind = "SnapshotFailed", Reason = responseOrError.Reason })
 				end
 			else
+				reportUpgradeResult(
+					responseOrError.Succeeded == true,
+					responseOrError.Reason
+				)
 				dispatch({
 					Kind = "UpgradeResolved",
 					Succeeded = responseOrError.Succeeded == true,

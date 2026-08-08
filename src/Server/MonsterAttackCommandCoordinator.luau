@@ -4,6 +4,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DebugLog = require(ReplicatedStorage.Shared.DebugLog)
 local MonsterRosterCoordinator = require(script.Parent.MonsterRosterCoordinator)
 local PlayerTerritoryAccess = require(script.Parent.PlayerTerritoryAccess)
+local RegionAttackActivityService = require(script.Parent.RegionAttackActivityService)
 local MonsterStateRules = require(ReplicatedStorage.Shared.Monster.MonsterStateRules)
 local TerritoryPointRules = require(ReplicatedStorage.Shared.Monster.TerritoryPointRules)
 
@@ -166,12 +167,26 @@ function MonsterAttackCommandCoordinator.Execute(
 		return { Succeeded = false, Reason = reason, CommandId = nil, Monster = monster.Model }
 	end
 
+	local releaseRegionAttack = RegionAttackActivityService.TryAcquire(
+		targetPlayer,
+		assert(targetRegionId)
+	)
+	if not releaseRegionAttack then
+		return {
+			Succeeded = false,
+			Reason = "RegionAttackInProgress",
+			CommandId = nil,
+			Monster = monster.Model,
+		}
+	end
+
 	local transition = MonsterRosterCoordinator.Transition(
 		attacker,
 		attackerSpawnPointId,
 		"Releasing"
 	)
 	if not transition.Succeeded then
+		releaseRegionAttack()
 		return { Succeeded = false, Reason = transition.Reason, CommandId = nil, Monster = monster.Model }
 	end
 
@@ -204,6 +219,7 @@ function MonsterAttackCommandCoordinator.Execute(
 		if activeCommandId(attacker, attackerSpawnPointId) == commandId then
 			setActiveCommand(attacker, attackerSpawnPointId, nil)
 		end
+		releaseRegionAttack()
 		local callbackSucceeded, callbackError = pcall(
 			options.OnCommandFinished,
 			commandContext,

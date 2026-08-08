@@ -76,14 +76,14 @@ local function hide()
 	pendingCommand = nil
 	watching = false
 	setVisible(false)
-	setText("观看决斗")
+	setText("Watch Duel")
 end
 
 local function show(command: MonsterDuelCameraProtocol.CameraCommand)
 	activeCommand = command
 	pendingCommand = nil
 	watching = false
-	setText("观看决斗")
+	setText("Watch Duel")
 	setVisible(true)
 end
 
@@ -105,14 +105,14 @@ local function bindGui(playerGui: PlayerGui)
 			return
 		end
 		watching = not watching
-		setText(if watching then "退出观战" else "观看决斗")
+		setText(if watching then "Stop Watching" else "Watch Duel")
 		local sent = MonsterDuelCameraRemoteClient.RequestToggle(
 			command.DuelId,
 			watching
 		)
 		if not sent then
 			watching = not watching
-			setText(if watching then "退出观战" else "观看决斗")
+			setText(if watching then "Stop Watching" else "Watch Duel")
 		end
 	end)
 	if commandToRestore then
@@ -145,7 +145,7 @@ function MonsterDuelWatchButtonController.Start()
 		elseif command.Kind == MonsterDuelCameraProtocol.FocusKind then
 			if activeCommand and activeCommand.DuelId == command.DuelId then
 				watching = true
-				setText("退出观战")
+				setText("Stop Watching")
 			end
 		elseif command.Kind == MonsterDuelCameraProtocol.RestoreKind then
 			if activeCommand and activeCommand.DuelId == command.DuelId then

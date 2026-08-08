@@ -17,11 +17,13 @@ local ContinuousAtomicLaserPresentation = {}
 export type StartOptions = {
 	HoldProgress: number,
 	Speed: number,
+	ResolveTargetPosition: (() -> Vector3?)?,
 	IsCancelled: (() -> boolean)?,
 }
 
 export type Session = {
 	UpdateTarget: (Vector3) -> (),
+	GetEmitterPosition: () -> Vector3?,
 	Stop: () -> (),
 }
 
@@ -45,6 +47,11 @@ function ContinuousAtomicLaserPresentation.Start(
 	)
 	assert(type(options.Speed) == "number" and options.Speed > 0, "Speed 必须大于 0")
 	assert(
+		options.ResolveTargetPosition == nil
+			or type(options.ResolveTargetPosition) == "function",
+		"ResolveTargetPosition 必须是 function 或 nil"
+	)
+	assert(
 		options.IsCancelled == nil or type(options.IsCancelled) == "function",
 		"IsCancelled 无效"
 	)
@@ -52,6 +59,10 @@ function ContinuousAtomicLaserPresentation.Start(
 	local vfxSession = MonsterAttackVFXController.Start(model, effectName)
 	if not vfxSession then
 		return nil, "AtomicAttackEffectUnavailable"
+	end
+	if not vfxSession.GetSourcePosition() then
+		vfxSession.Stop()
+		return nil, "AtomicAttackEmitterUnavailable"
 	end
 	local track = AnimationPlayer.Play(model, animationAssetId, {
 		Looped = false,
@@ -70,6 +81,24 @@ function ContinuousAtomicLaserPresentation.Start(
 		AnimationTrackRelease.Release(track)
 	end
 
+	local function refreshTargetPosition(): Vector3
+		if options.ResolveTargetPosition then
+			local succeeded, nextTargetPosition = pcall(options.ResolveTargetPosition)
+			if not succeeded then
+				stop()
+				error(nextTargetPosition, 0)
+			end
+			if nextTargetPosition ~= nil then
+				assert(
+					typeof(nextTargetPosition) == "Vector3",
+					"ResolveTargetPosition 必须返回 Vector3 或 nil"
+				)
+				targetPosition = nextTargetPosition
+			end
+		end
+		return targetPosition
+	end
+
 	while track.IsPlaying do
 		if options.IsCancelled then
 			local succeeded, cancelledOrError = pcall(options.IsCancelled)
@@ -85,11 +114,11 @@ function ContinuousAtomicLaserPresentation.Start(
 		local length = track.Length
 		if length > 0 then
 			local progress = math.clamp(track.TimePosition / length, 0, 1)
-			vfxSession.Update(progress, targetPosition)
+			vfxSession.Update(progress, refreshTargetPosition())
 			if progress >= options.HoldProgress then
 				track.TimePosition = length * options.HoldProgress
 				track:AdjustSpeed(0)
-				vfxSession.Hold(targetPosition)
+				vfxSession.Hold(refreshTargetPosition())
 				return {
 					UpdateTarget = function(nextTargetPosition: Vector3)
 						assert(typeof(nextTargetPosition) == "Vector3", "nextTargetPosition 无效")
@@ -98,6 +127,9 @@ function ContinuousAtomicLaserPresentation.Start(
 						end
 						targetPosition = nextTargetPosition
 						vfxSession.Hold(targetPosition)
+					end,
+					GetEmitterPosition = function()
+						return vfxSession.GetSourcePosition()
 					end,
 					Stop = stop,
 				}, nil

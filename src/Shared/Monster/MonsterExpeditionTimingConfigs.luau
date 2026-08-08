@@ -6,6 +6,7 @@
 
 return table.freeze({
 	ExpeditionDuration = 30,
-	DuelResolutionDuration = 4,
+	DuelLaserDuration = 4,
+	DuelLaserPushDuration = 1.5,
 	DuelWatchdogDuration = 10,
 })

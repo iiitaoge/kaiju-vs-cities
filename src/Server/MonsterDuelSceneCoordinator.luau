@@ -1,9 +1,9 @@
 --[[
-	职责：为一场怪兽肉搏战创建独立决斗场景，并把原有两只怪兽移入/移出场景。
+	职责：为一场怪兽激光决斗创建独立场景，并把原有两只怪兽移入/移出场景。
 	输入：相遇后的攻守双方、各自回到相遇点的 CFrame、战斗失败恢复状态和移动配置。
 	输出：独立决斗 Session；退出时恢复模型父级、位置和镜头。
 	内部算法：克隆 ServerStorage 模板，移动到隔离运行位置；先发布攻击方自动镜头并等待完成，
-	再把双方放到模板出生点，按真实包围盒和移动速度计算相遇位置并相向移动，随后发布防守方可选镜头。
+	再把双方放到模板出生点，原地互相转向，不再进行接近移动，随后发布防守方可选镜头。
 	战斗结束后先把模型移回原运行时父级，再销毁场景。
 	不负责：伤害、攻击动画、胜负计算或防守怪兽回槽。
 ]]
@@ -17,11 +17,7 @@ local MonsterDuelCameraPublisher = require(script.Parent.MonsterDuelCameraPublis
 local GodzillaMoveService = require(script.Parent.GodzillaMoveService)
 local GodzillaService = require(script.Parent.GodzillaService)
 local ModelMover = require(script.Parent.ModelMover)
-local MonsterEncounterCoordinator = require(script.Parent.MonsterEncounterCoordinator)
 local MonsterRosterCoordinator = require(script.Parent.MonsterRosterCoordinator)
-local MonsterCombatGeometry = require(
-	ReplicatedStorage.Shared.Monster.MonsterCombatGeometry
-)
 local MonsterDuelCameraProtocol = require(
 	ReplicatedStorage.Shared.Monster.MonsterDuelCameraProtocol
 )
@@ -36,14 +32,23 @@ export type Combatant = {
 	SpawnPointId: string,
 }
 
+export type MovementConfig = {
+	DesiredGap: number,
+	MaxGap: number,
+	MoveSpeed: number,
+	MaxTravelDuration: number?,
+	TimingSafetyMargin: number?,
+	TurnDuration: number,
+}
+
 export type EnterOptions = {
 	TraceId: string,
 	AttackerReturnCFrame: CFrame,
 	DefenderReturnCFrame: CFrame,
 	AttackerFailureState: string,
 	DefenderFailureState: string,
-	AttackerMovement: MonsterEncounterCoordinator.MovementConfig,
-	DefenderMovement: MonsterEncounterCoordinator.MovementConfig,
+	AttackerMovement: MovementConfig,
+	DefenderMovement: MovementConfig,
 	SetMoving: ((Model, boolean, number?) -> ())?,
 	IsCancelled: (() -> boolean)?,
 }
@@ -79,7 +84,6 @@ export type ExitOptions = {
 local activeSessions: { [string]: Session } = {}
 local started = false
 local nextSceneSlot = 0
-local EPSILON = 1e-6
 
 local function result(succeeded: boolean, reason: string?, session: Session?): Result
 	return {
@@ -92,92 +96,6 @@ end
 local function sanitizeName(value: string): string
 	local sanitized = string.gsub(value, "[^%w_%-]", "_")
 	return if sanitized ~= "" then sanitized else "Duel"
-end
-
-local function horizontalUnit(from: Vector3, to: Vector3, fallback: Vector3): Vector3
-	local direction = Vector3.new(to.X - from.X, 0, to.Z - from.Z)
-	if direction.Magnitude > EPSILON then
-		return direction.Unit
-	end
-	local fallbackHorizontal = Vector3.new(fallback.X, 0, fallback.Z)
-	if fallbackHorizontal.Magnitude > EPSILON then
-		return fallbackHorizontal.Unit
-	end
-	return Vector3.new(1, 0, 0)
-end
-
-local function horizontalPosition(position: Vector3): Vector3
-	return Vector3.new(position.X, 0, position.Z)
-end
-
-local function resolveDuelEncounterCFrame(
-	attackerModel: Model,
-	defenderModel: Model,
-	attackerSpawnPoint: BasePart,
-	defenderSpawnPoint: BasePart,
-	attackerMovement: MonsterEncounterCoordinator.MovementConfig,
-	defenderMovement: MonsterEncounterCoordinator.MovementConfig
-): CFrame
-	local attackerStart = attackerModel:GetPivot().Position
-	local defenderStart = defenderModel:GetPivot().Position
-	local direction = horizontalUnit(
-		attackerStart,
-		defenderStart,
-		attackerSpawnPoint.CFrame.LookVector
-	)
-	if horizontalPosition(defenderStart - attackerStart).Magnitude <= EPSILON then
-		direction = horizontalUnit(
-			attackerSpawnPoint.Position,
-			defenderSpawnPoint.Position,
-			attackerSpawnPoint.CFrame.LookVector
-		)
-	end
-
-	local desiredGap = math.max(
-		attackerMovement.DesiredGap,
-		defenderMovement.DesiredGap
-	)
-	local sideGap = desiredGap * 0.5
-	local originCFrame = CFrame.lookAt(
-		Vector3.zero,
-		direction
-	)
-	local attackerPose = MonsterCombatGeometry.ResolvePoseToPoint(
-		attackerModel,
-		originCFrame,
-		sideGap,
-		-direction
-	)
-	local defenderPose = MonsterCombatGeometry.ResolvePoseToPoint(
-		defenderModel,
-		originCFrame,
-		sideGap,
-		direction
-	)
-	local attackerOffset = math.max(
-		0,
-		-horizontalPosition(attackerPose.Position):Dot(direction)
-	)
-	local defenderOffset = math.max(
-		0,
-		horizontalPosition(defenderPose.Position):Dot(direction)
-	)
-	local startDistance = horizontalPosition(defenderStart - attackerStart).Magnitude
-	local travelDistance = math.max(
-		0,
-		startDistance - attackerOffset - defenderOffset
-	)
-	local attackerSpeed = math.max(attackerMovement.MoveSpeed, EPSILON)
-	local defenderSpeed = math.max(defenderMovement.MoveSpeed, EPSILON)
-	local speedTotal = attackerSpeed + defenderSpeed
-	local attackerTravel = travelDistance * attackerSpeed / speedTotal
-	local encounterPosition = horizontalPosition(attackerStart)
-		+ direction * (attackerOffset + attackerTravel)
-
-	return CFrame.lookAt(
-		encounterPosition,
-		encounterPosition + direction
-	)
 end
 
 local function getRuntimeFolder(): Folder
@@ -558,42 +476,21 @@ function MonsterDuelSceneCoordinator.Enter(
 		RestoreDuration = MonsterDuelSceneConfig.Camera.RestoreDuration,
 	})
 
-	local encounterCFrame = resolveDuelEncounterCFrame(
+	-- Battle 场景不再从出生点移动到中点；两只怪兽保留出生点位置，原地转向对方。
+	-- FaceTo 只改变旋转，不改变模型位置，之后由激光决斗协调器直接开始对波。
+	local attackerFaced = GodzillaMoveService.FaceTo(
 		attackerModel,
+		defenderModel:GetPivot().Position,
+		options.AttackerMovement.TurnDuration
+	)
+	local defenderFaced = GodzillaMoveService.FaceTo(
 		defenderModel,
-		attackerSpawnPoint,
-		defenderSpawnPoint,
-		options.AttackerMovement,
-		options.DefenderMovement
+		attackerModel:GetPivot().Position,
+		options.DefenderMovement.TurnDuration
 	)
-	local approachSucceeded, approachResultOrError = pcall(
-		MonsterEncounterCoordinator.Execute,
-		{
-			Player = attacker.Player,
-			SpawnPointId = attacker.SpawnPointId,
-		},
-		{
-			Player = defender.Player,
-			SpawnPointId = defender.SpawnPointId,
-		},
-		{
-			TraceId = options.TraceId,
-			EncounterCFrame = encounterCFrame,
-			AttackerMovement = options.AttackerMovement,
-			DefenderMovement = options.DefenderMovement,
-			SetMoving = options.SetMoving,
-			IsCancelled = options.IsCancelled,
-		}
-	)
-	if not approachSucceeded then
-		warn("决斗场景相遇移动异常：", approachResultOrError)
+	if not attackerFaced or not defenderFaced then
 		MonsterDuelSceneCoordinator.Exit(session)
-		return result(false, "DuelApproachFailed", nil)
-	end
-	local approachResult = approachResultOrError
-	if not approachResult.Succeeded then
-		MonsterDuelSceneCoordinator.Exit(session)
-		return result(false, approachResult.Reason or "DuelApproachFailed", nil)
+		return result(false, "DuelFacingFailed", nil)
 	end
 
 	return result(true, nil, session)

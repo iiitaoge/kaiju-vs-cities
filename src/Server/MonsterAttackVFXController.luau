@@ -1,5 +1,5 @@
 --[[
-	职责：控制怪兽模型内已有攻击特效的启停与激光终点。
+	职责：控制怪兽模型内已有攻击特效的启停、激光发射点与终点。
 	输入：怪兽 Model、VFX 节点名、归一化动画进度和可选目标世界坐标。
 	输出：可更新、可停止的短生命周期 Session；节点缺失时返回 nil。
 	内部算法：普通攻击全程开启对应节点内的效果；激光先蓄力、再发射、最后收束。
@@ -16,6 +16,7 @@ local ATOMIC_FIRE_END = 0.78
 export type Session = {
 	Update: (progress: number, targetPosition: Vector3?) -> (),
 	Hold: (targetPosition: Vector3?) -> (),
+	GetSourcePosition: () -> Vector3?,
 	Stop: () -> (),
 }
 
@@ -52,6 +53,27 @@ local function disable(effects: { Instance })
 	end
 end
 
+local function findBeamSourceAttachment(root: Instance): Attachment?
+	local function getSource(instance: Instance): Attachment?
+		if instance:IsA("Beam") then
+			return instance.Attachment0
+		end
+		return nil
+	end
+
+	local rootSource = getSource(root)
+	if rootSource then
+		return rootSource
+	end
+	for _, descendant in root:GetDescendants() do
+		local source = getSource(descendant)
+		if source then
+			return source
+		end
+	end
+	return nil
+end
+
 -- 输入：尚未进入 Workspace 的运行时克隆。
 -- 输出：同一个 Model。
 -- 内部算法：只关闭 VFX_ 节点内部的发射器、光束和拖尾，不触碰模型其他常驻效果。
@@ -63,6 +85,27 @@ function MonsterAttackVFXController.DisableAll(model: Model): Model
 		end
 	end
 	return model
+end
+
+-- 输入：运行时怪兽模型和激光特效节点名。
+-- 输出：该节点内第一个 Beam.Attachment0 的世界坐标；节点或发射点缺失时返回 nil。
+-- 副作用：只读取实例，不开启、关闭或移动任何特效。
+function MonsterAttackVFXController.GetSourcePosition(
+	model: Model,
+	effectName: string
+): Vector3?
+	assert(typeof(model) == "Instance" and model:IsA("Model"), "model 必须是 Model")
+	assert(type(effectName) == "string" and effectName ~= "", "effectName 必须是非空 string")
+
+	local root = model:FindFirstChild(effectName, true)
+	if not root then
+		return nil
+	end
+	local sourceAttachment = findBeamSourceAttachment(root)
+	if not sourceAttachment or not sourceAttachment.Parent then
+		return nil
+	end
+	return sourceAttachment.WorldPosition
 end
 
 -- 输入：运行时怪兽和本次攻击对应的 VFX 节点名。
@@ -86,6 +129,7 @@ function MonsterAttackVFXController.Start(model: Model, effectName: string?): Se
 
 	local isAtomic = effectName == ATOMIC_EFFECT_NAME
 	local endpoint = if isAtomic then root:FindFirstChild(ATOMIC_ENDPOINT_NAME, true) else nil
+	local sourceAttachment = if isAtomic then findBeamSourceAttachment(root) else nil
 	local stopped = false
 
 	local function update(progress: number, targetPosition: Vector3?)
@@ -145,6 +189,13 @@ function MonsterAttackVFXController.Start(model: Model, effectName: string?): Se
 		end
 	end
 
+	local function getSourcePosition(): Vector3?
+		if not sourceAttachment or not sourceAttachment.Parent then
+			return nil
+		end
+		return sourceAttachment.WorldPosition
+	end
+
 	local function stop()
 		if stopped then
 			return
@@ -156,6 +207,7 @@ function MonsterAttackVFXController.Start(model: Model, effectName: string?): Se
 	return {
 		Update = update,
 		Hold = hold,
+		GetSourcePosition = getSourcePosition,
 		Stop = stop,
 	}
 end

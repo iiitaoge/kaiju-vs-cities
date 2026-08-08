@@ -18,6 +18,7 @@ export type Territory = {
 	BoundsId: string,
 	CFrame: CFrame,
 	Size: Vector3,
+	AttackInProgress: boolean,
 }
 
 export type Target = {
@@ -51,6 +52,20 @@ function SoloAttackPanelCoordinator.Open(spawnPointId: string, target: Target, o
 	local open = true
 	local submitting = false
 
+	local function validateWorldPoint(worldPoint: Vector3): (boolean, string?)
+		if not open then
+			return false, "PanelClosed"
+		end
+		if submitting then
+			return false, "RequestBusy"
+		end
+		local bounds = target.UnlockedTerritories[1]
+		local pointCheck = if bounds
+			then TerritoryPointRules.Check(bounds.CFrame, bounds.Size, worldPoint)
+			else { Allowed = false, Reason = "SoloAttackBoundsUnavailable" }
+		return pointCheck.Allowed, pointCheck.Reason
+	end
+
 	local function submit(worldPoint: Vector3)
 		if not open then
 			return failure("PanelClosed")
@@ -58,12 +73,9 @@ function SoloAttackPanelCoordinator.Open(spawnPointId: string, target: Target, o
 		if submitting then
 			return failure("RequestBusy")
 		end
-		local bounds = target.UnlockedTerritories[1]
-		local pointCheck = if bounds
-			then TerritoryPointRules.Check(bounds.CFrame, bounds.Size, worldPoint)
-			else { Allowed = false, Reason = "SoloAttackBoundsUnavailable" }
-		if not pointCheck.Allowed then
-			local reason = pointCheck.Reason or "EntryPointOutsideTerritory"
+		local allowed, pointReason = validateWorldPoint(worldPoint)
+		if not allowed then
+			local reason = pointReason or "EntryPointOutsideTerritory"
 			options.OnValidationFailed(reason)
 			return failure(reason)
 		end
@@ -106,6 +118,7 @@ function SoloAttackPanelCoordinator.Open(spawnPointId: string, target: Target, o
 		RefreshTargets = function()
 			return if open then target else nil
 		end,
+		ValidateWorldPoint = validateWorldPoint,
 		SubmitWorldPoint = submit,
 		Cancel = function()
 			if open then

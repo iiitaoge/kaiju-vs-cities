@@ -48,6 +48,7 @@ function AttackTargetSnapshotMapper.Map(values, resolvePlayer: (number) -> Playe
 					BoundsId = territory.BoundsId,
 					CFrame = territory.CFrame,
 					Size = territory.Size,
+					AttackInProgress = territory.AttackInProgress == true,
 				})
 			end
 		end

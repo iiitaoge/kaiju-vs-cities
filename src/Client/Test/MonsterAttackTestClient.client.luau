@@ -33,13 +33,13 @@ local cameraTarget = InstancePath.Wait(MonsterAttackTestConfig.Paths.CameraTarge
 assert(cameraTarget:IsA("BasePart"), "测试 CameraTarget 必须是 BasePart")
 
 attackButton.Interactable = false
-attackButton.Text = "进入进攻"
+attackButton.Text = "Enter Attack"
 
 local housesBuilt, buildResult = pcall(LocalMonsterAttackTestHouses.Build)
 if not housesBuilt then
 	warn("创建测试房屋失败：", buildResult)
 	spawnButton.Interactable = false
-	spawnButton.Text = "房屋创建失败"
+	spawnButton.Text = "House Creation Failed"
 	return
 end
 
@@ -56,16 +56,16 @@ spawnButton.Activated:Connect(function()
 	end
 	spawnBusy = true
 	spawnButton.Interactable = false
-	spawnButton.Text = "生成中"
+	spawnButton.Text = "Spawning..."
 
 	local succeeded, result = pcall(function()
 		return spawnMonster:InvokeServer()
 	end)
 	if succeeded and result and result.Succeeded then
-		spawnButton.Text = "怪兽已生成"
+		spawnButton.Text = "Monster Spawned"
 		attackButton.Interactable = true
 	else
-		spawnButton.Text = "生成失败，重试"
+		spawnButton.Text = "Spawn Failed. Retry"
 		spawnButton.Interactable = true
 		if not succeeded then
 			warn("生成测试怪兽失败：", result)
@@ -81,7 +81,7 @@ attackButton.Activated:Connect(function()
 	end
 	selecting = true
 	attackButton.Interactable = false
-	attackButton.Text = "点击地图选择目标"
+	attackButton.Text = "Click the Map to Select a Target"
 
 	task.spawn(function()
 		local succeeded, resultOrError = pcall(
@@ -98,7 +98,7 @@ attackButton.Activated:Connect(function()
 		end
 
 		selecting = false
-		attackButton.Text = "进入进攻"
+		attackButton.Text = "Enter Attack"
 		attackButton.Interactable = true
 	end)
 end)

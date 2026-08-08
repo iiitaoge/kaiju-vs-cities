@@ -11,6 +11,7 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
 
 local AnalyticsIntentClient = require(script.Parent.Parent.Analytics.AnalyticsIntentClient)
 local AttackBrowseCamera = require(script.Parent.Parent.Camera.AttackBrowseCamera)
@@ -58,6 +59,7 @@ export type Callbacks = {
 	OnCancelled: () -> (),
 	OnUnavailable: (string?) -> (),
 	OnTargetChanged: ((Target) -> ())?,
+	OnPendingWorldPointChanged: ((boolean) -> ())?,
 	OnValidationFailed: ((string) -> ())?,
 	OnClosed: ((string) -> ())?,
 	OnFollowStarted: ((Model) -> ())?,
@@ -69,6 +71,7 @@ export type Session = {
 	PreviousTarget: () -> Target?,
 	RefreshTargets: () -> Target?,
 	SubmitWorldPoint: (Vector3) -> AttackPanelCoordinator.RequestResult,
+	SubmitPendingWorldPoint: () -> AttackPanelCoordinator.RequestResult,
 	Cancel: () -> (),
 	RestoreCamera: () -> boolean,
 	GetCurrentTarget: () -> Target?,
@@ -79,6 +82,15 @@ local function mapTargets(values)
 	return AttackTargetSnapshotMapper.Map(values, function(userId)
 		return Players:GetPlayerByUserId(userId)
 	end)
+end
+
+local function failure(reason: string): AttackPanelCoordinator.RequestResult
+	return {
+		Succeeded = false,
+		Reason = reason,
+		CommandId = nil,
+		Monster = nil,
+	}
 end
 
 function PlayerMonsterAttackSelectionCoordinator.Open(
@@ -138,6 +150,7 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 	local latestCameraCommandId = 0
 	local latestDuelCameraCommandId = 0
 	local acceptedCommandId: number? = nil
+	local pendingWorldPoint: Vector3? = nil
 
 	local function disconnectFollowState()
 		if followStateConnection then
@@ -219,7 +232,22 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 		warn("找不到攻击准星模板：ReplicatedStorage/" .. crosshairConfig.TemplateName)
 	end
 
+	local function notifyPendingWorldPointChanged(hasPoint: boolean)
+		if callbacks.OnPendingWorldPointChanged then
+			callbacks.OnPendingWorldPointChanged(hasPoint)
+		end
+	end
+
+	local function clearPendingWorldPoint()
+		pendingWorldPoint = nil
+		if crosshairSession then
+			crosshairSession.SetWorldPoint(nil)
+		end
+		notifyPendingWorldPointChanged(false)
+	end
+
 	local function onTargetChanged(target: Target)
+		clearPendingWorldPoint()
 		local targetLabel
 		if target.Player then
 			targetLabel = string.format(
@@ -243,7 +271,13 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 			spawnPointId
 		)
 		if crosshairSession then
-			crosshairSession.SetTerritories(target.UnlockedTerritories)
+			local selectableTerritories = {}
+			for _, territory in target.UnlockedTerritories do
+				if not territory.AttackInProgress then
+					table.insert(selectableTerritories, territory)
+				end
+			end
+			crosshairSession.SetTerritories(selectableTerritories)
 		end
 		diagnostics.RecordCamera("BEFORE_TARGET")
 		if browseSession then
@@ -466,6 +500,7 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 	end
 
 	local function onClosed(reason)
+		clearPendingWorldPoint()
 		stopInput()
 		stopCrosshair()
 		restoreBrowseCamera()
@@ -510,6 +545,7 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 			RequestAttack = MonsterAttackRemoteClient.RequestAttack,
 			OnTargetChanged = onTargetChanged,
 			OnTargetUnavailable = function()
+				clearPendingWorldPoint()
 				if crosshairSession then
 					crosshairSession.SetTerritories({})
 				end
@@ -523,13 +559,31 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 		})
 	end
 
-	inputSession = WorldPointInputController.Start(
-		function(worldPoint)
-			if panelSession and panelSession.IsOpen() then
-				local result = panelSession.SubmitWorldPoint(worldPoint)
-				diagnostics.RecordResult(result)
+	local function handleWorldPoint(worldPoint: Vector3)
+		if not panelSession or not panelSession.IsOpen() then
+			return
+		end
+		if UserInputService.TouchEnabled then
+			local allowed, reason = panelSession.ValidateWorldPoint(worldPoint)
+			if not allowed then
+				clearPendingWorldPoint()
+				onValidationFailed(reason or "EntryPointUnavailable")
+				return
 			end
-		end,
+			pendingWorldPoint = worldPoint
+			if crosshairSession then
+				crosshairSession.SetWorldPoint(worldPoint)
+			end
+			notifyPendingWorldPointChanged(true)
+			return
+		end
+
+		local result = panelSession.SubmitWorldPoint(worldPoint)
+		diagnostics.RecordResult(result)
+	end
+
+	inputSession = WorldPointInputController.Start(
+		handleWorldPoint,
 		function(snapshot)
 			diagnostics.RecordInput(snapshot)
 		end
@@ -565,6 +619,21 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 			return panelSession.RefreshTargets()
 		end,
 		SubmitWorldPoint = panelSession.SubmitWorldPoint,
+		SubmitPendingWorldPoint = function()
+			if not UserInputService.TouchEnabled then
+				return failure("MobileAttackButtonUnavailable")
+			end
+			local worldPoint = pendingWorldPoint
+			if not worldPoint then
+				return failure("EntryPointUnavailable")
+			end
+			local result = panelSession.SubmitWorldPoint(worldPoint)
+			diagnostics.RecordResult(result)
+			if result.Succeeded or result.Reason == "RegionAttackInProgress" then
+				clearPendingWorldPoint()
+			end
+			return result
+		end,
 		Cancel = function()
 			if panelSession.IsOpen() then
 				panelSession.Cancel()

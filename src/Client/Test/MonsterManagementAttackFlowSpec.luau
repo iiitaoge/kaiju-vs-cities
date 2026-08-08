@@ -66,6 +66,7 @@ function MonsterManagementAttackFlowSpec.Run(localPlayer: Player, targetPlayer: 
 				BoundsId = "TestBounds",
 				CFrame = CFrame.new(0, 0, 0),
 				Size = Vector3.new(40, 10, 40),
+				AttackInProgress = false,
 			},
 		},
 		AttackView = {
@@ -174,12 +175,31 @@ function MonsterManagementAttackFlowSpec.Run(localPlayer: Player, targetPlayer: 
 	targetsAvailable = true
 	management.ChooseAttack()
 	expect(activeAttackSession and activeAttackSession.IsOpen(), "第三次攻击选择没有打开")
+	local previewAllowed, previewReason = activeAttackSession.ValidateWorldPoint(Vector3.zero)
+	expect(previewAllowed and previewReason == nil, "合法预览落点校验错误")
+	expect(requestCount == 0, "预览合法落点不应发送攻击请求")
+	local previewOutsideAllowed, previewOutsideReason = activeAttackSession.ValidateWorldPoint(
+		Vector3.new(1000, 0, 1000)
+	)
+	expect(
+		not previewOutsideAllowed and previewOutsideReason == "EntryPointOutsideTerritory",
+		"越界预览落点校验错误"
+	)
 	local outside = activeAttackSession.SubmitWorldPoint(Vector3.new(1000, 0, 1000))
 	expect(not outside.Succeeded and outside.Reason == "EntryPointOutsideTerritory", "越界落点未被本地拒绝")
 	expect(lastValidationReason == "EntryPointOutsideTerritory", "越界原因没有通知适配层")
 	expect(management.GetState().Mode == "SelectingAttack", "越界后不应退出攻击选择")
 	expect(activeAttackSession.IsOpen(), "越界后攻击选择不应关闭")
 	expect(requestCount == 0, "越界落点不应发送攻击请求")
+
+	target.UnlockedTerritories[1].AttackInProgress = true
+	local busyPreviewAllowed, busyPreviewReason = activeAttackSession.ValidateWorldPoint(Vector3.zero)
+	expect(
+		not busyPreviewAllowed and busyPreviewReason == "RegionAttackInProgress",
+		"进攻中的区域未被本地瞄准校验拦截"
+	)
+	expect(requestCount == 0, "进攻中的区域预览不应发送攻击请求")
+	target.UnlockedTerritories[1].AttackInProgress = false
 
 	requestMode = "Reject"
 	local rejected = activeAttackSession.SubmitWorldPoint(Vector3.zero)

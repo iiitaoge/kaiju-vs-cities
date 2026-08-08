@@ -1,7 +1,7 @@
 --[[
 	职责：按固定场景合同解析或等待本地攻击选择 HUD。
 	输入：本地 PlayerGui。
-	输出：HUD 根节点、目标浏览区、目标标题、左右切换按钮和退出按钮；失败时返回具体节点原因。
+	输出：HUD 根节点、目标浏览区、目标标题、左右切换按钮、移动端攻击面板、攻击按钮和退出按钮；失败时返回具体节点原因。
 	内部算法：Resolve 立即检查直接子节点；Wait 由 DescendantAdded 驱动重试，吸收 UI 复制时序差异。
 	不负责：显示状态、目标玩家、相机、按钮监听或攻击请求。
 ]]
@@ -15,6 +15,8 @@ export type References = {
 	Title: TextLabel,
 	PreviousButton: ImageButton,
 	NextButton: ImageButton,
+	Attack: Frame,
+	AttackButton: GuiButton,
 	ExitButton: TextButton,
 }
 
@@ -37,6 +39,25 @@ local function childOfClass(
 		)
 	end
 	return child, nil
+end
+
+local function guiButtonChild(
+	parent: Instance,
+	name: string,
+	path: string
+): (GuiButton?, string?)
+	local child = parent:FindFirstChild(name)
+	if not child then
+		return nil, "InvalidAttackSelectionHUDHierarchy:Missing:" .. path
+	end
+	if not child:IsA("GuiButton") then
+		return nil, string.format(
+			"InvalidAttackSelectionHUDHierarchy:WrongClass:%s:Expected=GuiButton:Actual=%s",
+			path,
+			child.ClassName
+		)
+	end
+	return child :: GuiButton, nil
 end
 
 function LocalAttackSelectionHUDAccess.Resolve(
@@ -113,6 +134,20 @@ function LocalAttackSelectionHUDAccess.Resolve(
 	if not exitButton then
 		return nil, reason
 	end
+	local attack
+	attack, reason = childOfClass(down, "Attack", "Frame", "HUD.Launching.Down.Attack")
+	if not attack then
+		return nil, reason
+	end
+	local attackButton
+	attackButton, reason = guiButtonChild(
+		attack,
+		"Button",
+		"HUD.Launching.Down.Attack.Button"
+	)
+	if not attackButton then
+		return nil, reason
+	end
 
 	return {
 		Gui = gui :: ScreenGui,
@@ -121,6 +156,8 @@ function LocalAttackSelectionHUDAccess.Resolve(
 		Title = title :: TextLabel,
 		PreviousButton = previousButton :: ImageButton,
 		NextButton = nextButton :: ImageButton,
+		Attack = attack :: Frame,
+		AttackButton = attackButton :: GuiButton,
 		ExitButton = exitButton :: TextButton,
 	}, nil
 end

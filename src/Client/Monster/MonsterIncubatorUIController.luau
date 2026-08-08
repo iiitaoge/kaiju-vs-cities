@@ -39,6 +39,7 @@ local LocalUIVisibilityGate = require(
 	script.Parent.Parent.UI.LocalUIVisibilityGate
 )
 local TipBlackController = require(script.Parent.Parent.UI.TipBlackController)
+local SoundController = require(script.Parent.Parent.Sound.SoundController)
 local AnalyticsIntentProtocol = require(
 	ReplicatedStorage.Shared.Analytics.AnalyticsIntentProtocol
 )
@@ -329,6 +330,16 @@ function MonsterIncubatorUIController.Start()
 				Render = render,
 				OpenAttackSelection = AttackSelectionHUDController.Open,
 				OnInsufficientMoney = TipBlackController.ShowInsufficientMoney,
+				OnUpgradeResult = function(succeeded, reason)
+					if succeeded then
+						SoundController.Play("Yes")
+					elseif reason ~= "RequestFailed"
+						and reason ~= "InvalidServerResponse"
+						and reason ~= "PlayerDataNotReady"
+					then
+						SoundController.Play("No")
+					end
+				end,
 			})
 			local session = management
 			table.insert(uiConnections, resolved.StartButton.Activated:Connect(function()

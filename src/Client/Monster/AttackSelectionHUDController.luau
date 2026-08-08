@@ -8,6 +8,7 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
 
 local LocalAttackSelectionHUDAccess = require(
 	script.Parent.LocalAttackSelectionHUDAccess
@@ -19,6 +20,8 @@ local LocalUIModeService = require(script.Parent.Parent.UI.LocalUIModeService)
 local LocalUIVisibilityGate = require(
 	script.Parent.Parent.UI.LocalUIVisibilityGate
 )
+local SoundController = require(script.Parent.Parent.Sound.SoundController)
+local TipBlackController = require(script.Parent.Parent.UI.TipBlackController)
 local UIModeVisibilityRules = require(
 	ReplicatedStorage.Shared.UI.UIModeVisibilityRules
 )
@@ -27,6 +30,13 @@ local AttackSelectionHUDController = {}
 
 local started = false
 local starting = false
+local REGION_ATTACK_IN_PROGRESS_TEXT = "This region is currently under attack."
+
+local function setAttackButtonState(button: GuiButton, visible: boolean, enabled: boolean)
+	button.Visible = visible
+	button.Interactable = visible and enabled
+	button.AutoButtonColor = visible and enabled
+end
 
 local function resolveHUD(): (LocalAttackSelectionHUDAccess.References?, string?)
 	local playerGui = Players.LocalPlayer:FindFirstChildOfClass("PlayerGui")
@@ -53,6 +63,8 @@ function AttackSelectionHUDController.Start()
 		started = true
 		refs.Root.Visible = false
 		refs.BrowseControls.Visible = true
+		refs.Attack.Visible = UserInputService.TouchEnabled
+		setAttackButtonState(refs.AttackButton, false, false)
 	end)
 end
 
@@ -75,6 +87,25 @@ function AttackSelectionHUDController.Open(spawnPointId: string, callbacks)
 		callbacks.OnUnavailable(modeReason or "UIModeUnavailable")
 		return nil
 	end
+	local mobileAttackButton = UserInputService.TouchEnabled
+	refs.Attack.Visible = mobileAttackButton
+	local function handleValidationFailed(validationReason: string)
+		if validationReason ~= "RequestFailed"
+			and validationReason ~= "InvalidServerResponse"
+			and validationReason ~= "PlayerDataNotReady"
+		then
+			SoundController.Play("No")
+		end
+		if validationReason == "RegionAttackInProgress" then
+			TipBlackController.ShowMessage(REGION_ATTACK_IN_PROGRESS_TEXT)
+		end
+		if callbacks.OnValidationFailed then
+			callbacks.OnValidationFailed(validationReason)
+		end
+	end
+	local function setMobileAttackButtonEnabled(enabled: boolean)
+		setAttackButtonState(refs.AttackButton, mobileAttackButton, enabled)
+	end
 
 	local rootVisibility = LocalUIVisibilityGate.Create(
 		UIModeVisibilityRules.Channels.Attack,
@@ -84,6 +115,7 @@ function AttackSelectionHUDController.Open(spawnPointId: string, callbacks)
 		false
 	)
 	refs.BrowseControls.Visible = true
+	setMobileAttackButtonEnabled(false)
 	local connections: { RBXScriptConnection } = {}
 	local closed = false
 	local following = false
@@ -95,6 +127,7 @@ function AttackSelectionHUDController.Open(spawnPointId: string, callbacks)
 		end
 		closed = true
 		following = false
+		setMobileAttackButtonEnabled(false)
 		rootVisibility:SetDesiredVisible(false)
 		refs.BrowseControls.Visible = true
 		for _, connection in connections do
@@ -107,6 +140,7 @@ function AttackSelectionHUDController.Open(spawnPointId: string, callbacks)
 
 	session = PlayerMonsterAttackSelectionCoordinator.Open(spawnPointId, {
 		OnAccepted = function()
+			SoundController.Play("Yes")
 			if not following then
 				cleanup()
 			end
@@ -124,6 +158,7 @@ function AttackSelectionHUDController.Open(spawnPointId: string, callbacks)
 			if closed then
 				return
 			end
+			setMobileAttackButtonEnabled(false)
 			local solo = target.Kind == "Solo"
 			refs.BrowseControls.Visible = not solo
 			refs.Title.Text = if solo then target.DisplayName else target.Player.Name
@@ -132,8 +167,14 @@ function AttackSelectionHUDController.Open(spawnPointId: string, callbacks)
 				callbacks.OnTargetChanged(target)
 			end
 		end,
-		OnValidationFailed = callbacks.OnValidationFailed,
+		OnValidationFailed = handleValidationFailed,
+		OnPendingWorldPointChanged = function(hasPoint)
+			if not closed then
+				setMobileAttackButtonEnabled(hasPoint)
+			end
+		end,
 		OnClosed = function(closeReason)
+			setMobileAttackButtonEnabled(false)
 			if closeReason == "CommandAccepted" then
 				refs.BrowseControls.Visible = false
 				rootVisibility:SetDesiredVisible(true)
@@ -148,6 +189,7 @@ function AttackSelectionHUDController.Open(spawnPointId: string, callbacks)
 			if closed then
 				return
 			end
+			setMobileAttackButtonEnabled(false)
 			following = true
 			modeSession:SetMode(UIModeVisibilityRules.Modes.AttackFollow)
 			refs.BrowseControls.Visible = false
@@ -187,6 +229,15 @@ function AttackSelectionHUDController.Open(spawnPointId: string, callbacks)
 			session.Cancel()
 		elseif following and not session.RestoreCamera() then
 			cleanup()
+		end
+	end))
+	table.insert(connections, refs.AttackButton.Activated:Connect(function()
+		if not mobileAttackButton or closed or not session.IsOpen() then
+			return
+		end
+		local result = session.SubmitPendingWorldPoint()
+		if not result.Succeeded and result.Reason == "EntryPointUnavailable" then
+			setMobileAttackButtonEnabled(false)
 		end
 	end))
 
