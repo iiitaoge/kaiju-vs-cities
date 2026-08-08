@@ -1,12 +1,14 @@
 --[[
 	职责：使用 Main/lottery 播放服务端已经结算完成的载具开奖演出。
 	输入：按抽取顺序排列的奖励列表，每项包含 VehicleId、Name 和 Rarity。
-	输出：逐抽播放黑色剪影切换与奖励卡弹出；点击可跳过当前剪影，奖励页点击后继续或关闭。
-	内部算法：轮播 VehicleCatalog 中的全部载具图标并用 Back 缓动缩放；最后切换为本次奖励卡。
+	输出：锁定其他按钮，逐抽播放黑色剪影切换与奖励卡弹出；点击可跳过当前剪影，奖励页点击后继续或关闭。
+	内部算法：用高优先级输入动作拦截其他按钮，再轮播 VehicleCatalog 中的全部载具图标并用 Back
+	缓动缩放；最后切换为本次奖励卡，lottery 保留模板自身的半透明背景。
 	不负责：抽奖概率、货币扣除、载具发放、存档、箱子购买或奖励排序。
 ]]
 
 local Players = game:GetService("Players")
+local ContextActionService = game:GetService("ContextActionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
@@ -41,6 +43,8 @@ type References = {
 
 local MASK_SCALE_NAME = "LotteryOpeningScale"
 local PANEL_SCALE_NAME = "LotteryRewardScale"
+local INPUT_LOCK_ACTION_NAME = "VehicleLotteryInputLock"
+local INPUT_LOCK_PRIORITY = Enum.ContextActionPriority.High.Value + 100
 local MASK_START_SCALE = 0.68
 local PANEL_START_SCALE = 0.72
 
@@ -67,6 +71,7 @@ local presenting = false
 local skipRequested = false
 local activeTween: Tween? = nil
 local advanceEvent = Instance.new("BindableEvent")
+local inputLocked = false
 local started = false
 
 local function resolveChild(parent: Instance?, name: string): Instance?
@@ -221,6 +226,33 @@ local function isAdvanceInput(input: InputObject): boolean
 		or input.KeyCode == Enum.KeyCode.Space
 end
 
+local function setInputLocked(shouldLock: boolean)
+	if inputLocked == shouldLock then
+		return
+	end
+	inputLocked = shouldLock
+	if not shouldLock then
+		ContextActionService:UnbindAction(INPUT_LOCK_ACTION_NAME)
+		return
+	end
+
+	ContextActionService:BindActionAtPriority(
+		INPUT_LOCK_ACTION_NAME,
+		function()
+			return Enum.ContextActionResult.Sink
+		end,
+		false,
+		INPUT_LOCK_PRIORITY,
+		Enum.UserInputType.MouseButton1,
+		Enum.UserInputType.MouseButton2,
+		Enum.UserInputType.Touch,
+		Enum.KeyCode.ButtonA,
+		Enum.KeyCode.ButtonB,
+		Enum.KeyCode.Return,
+		Enum.KeyCode.Space
+	)
+end
+
 local function cancelActiveTween()
 	local tween = activeTween
 	if tween then
@@ -324,6 +356,7 @@ local function closePresentation(current: References)
 	current.MaskScale.Scale = 1
 	current.PanelScale.Scale = 1
 	presenting = false
+	setInputLocked(false)
 end
 
 function VehicleLotteryPresentationController.Start(): boolean
@@ -342,6 +375,8 @@ function VehicleLotteryPresentationController.Start(): boolean
 
 	references = resolved
 	resolved.Root.Active = true
+	resolved.Root.BackgroundColor3 = Color3.new(0, 0, 0)
+	resolved.Root.BackgroundTransparency = 0.5
 	resolved.Root.Visible = false
 	resolved.Panel.Visible = false
 	resolved.MaskIcon.Visible = true
@@ -383,6 +418,11 @@ function VehicleLotteryPresentationController.Play(rawRewards): (boolean, string
 	end
 
 	presenting = true
+	local focusedTextBox = UserInputService:GetFocusedTextBox()
+	if focusedTextBox then
+		focusedTextBox:ReleaseFocus()
+	end
+	setInputLocked(true)
 	current.Root.Visible = true
 	for drawIndex, reward in rewards do
 		playOpening(current, reward, drawIndex, #rewards)
