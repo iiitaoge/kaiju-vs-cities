@@ -18,6 +18,7 @@ local UIModeVisibilityRules = require(
 	ReplicatedStorage.Shared.UI.UIModeVisibilityRules
 )
 local LocalUIVisibilityGate = require(script.Parent.UI.LocalUIVisibilityGate)
+local LocalGuiButtonState = require(script.Parent.UI.LocalGuiButtonState)
 
 local StudioSaveResetController = {}
 
@@ -38,7 +39,7 @@ local function createButton(parent: Instance, isTouchEnabled: boolean): TextButt
 	button.Font = Enum.Font.GothamBold
 	button.TextSize = 16
 	button.Text = "Delete Test Save"
-	button.AutoButtonColor = true
+	LocalGuiButtonState.SetEnabled(button, true)
 	button.Parent = parent
 
 	local corner = Instance.new("UICorner")
@@ -90,7 +91,7 @@ function StudioSaveResetController.Start()
 			return
 		end
 		busy = true
-		button.Interactable = false
+		LocalGuiButtonState.SetEnabled(button, false)
 		button.Text = "Deleting Test Save..."
 
 		local invoked, result = pcall(remote.InvokeServer, remote)
@@ -103,7 +104,7 @@ function StudioSaveResetController.Start()
 		local reason = if invoked and result then result.Reason else tostring(result)
 		warn("Studio 测试删档失败：" .. tostring(reason))
 		button.Text = "Delete Failed. Click to Retry"
-		button.Interactable = true
+		LocalGuiButtonState.SetEnabled(button, true)
 		busy = false
 	end)
 end

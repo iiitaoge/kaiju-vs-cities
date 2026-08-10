@@ -31,6 +31,7 @@ local UIModeVisibilityRules = require(
 	ReplicatedStorage.Shared.UI.UIModeVisibilityRules
 )
 local LocalUIVisibilityGate = require(script.Parent.LocalUIVisibilityGate)
+local LocalGuiButtonState = require(script.Parent.LocalGuiButtonState)
 local VehicleDeploymentState = require(script.Parent.Parent.VehicleDeploymentState)
 local VehicleCrateRemoteClient = require(
 	script.Parent.Parent.Vehicle.VehicleCrateRemoteClient
@@ -718,9 +719,7 @@ local function applyFeatureVisibility(unlocked: boolean)
 end
 
 local function setButtonEnabled(button: GuiButton, enabled: boolean)
-	button.Active = enabled
-	button.Selectable = enabled
-	button.AutoButtonColor = enabled
+	LocalGuiButtonState.SetEnabled(button, enabled)
 end
 
 local function setVehicleCardWidth(unit: GuiObject)

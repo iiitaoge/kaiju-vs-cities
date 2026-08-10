@@ -20,6 +20,9 @@ local LocalUIModeService = require(script.Parent.Parent.UI.LocalUIModeService)
 local LocalUIVisibilityGate = require(
 	script.Parent.Parent.UI.LocalUIVisibilityGate
 )
+local LocalGuiButtonState = require(
+	script.Parent.Parent.UI.LocalGuiButtonState
+)
 local SoundController = require(script.Parent.Parent.Sound.SoundController)
 local TipBlackController = require(script.Parent.Parent.UI.TipBlackController)
 local UIModeVisibilityRules = require(
@@ -34,8 +37,7 @@ local REGION_ATTACK_IN_PROGRESS_TEXT = "This region is currently under attack."
 
 local function setAttackButtonState(button: GuiButton, visible: boolean, enabled: boolean)
 	button.Visible = visible
-	button.Interactable = visible and enabled
-	button.AutoButtonColor = visible and enabled
+	LocalGuiButtonState.SetEnabled(button, visible and enabled)
 end
 
 local function resolveHUD(): (LocalAttackSelectionHUDAccess.References?, string?)

@@ -11,6 +11,8 @@ local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
+local LocalGuiButtonState = require(script.Parent.LocalGuiButtonState)
+
 local ButtonFeedbackController = {}
 
 local FEEDBACK_SCALE_NAME = "InteractionFeedbackScale"
@@ -81,6 +83,12 @@ local function restoreTarget(binding: Binding)
 	)
 end
 
+local function resetFeedback(binding: Binding)
+	binding.Hovered = false
+	binding.Generation += 1
+	restoreTarget(binding)
+end
+
 local function unbind(button: GuiButton)
 	local binding = bindings[button]
 	if not binding then
@@ -131,6 +139,10 @@ local function bind(button: GuiButton)
 	bindings[button] = binding
 
 	table.insert(binding.Connections, button.MouseEnter:Connect(function()
+		if not LocalGuiButtonState.IsEnabled(button) then
+			resetFeedback(binding)
+			return
+		end
 		binding.Hovered = true
 		binding.Generation += 1
 		playScale(binding, HOVER_MULTIPLIER, HOVER_TWEEN_INFO)
@@ -141,6 +153,10 @@ local function bind(button: GuiButton)
 		restoreTarget(binding)
 	end))
 	table.insert(binding.Connections, button.Activated:Connect(function()
+		if not LocalGuiButtonState.IsEnabled(button) then
+			resetFeedback(binding)
+			return
+		end
 		binding.Generation += 1
 		local generation = binding.Generation
 		playScale(binding, PRESS_MULTIPLIER, PRESS_TWEEN_INFO)
@@ -149,6 +165,39 @@ local function bind(button: GuiButton)
 				restoreTarget(binding)
 			end
 		end)
+	end))
+	local ancestor: Instance? = button
+	while ancestor do
+		if ancestor:IsA("GuiObject") then
+			table.insert(
+				binding.Connections,
+				ancestor:GetPropertyChangedSignal("Visible"):Connect(function()
+					if not LocalGuiButtonState.IsEnabled(button) then
+						resetFeedback(binding)
+					end
+				end)
+			)
+		elseif ancestor:IsA("ScreenGui") then
+			table.insert(
+				binding.Connections,
+				ancestor:GetPropertyChangedSignal("Enabled"):Connect(function()
+					if not LocalGuiButtonState.IsEnabled(button) then
+						resetFeedback(binding)
+					end
+				end)
+			)
+		end
+		ancestor = ancestor.Parent
+	end
+	table.insert(binding.Connections, button:GetPropertyChangedSignal("Active"):Connect(function()
+		if not LocalGuiButtonState.IsEnabled(button) then
+			resetFeedback(binding)
+		end
+	end))
+	table.insert(binding.Connections, button:GetPropertyChangedSignal("Interactable"):Connect(function()
+		if not LocalGuiButtonState.IsEnabled(button) then
+			resetFeedback(binding)
+		end
 	end))
 	table.insert(binding.Connections, button.AncestryChanged:Connect(function(_, parent)
 		if parent == nil then

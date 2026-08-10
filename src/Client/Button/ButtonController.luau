@@ -9,6 +9,10 @@ local LocalPlotButtonAccess = require(script.Parent.LocalPlotButtonAccess)
 local LocalButtonWorldUIController = require(script.Parent.LocalButtonWorldUIController)
 local TipBlackController = require(script.Parent.Parent.UI.TipBlackController)
 local SoundController = require(script.Parent.Parent.Sound.SoundController)
+local LocalUIModeService = require(script.Parent.Parent.UI.LocalUIModeService)
+local UIModeVisibilityRules = require(
+	ReplicatedStorage.Shared.UI.UIModeVisibilityRules
+)
 
 local buttonRequest = InstancePath.Get("ReplicatedStorage/Remotes/ButtonRequest")
 assert(buttonRequest:IsA("RemoteFunction"), "ButtonRequest 必须是 RemoteFunction")
@@ -53,11 +57,19 @@ function ButtonController.Start(runAction)
 			if binding.Config.Scope == scope
 				and binding.Config.ZoneId == zoneId
 				and not binding.IsBusy
+				and not binding.IsRefreshing
 			then
+				binding.IsRefreshing = true
+				local refreshVersion = binding.Version
 				local _, state, presentation = request(buttonName, "GetState")
-				if state ~= "PlayerDataNotReady" then
+				binding.IsRefreshing = false
+				if not binding.IsBusy
+					and binding.Version == refreshVersion
+					and state ~= "PlayerDataNotReady"
+				then
 					binding.Handle:SetState(state or binding.Config.InitialState)
 					binding.WorldUIHandle:SetPresentation(presentation)
+					binding.Handle:RefreshTouching()
 				end
 			end
 		end
@@ -71,11 +83,18 @@ function ButtonController.Start(runAction)
 		task.defer(function()
 			refreshAllScheduled = false
 			for buttonName, binding in bindings do
-				if not binding.IsBusy then
+				if not binding.IsBusy and not binding.IsRefreshing then
+					binding.IsRefreshing = true
+					local refreshVersion = binding.Version
 					local _, state, presentation = request(buttonName, "GetState")
-					if state ~= "PlayerDataNotReady" then
+					binding.IsRefreshing = false
+					if not binding.IsBusy
+						and binding.Version == refreshVersion
+						and state ~= "PlayerDataNotReady"
+					then
 						binding.Handle:SetState(state or binding.Config.InitialState)
 						binding.WorldUIHandle:SetPresentation(presentation)
+						binding.Handle:RefreshTouching()
 					end
 				end
 			end
@@ -91,7 +110,10 @@ function ButtonController.Start(runAction)
 			Config = config,
 			Handle = nil,
 			WorldUIHandle = LocalButtonWorldUIController.Bind(button),
-			IsBusy = false,
+			-- 首个 GetState 返回前必须视为忙碌，避免使用默认状态误触发。
+			IsBusy = true,
+			IsRefreshing = false,
+			Version = 0,
 		}
 		bindings[buttonName] = binding
 		local refreshGeneration = 0
@@ -109,6 +131,7 @@ function ButtonController.Start(runAction)
 						binding.Handle:SetState(state or config.InitialState)
 						binding.WorldUIHandle:SetPresentation(presentation)
 						binding.IsBusy = false
+						binding.Handle:RefreshTouching()
 						task.defer(refreshRelatedButtons, config.Scope, config.ZoneId)
 						return
 					end
@@ -117,11 +140,14 @@ function ButtonController.Start(runAction)
 		end
 
 		binding.Handle = LocalButtonController.Bind(button, function()
-			if binding.IsBusy then
+			if binding.IsBusy
+				or not binding.Handle:CanActivate()
+			then
 				return
 			end
 
 			SoundController.Play("Click")
+			binding.Version += 1
 			binding.IsBusy = true
 			binding.Handle:SetState("Processing")
 
@@ -150,6 +176,7 @@ function ButtonController.Start(runAction)
 				binding.Handle:SetState(nextState)
 				binding.WorldUIHandle:SetPresentation(presentation)
 				binding.IsBusy = false
+				binding.Handle:RefreshTouching()
 				scheduleRefreshAllButtons()
 			end
 		end)
@@ -160,12 +187,22 @@ function ButtonController.Start(runAction)
 		else
 			binding.Handle:SetState(initialState or config.InitialState)
 			binding.WorldUIHandle:SetPresentation(initialPresentation)
+			binding.IsBusy = false
+			binding.Handle:RefreshTouching()
 		end
 	end
 
 	Players.LocalPlayer:GetAttributeChangedSignal(MoneyProtocol.BalanceAttributeName):Connect(
 		scheduleRefreshAllButtons
 	)
+	LocalUIModeService.Observe(function()
+		local enabled = LocalUIModeService.IsAllowed(
+			UIModeVisibilityRules.Channels.Gameplay
+		)
+		for _, binding in bindings do
+			binding.Handle:SetInputEnabled(enabled)
+		end
+	end)
 end
 
 return ButtonController

@@ -34,6 +34,9 @@ local UIModeVisibilityRules = require(
 local LocalUIVisibilityGate = require(
 	script.Parent.Parent.UI.LocalUIVisibilityGate
 )
+local LocalGuiButtonState = require(
+	script.Parent.Parent.UI.LocalGuiButtonState
+)
 local TipBlackController = require(script.Parent.Parent.UI.TipBlackController)
 local SoundController = require(script.Parent.Parent.Sound.SoundController)
 local AnalyticsIntentProtocol = require(
@@ -48,9 +51,7 @@ local PLOT_WAIT_TIMEOUT = 20
 local started = false
 
 local function setButtonEnabled(button: TextButton, enabled: boolean)
-	button.Active = enabled
-	button.Selectable = enabled
-	button.AutoButtonColor = enabled
+	LocalGuiButtonState.SetEnabled(button, enabled)
 end
 
 local function createPresentation(playerGui: PlayerGui)

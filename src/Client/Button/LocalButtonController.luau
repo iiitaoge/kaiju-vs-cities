@@ -12,6 +12,11 @@ local STATE_COLORS = {
 	Special = Color3.fromRGB(235, 190, 65),
 }
 
+local ACTIVATABLE_STATES = {
+	Ready = true,
+	Insufficient = true,
+}
+
 local PULL_DEPTH = 0.35
 local BASE_DEPTH = 0.05
 local PRESS_DURATION = 0.14
@@ -51,18 +56,26 @@ function LocalButtonController.Bind(button: Model, onActivated: ((string) -> ())
 	local touchingParts = {}
 	local activeTweens = {}
 	local connections = {}
-	local visualState = "Ready"
+	-- 状态请求完成前禁止误触发；调用方会在首个快照返回后替换它。
+	local visualState = "Processing"
+	local inputEnabled = true
+	local activationConsumed = false
 	local isPressed = false
 	local isDestroyed = false
 
 	local function setPressed(pressed: boolean)
-		if isDestroyed or isPressed == pressed then
+		local shouldPress = pressed
+			and inputEnabled
+			and not activationConsumed
+			and ACTIVATABLE_STATES[visualState] == true
+		if isDestroyed or isPressed == shouldPress then
 			return
 		end
 
-		isPressed = pressed
+		isPressed = shouldPress
 
-		if pressed then
+		if shouldPress then
+			activationConsumed = true
 			playTweens(
 				activeTweens,
 				TweenInfo.new(PRESS_DURATION, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
@@ -84,7 +97,7 @@ function LocalButtonController.Bind(button: Model, onActivated: ((string) -> ())
 			)
 		end
 
-		if pressed and onActivated then
+		if shouldPress and onActivated then
 			onActivated(button.Name)
 		end
 	end
@@ -94,8 +107,22 @@ function LocalButtonController.Bind(button: Model, onActivated: ((string) -> ())
 		return character ~= nil and part:IsDescendantOf(character)
 	end
 
+	local function refreshTouchingParts()
+		table.clear(touchingParts)
+		activationConsumed = false
+		for _, part in pull:GetTouchingParts() do
+			if belongsToLocalCharacter(part) then
+				touchingParts[part] = true
+			end
+		end
+		setPressed(next(touchingParts) ~= nil)
+	end
+
 	table.insert(connections, pull.Touched:Connect(function(part)
 		if belongsToLocalCharacter(part) then
+			if next(touchingParts) == nil then
+				activationConsumed = false
+			end
 			touchingParts[part] = true
 			setPressed(true)
 		end
@@ -104,14 +131,20 @@ function LocalButtonController.Bind(button: Model, onActivated: ((string) -> ())
 	table.insert(connections, pull.TouchEnded:Connect(function(part)
 		if touchingParts[part] then
 			touchingParts[part] = nil
+			if next(touchingParts) == nil then
+				activationConsumed = false
+			end
 			setPressed(next(touchingParts) ~= nil)
 		end
 	end))
 
 	table.insert(connections, Players.LocalPlayer.CharacterAdded:Connect(function()
 		table.clear(touchingParts)
+		activationConsumed = false
 		setPressed(false)
+		task.defer(refreshTouchingParts)
 	end))
+	task.defer(refreshTouchingParts)
 
 	local handle = {}
 
@@ -119,7 +152,9 @@ function LocalButtonController.Bind(button: Model, onActivated: ((string) -> ())
 		assert(STATE_COLORS[state], string.format("未知按钮状态：%s", state))
 		visualState = state
 
-		if not isPressed then
+		if not ACTIVATABLE_STATES[visualState] and isPressed then
+			setPressed(false)
+		elseif not isPressed then
 			playTweens(
 				activeTweens,
 				TweenInfo.new(RELEASE_DURATION, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
@@ -129,6 +164,26 @@ function LocalButtonController.Bind(button: Model, onActivated: ((string) -> ())
 				base,
 				baseRestCFrame
 			)
+		end
+	end
+
+	function handle:CanActivate(): boolean
+		return not isDestroyed
+			and inputEnabled
+			and ACTIVATABLE_STATES[visualState] == true
+	end
+
+	function handle:RefreshTouching()
+		if next(touchingParts) == nil then
+			activationConsumed = false
+		end
+		setPressed(next(touchingParts) ~= nil)
+	end
+
+	function handle:SetInputEnabled(enabled: boolean)
+		inputEnabled = enabled
+		if not enabled and isPressed then
+			setPressed(false)
 		end
 	end
 

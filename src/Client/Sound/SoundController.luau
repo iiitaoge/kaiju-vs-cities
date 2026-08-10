@@ -13,6 +13,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local SoundService = game:GetService("SoundService")
 local Workspace = game:GetService("Workspace")
 
+local LocalGuiButtonState = require(script.Parent.Parent.UI.LocalGuiButtonState)
+
 local SoundController = {}
 
 local SOUND_ROOT_NAME = "Sound"
@@ -104,7 +106,7 @@ local function bindButton(button: GuiButton)
 	buttonConnections[button] = connections
 
 	table.insert(connections, button.Activated:Connect(function()
-		if button.Active then
+		if LocalGuiButtonState.IsEnabled(button) then
 			playOneShot("Click")
 		end
 	end))
