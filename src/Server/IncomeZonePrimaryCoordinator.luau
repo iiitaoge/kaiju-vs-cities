@@ -7,7 +7,6 @@
 ]]
 
 local IncomeZoneActionQuery = require(script.Parent.IncomeZoneActionQuery)
-local ExpandedPresentationPublisher = require(script.Parent.ExpandedPresentationPublisher)
 local PlayerRegionTransactionLock = require(script.Parent.PlayerRegionTransactionLock)
 local RegionUpgradeCityCoordinator = require(script.Parent.RegionUpgradeCityCoordinator)
 
@@ -48,17 +47,6 @@ local function executeUnlocked(player: Player, regionId: string)
 		return result(false, "StateQueryFailed", action, nil)
 	end
 	local committed = after.Level == permission.TargetLevel
-	if committed then
-		local published = ExpandedPresentationPublisher.PublishRegionExpanded(player, regionId)
-		if not published.Succeeded then
-			warn(string.format(
-				"发布区域扩展提示失败：%s/%s (%s)",
-				player.Name,
-				regionId,
-				published.Reason or "Unknown"
-			))
-		end
-	end
 	return result(
 		committed,
 		if committed then nil else "RegionActionNotCommitted",
