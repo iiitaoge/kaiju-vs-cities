@@ -23,6 +23,9 @@ local LocalUIVisibilityGate = require(
 local LocalGuiButtonState = require(
 	script.Parent.Parent.UI.LocalGuiButtonState
 )
+local LocalAttackSelectionTutorialState = require(
+	script.Parent.LocalAttackSelectionTutorialState
+)
 local SoundController = require(script.Parent.Parent.Sound.SoundController)
 local TipBlackController = require(script.Parent.Parent.UI.TipBlackController)
 local UIModeVisibilityRules = require(
@@ -38,6 +41,50 @@ local REGION_ATTACK_IN_PROGRESS_TEXT = "This region is currently under attack."
 local function setAttackButtonState(button: GuiButton, visible: boolean, enabled: boolean)
 	button.Visible = visible
 	LocalGuiButtonState.SetEnabled(button, visible and enabled)
+end
+
+local function resolveTutorialWorldBounds(target): (CFrame?, Vector3?)
+	if type(target) ~= "table" then
+		return nil, nil
+	end
+
+	local fallbackCFrame: CFrame? = nil
+	local fallbackSize: Vector3? = nil
+	if type(target.UnlockedTerritories) == "table" then
+		for _, territory in target.UnlockedTerritories do
+			if type(territory) ~= "table"
+				or typeof(territory.CFrame) ~= "CFrame"
+				or typeof(territory.Size) ~= "Vector3"
+				or territory.Size.X <= 0
+				or territory.Size.Y <= 0
+				or territory.Size.Z <= 0
+				then
+				continue
+			end
+			if not fallbackCFrame then
+				fallbackCFrame = territory.CFrame
+				fallbackSize = territory.Size
+			end
+			if territory.AttackInProgress ~= true then
+				return territory.CFrame, territory.Size
+			end
+		end
+	end
+	if fallbackCFrame and fallbackSize then
+		return fallbackCFrame, fallbackSize
+	end
+
+	local attackView = target.AttackView
+	if type(attackView) == "table"
+		and typeof(attackView.CFrame) == "CFrame"
+		and typeof(attackView.Size) == "Vector3"
+		and attackView.Size.X > 0
+		and attackView.Size.Y > 0
+		and attackView.Size.Z > 0
+	then
+		return attackView.CFrame, attackView.Size
+	end
+	return nil, nil
 end
 
 local function resolveHUD(): (LocalAttackSelectionHUDAccess.References?, string?)
@@ -91,6 +138,7 @@ function AttackSelectionHUDController.Open(spawnPointId: string, callbacks)
 	end
 	local mobileAttackButton = UserInputService.TouchEnabled
 	refs.Attack.Visible = mobileAttackButton
+	LocalAttackSelectionTutorialState.Begin()
 	local function handleValidationFailed(validationReason: string)
 		if validationReason ~= "RequestFailed"
 			and validationReason ~= "InvalidServerResponse"
@@ -129,6 +177,7 @@ function AttackSelectionHUDController.Open(spawnPointId: string, callbacks)
 		end
 		closed = true
 		following = false
+		LocalAttackSelectionTutorialState.End()
 		setMobileAttackButtonEnabled(false)
 		rootVisibility:SetDesiredVisible(false)
 		refs.BrowseControls.Visible = true
@@ -142,6 +191,7 @@ function AttackSelectionHUDController.Open(spawnPointId: string, callbacks)
 
 	session = PlayerMonsterAttackSelectionCoordinator.Open(spawnPointId, {
 		OnAccepted = function()
+			LocalAttackSelectionTutorialState.End()
 			SoundController.Play("Yes")
 			if not following then
 				cleanup()
@@ -161,6 +211,9 @@ function AttackSelectionHUDController.Open(spawnPointId: string, callbacks)
 				return
 			end
 			setMobileAttackButtonEnabled(false)
+			local guideCFrame, guideSize = resolveTutorialWorldBounds(target)
+			LocalAttackSelectionTutorialState.SetWorldGuideBounds(guideCFrame, guideSize)
+			LocalAttackSelectionTutorialState.SetMobileAimReady(false)
 			local solo = target.Kind == "Solo"
 			refs.BrowseControls.Visible = not solo
 			refs.Title.Text = if solo then target.DisplayName else target.Player.Name
@@ -172,10 +225,12 @@ function AttackSelectionHUDController.Open(spawnPointId: string, callbacks)
 		OnValidationFailed = handleValidationFailed,
 		OnPendingWorldPointChanged = function(hasPoint)
 			if not closed then
+				LocalAttackSelectionTutorialState.SetMobileAimReady(hasPoint)
 				setMobileAttackButtonEnabled(hasPoint)
 			end
 		end,
 		OnClosed = function(closeReason)
+			LocalAttackSelectionTutorialState.End()
 			setMobileAttackButtonEnabled(false)
 			if closeReason == "CommandAccepted" then
 				refs.BrowseControls.Visible = false
