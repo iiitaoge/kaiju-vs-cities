@@ -20,18 +20,44 @@ export type References = {
 	Robux: Frame,
 }
 
+export type WorldReferences = {
+	Glass: BasePart,
+	Attachment: Attachment?,
+	Gui: BillboardGui?,
+}
+
 local function childOfClass(parent: Instance, name: string, className: string): Instance?
 	local child = parent:FindFirstChild(name)
 	return if child and child:IsA(className) then child else nil
 end
 
-function LocalMonsterIncubatorUIAccess.Resolve(incubator: Model): (References?, string?)
+function LocalMonsterIncubatorUIAccess.ResolveWorld(
+	incubator: Model
+): (WorldReferences?, string?)
 	if typeof(incubator) ~= "Instance" or not incubator:IsA("Model") then
 		return nil, "InvalidIncubator"
 	end
 	local glass = childOfClass(incubator, "Glass", "BasePart")
 	local attachment = glass and childOfClass(glass, "MonsterUIAttachment", "Attachment")
 	local gui = attachment and childOfClass(attachment, "MonsterUI", "BillboardGui")
+	if not glass then
+		return nil, "InvalidMonsterIncubatorWorldHierarchy:Missing:Glass"
+	end
+	return {
+		Glass = glass :: BasePart,
+		Attachment = if attachment then attachment :: Attachment else nil,
+		Gui = if gui then gui :: BillboardGui else nil,
+	}, nil
+end
+
+function LocalMonsterIncubatorUIAccess.Resolve(incubator: Model): (References?, string?)
+	local world, worldReason = LocalMonsterIncubatorUIAccess.ResolveWorld(incubator)
+	if not world then
+		return nil, worldReason
+	end
+	local glass = world.Glass
+	local attachment = world.Attachment
+	local gui = world.Gui
 	local panel = gui and childOfClass(gui, "Panel", "Frame")
 	local titleFrame = panel and childOfClass(panel, "Title", "Frame")
 	local title = titleFrame and childOfClass(titleFrame, "Title", "TextLabel")

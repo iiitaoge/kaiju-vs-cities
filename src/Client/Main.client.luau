@@ -25,9 +25,6 @@ local ButtonFeedbackController = require(
 local ResponsiveScreenGuiController = require(
 	script.Parent.UI.ResponsiveScreenGuiController
 )
-local DefenseMonsterUIController = require(
-	script.Parent.Monster.DefenseMonsterUIController
-)
 local LocalPlayerBuildingInteractionCoordinator = require(
 	script.Parent.Building.LocalPlayerBuildingInteractionCoordinator
 )
@@ -95,7 +92,6 @@ MonsterDuelWatchButtonController.Start()
 MonsterExpeditionProgressUIController.Start()
 MonsterIncubatorUIController.Start()
 MonsterAttackRosterUIController.Start()
-DefenseMonsterUIController.Start()
 task.spawn(RebirthButtonController.Start)
 LocalPlayerBuildingInteractionCoordinator.Start(
 	IncomeGainPresentationController.PlayTouchContact

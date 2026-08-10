@@ -1,23 +1,27 @@
 --[[
-	职责：把本地玩家最近的已建培养罐 MonsterUI 以近距离屏幕面板接到现有怪兽管理与攻击选择链。
-	输入：本地玩家 M1-S1 至 M1-S4 的运行时培养罐、玩家位置、余额镜像和服务器管理快照。
-	输出：安全区内固定显示的标题、现金升级价格、Start/升级按钮状态及点击请求。
-	内部算法：在显示范围内选择水平距离最近的培养罐，将其 Panel 挂到独立 ScreenGui，组合管理状态机；怪兽回到 IdleAtSpawn 时重新打开。
+	职责：把本地玩家最近的进攻培养罐或防守怪兽接到 HUD.Panel 管理面板。
+	输入：本地玩家运行时培养罐/防守怪兽、玩家位置、余额镜像和服务器管理快照。
+	输出：HUD.Panel 固定显示标题、现金升级价格、攻击/升级按钮状态及点击请求。
+	内部算法：在显示范围内选择水平距离最近的可管理目标；进攻培养罐显示攻击和升级，防守怪兽只显示升级；两者共用一个管理会话。
 	不负责：创建 UI、美术布局、扣款、升级模型、选择攻击目标或 Robux 购买。
 ]]
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local Workspace = game:GetService("Workspace")
 
 local AnalyticsIntentClient = require(script.Parent.Parent.Analytics.AnalyticsIntentClient)
 local LocalMonsterBuildPresentationAccess = require(script.Parent.LocalMonsterBuildPresentationAccess)
 local LocalMonsterIncubatorUIAccess = require(script.Parent.LocalMonsterIncubatorUIAccess)
+local LocalMonsterManagementPanelAccess = require(
+	script.Parent.LocalMonsterManagementPanelAccess
+)
 local MonsterManagementCoordinator = require(script.Parent.MonsterManagementCoordinator)
 local AttackSelectionHUDController = require(script.Parent.AttackSelectionHUDController)
 local MonsterCatalog = require(ReplicatedStorage.Shared.Monster.MonsterCatalog)
+local DefenseMonsterSlotCatalog = require(
+	ReplicatedStorage.Shared.Monster.DefenseMonsterSlotCatalog
+)
 local MoneyProtocol = require(ReplicatedStorage.Shared.Economy.MoneyProtocol)
 local MonsterIncubatorUIPresentationConfig = require(
 	ReplicatedStorage.Shared.Monster.MonsterIncubatorUIPresentationConfig
@@ -31,12 +35,14 @@ local MonsterSpawnPointCatalog = require(
 local CompactNumberFormatter = require(
 	ReplicatedStorage.Shared.UI.CompactNumberFormatter
 )
-local ResponsiveUIScale = require(ReplicatedStorage.Shared.UI.ResponsiveUIScale)
 local UIModeVisibilityRules = require(
 	ReplicatedStorage.Shared.UI.UIModeVisibilityRules
 )
 local LocalUIVisibilityGate = require(
 	script.Parent.Parent.UI.LocalUIVisibilityGate
+)
+local LocalGuiButtonState = require(
+	script.Parent.Parent.UI.LocalGuiButtonState
 )
 local TipBlackController = require(script.Parent.Parent.UI.TipBlackController)
 local SoundController = require(script.Parent.Parent.Sound.SoundController)
@@ -49,65 +55,21 @@ local MonsterIncubatorUIController = {}
 local PLOT_WAIT_TIMEOUT = 20
 local BUILD_RETRY_DELAY = 0.25
 local BINDING_REFRESH_SECONDS = 0.1
-local RESPONSIVE_SCALE_NAME = "ResponsiveUIScale"
-local SCREEN_GUI_NAME = "MonsterManagementScreen"
-local SCREEN_CONTAINER_NAME = "Container"
 local started = false
 
+type TargetKind = "Attack" | "Defense"
+
+type TargetCandidate = {
+	Kind: TargetKind,
+	SpawnPointId: string,
+	Incubator: Model?,
+	References: LocalMonsterIncubatorUIAccess.WorldReferences?,
+	DefenseMonster: Model?,
+	Position: Vector3,
+}
+
 local function setButtonEnabled(button: TextButton, enabled: boolean)
-	button.Active = enabled
-	button.Selectable = enabled
-	button.AutoButtonColor = enabled
-end
-
-local function getOrCreateResponsiveScale(panel: Frame): UIScale
-	local existing = panel:FindFirstChild(RESPONSIVE_SCALE_NAME)
-	if existing and existing:IsA("UIScale") then
-		return existing
-	end
-	if existing then
-		existing:Destroy()
-	end
-	local uiScale = Instance.new("UIScale")
-	uiScale.Name = RESPONSIVE_SCALE_NAME
-	uiScale.Parent = panel
-	return uiScale
-end
-
-local function createScreenPresentation(playerGui: PlayerGui, panel: Frame): ScreenGui
-	local existing = playerGui:FindFirstChild(SCREEN_GUI_NAME)
-	if existing then
-		existing:Destroy()
-	end
-
-	local screenGui = Instance.new("ScreenGui")
-	screenGui.Name = SCREEN_GUI_NAME
-	screenGui.Enabled = false
-	screenGui.ResetOnSpawn = false
-	screenGui.IgnoreGuiInset = false
-	screenGui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets
-	screenGui.SafeAreaCompatibility = Enum.SafeAreaCompatibility.FullscreenExtension
-	screenGui.ClipToDeviceSafeArea = true
-	screenGui.DisplayOrder = MonsterIncubatorUIPresentationConfig.DisplayOrder
-	screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-
-	local maximumCanvasSize = MonsterIncubatorUIPresentationConfig.BaseCanvasSize
-		* MonsterIncubatorUIPresentationConfig.ResponsiveScale.MaxScale
-	local container = Instance.new("Frame")
-	container.Name = SCREEN_CONTAINER_NAME
-	container.BackgroundTransparency = 1
-	container.BorderSizePixel = 0
-	container.ClipsDescendants = false
-	container.AnchorPoint = MonsterIncubatorUIPresentationConfig.ScreenAnchorPoint
-	container.Position = MonsterIncubatorUIPresentationConfig.ScreenPosition
-	container.Size = UDim2.fromOffset(
-		math.round(maximumCanvasSize.X),
-		math.round(maximumCanvasSize.Y)
-	)
-	container.Parent = screenGui
-	panel.Parent = container
-	screenGui.Parent = playerGui
-	return screenGui
+	LocalGuiButtonState.SetEnabled(button, enabled)
 end
 
 function MonsterIncubatorUIController.Start()
@@ -119,6 +81,14 @@ function MonsterIncubatorUIController.Start()
 	task.spawn(function()
 		local player = Players.LocalPlayer
 		local playerGui = player:WaitForChild("PlayerGui")
+		local panelReferences, panelReason = LocalMonsterManagementPanelAccess.Wait(
+			playerGui
+		)
+		if not panelReferences then
+			warn("怪兽管理 HUD.Panel 初始化失败：" .. tostring(panelReason))
+			return
+		end
+		panelReferences.Panel.Visible = false
 		local plot = LocalMonsterBuildPresentationAccess.WaitForPlot(
 			player.UserId,
 			PLOT_WAIT_TIMEOUT
@@ -130,15 +100,15 @@ function MonsterIncubatorUIController.Start()
 
 		local boundIncubator: Model? = nil
 		local boundSpawnPointId: string? = nil
-		local references: LocalMonsterIncubatorUIAccess.References? = nil
+		local boundTargetKind: TargetKind? = nil
+		local boundDefenseMonster: Model? = nil
+		local boundAnchorPosition: Vector3? = nil
+		local references: LocalMonsterIncubatorUIAccess.WorldReferences? = nil
 		local management = nil
 		local currentMonster: Model? = nil
-		local responsiveScale: UIScale? = nil
-		local screenGui: ScreenGui? = nil
 		local visibilityGate: LocalUIVisibilityGate.Handle? = nil
 		local managementWantsVisible = false
 		local isWithinProximity = false
-		local lastViewportSize: Vector2? = nil
 		local uiConnections: { RBXScriptConnection } = {}
 		local monsterConnections: { RBXScriptConnection } = {}
 		local retryToken = 0
@@ -160,12 +130,21 @@ function MonsterIncubatorUIController.Start()
 			end
 		end
 
+		local function getBoundTargetPosition(): Vector3?
+			if references then
+				return references.Glass.Position
+			end
+			if boundDefenseMonster and boundDefenseMonster.Parent then
+				return boundDefenseMonster:GetPivot().Position
+			end
+			return boundAnchorPosition
+		end
+
 		local function updateSpatialPresentation()
-			local refs = references
-			local uiScale = responsiveScale
+			local targetPosition = getBoundTargetPosition()
 			local character = player.Character
 			local root = character and character:FindFirstChild("HumanoidRootPart")
-			if not refs or not uiScale or not root or not root:IsA("BasePart") then
+			if not targetPosition or not root or not root:IsA("BasePart") then
 				isWithinProximity = false
 				applyVisibility()
 				return
@@ -173,29 +152,14 @@ function MonsterIncubatorUIController.Start()
 
 			isWithinProximity = MonsterIncubatorUIPlacement.IsWithinHorizontalDistance(
 				root.Position,
-				refs.Glass.Position,
+				targetPosition,
 				MonsterIncubatorUIPresentationConfig.HorizontalActivationDistance
 			)
-
-			local camera = Workspace.CurrentCamera
-			if camera then
-				local viewportSize = camera.ViewportSize
-				if lastViewportSize ~= viewportSize then
-					lastViewportSize = viewportSize
-					local scale = ResponsiveUIScale.Compute(
-						viewportSize,
-						UserInputService.TouchEnabled,
-						MonsterIncubatorUIPresentationConfig.ResponsiveScale
-					)
-					uiScale.Scale = scale
-						/ MonsterIncubatorUIPresentationConfig.ResponsiveScale.MaxScale
-				end
-			end
 			applyVisibility()
 		end
 
 		local function render(state)
-			local refs = references
+			local refs = panelReferences
 			if not refs then
 				return
 			end
@@ -224,6 +188,10 @@ function MonsterIncubatorUIController.Start()
 				managementOpenReported = false
 			end
 			refs.Robux.Visible = false
+			local startFrame = refs.StartButton.Parent
+			if startFrame and startFrame:IsA("GuiObject") then
+				startFrame.Visible = boundTargetKind == "Attack"
+			end
 			refs.StartValue.Text = if state.Mode == "SelectingAttack" then "Select Target" else "Start"
 
 			if snapshot then
@@ -241,7 +209,9 @@ function MonsterIncubatorUIController.Start()
 			local canInteract = state.Mode == "Managing" and snapshot ~= nil
 			setButtonEnabled(
 				refs.StartButton,
-				canInteract and snapshot.Attack.Allowed
+				boundTargetKind == "Attack"
+					and canInteract
+					and snapshot.Attack.Allowed
 			)
 			setButtonEnabled(
 				refs.MoneyButton,
@@ -267,7 +237,6 @@ function MonsterIncubatorUIController.Start()
 			disconnectAll(uiConnections)
 			managementWantsVisible = false
 			isWithinProximity = false
-			lastViewportSize = nil
 			if management then
 				management.Close()
 			end
@@ -277,51 +246,58 @@ function MonsterIncubatorUIController.Start()
 			end
 			if references then
 				local refs = references
-				refs.Gui.Enabled = false
-				if refs.Gui.Parent and refs.Attachment.Parent then
-					refs.Panel.Parent = refs.Gui
-				elseif refs.Panel.Parent then
-					refs.Panel:Destroy()
+				if refs.Gui then
+					refs.Gui.Enabled = false
 				end
 			end
-			if screenGui then
-				screenGui:Destroy()
+			panelReferences.Panel.Visible = false
+			local startFrame = panelReferences.StartButton.Parent
+			if startFrame and startFrame:IsA("GuiObject") then
+				startFrame.Visible = false
 			end
 			management = nil
-			responsiveScale = nil
-			screenGui = nil
 			references = nil
 			boundIncubator = nil
 			boundSpawnPointId = nil
+			boundTargetKind = nil
+			boundDefenseMonster = nil
+			boundAnchorPosition = nil
 			managementOpenReported = false
 		end
 
-		local function bindIncubator(
+		local function bindTarget(
 			spawnPointId: string,
-			incubator: Model,
-			resolved: LocalMonsterIncubatorUIAccess.References
+			targetKind: TargetKind,
+			incubator: Model?,
+			resolved: LocalMonsterIncubatorUIAccess.WorldReferences?,
+			defenseMonster: Model?,
+			anchorPosition: Vector3
 		)
-			if boundSpawnPointId == spawnPointId and boundIncubator == incubator then
+			if boundSpawnPointId == spawnPointId
+				and boundTargetKind == targetKind
+				and boundIncubator == incubator
+				and boundDefenseMonster == defenseMonster
+			then
 				return
 			end
 			unbindIncubator()
 			boundSpawnPointId = spawnPointId
+			boundTargetKind = targetKind
 			boundIncubator = incubator
+			boundDefenseMonster = defenseMonster
+			boundAnchorPosition = anchorPosition
 			references = resolved
 			managementWantsVisible = false
 			isWithinProximity = false
-			lastViewportSize = nil
-			resolved.Gui.Enabled = false
-			responsiveScale = getOrCreateResponsiveScale(resolved.Panel)
-			resolved.Robux.Visible = false
-			screenGui = createScreenPresentation(playerGui, resolved.Panel)
+			if resolved and resolved.Gui then
+				resolved.Gui.Enabled = false
+			end
+			panelReferences.Panel.Visible = false
+			panelReferences.Robux.Visible = false
 			visibilityGate = LocalUIVisibilityGate.Create(
 				UIModeVisibilityRules.Channels.Gameplay,
 				function(visible)
-					local layer = screenGui
-					if layer then
-						layer.Enabled = visible
-					end
+					panelReferences.Panel.Visible = visible
 				end,
 				false
 			)
@@ -342,14 +318,17 @@ function MonsterIncubatorUIController.Start()
 				end,
 			})
 			local session = management
-			table.insert(uiConnections, resolved.StartButton.Activated:Connect(function()
+			table.insert(uiConnections, panelReferences.StartButton.Activated:Connect(function()
+				if targetKind ~= "Attack" then
+					return
+				end
 				AnalyticsIntentClient.Record(
 					AnalyticsIntentProtocol.Intents.AttackStartClicked,
 					spawnPointId
 				)
 				session.ChooseAttack()
 			end))
-			table.insert(uiConnections, resolved.MoneyButton.Activated:Connect(function()
+			table.insert(uiConnections, panelReferences.MoneyButton.Activated:Connect(function()
 				AnalyticsIntentClient.Record(
 					AnalyticsIntentProtocol.Intents.MonsterUpgradeClicked,
 					spawnPointId
@@ -406,10 +385,24 @@ function MonsterIncubatorUIController.Start()
 		local function refreshRuntimeBindings()
 			local character = player.Character
 			local root = character and character:FindFirstChild("HumanoidRootPart")
-			local nearestSpawnPointId: string? = nil
-			local nearestIncubator: Model? = nil
-			local nearestReferences: LocalMonsterIncubatorUIAccess.References? = nil
+			local nearestCandidate: TargetCandidate? = nil
 			local nearestDistance = math.huge
+
+			local function consider(candidate: TargetCandidate)
+				if not root or not root:IsA("BasePart") then
+					return
+				end
+				local distance = MonsterIncubatorUIPlacement.HorizontalDistance(
+					root.Position,
+					candidate.Position
+				)
+				if distance <= MonsterIncubatorUIPresentationConfig.HorizontalActivationDistance
+					and distance < nearestDistance
+				then
+					nearestCandidate = candidate
+					nearestDistance = distance
+				end
+			end
 
 			if root and root:IsA("BasePart") then
 				for _, definition in MonsterSpawnPointCatalog.GetAll() do
@@ -422,28 +415,55 @@ function MonsterIncubatorUIController.Start()
 						and definition.SpawnPointId == boundSpawnPointId
 						then references
 						elseif incubator
-						then LocalMonsterIncubatorUIAccess.Resolve(incubator)
+						then LocalMonsterIncubatorUIAccess.ResolveWorld(incubator)
 						else nil
 					if incubator and resolved then
-						local distance = MonsterIncubatorUIPlacement.HorizontalDistance(
-							root.Position,
-							resolved.Glass.Position
-						)
-						if distance <= MonsterIncubatorUIPresentationConfig.HorizontalActivationDistance
-							and distance < nearestDistance
+						consider({
+							Kind = "Attack",
+							SpawnPointId = definition.SpawnPointId,
+							Incubator = incubator,
+							References = resolved,
+							DefenseMonster = nil,
+							Position = resolved.Glass.Position,
+						})
+					end
+				end
+
+				local runtime = plot:FindFirstChild("Runtime")
+				local monsterRoot = runtime and runtime:FindFirstChild("Monsters")
+				if monsterRoot and monsterRoot:IsA("Folder") then
+					for _, child in monsterRoot:GetChildren() do
+						local spawnPointId = child:GetAttribute("MonsterSpawnPointId")
+						if child:IsA("Model")
+							and child:GetAttribute("MonsterOwnerUserId") == player.UserId
+							and child:GetAttribute("MonsterRole") == "Defense"
+							and child:GetAttribute("MonsterState") == "IdleAtSpawn"
+							and type(spawnPointId) == "string"
+							and DefenseMonsterSlotCatalog.Get(spawnPointId) ~= nil
 						then
-							nearestSpawnPointId = definition.SpawnPointId
-							nearestIncubator = incubator
-							nearestReferences = resolved
-							nearestDistance = distance
+							consider({
+								Kind = "Defense",
+								SpawnPointId = spawnPointId,
+								Incubator = nil,
+								References = nil,
+								DefenseMonster = child,
+								Position = child:GetPivot().Position,
+							})
 						end
 					end
 				end
 			end
 
-			if nearestSpawnPointId and nearestIncubator and nearestReferences then
-				bindIncubator(nearestSpawnPointId, nearestIncubator, nearestReferences)
-			elseif boundIncubator then
+			if nearestCandidate then
+				bindTarget(
+					nearestCandidate.SpawnPointId,
+					nearestCandidate.Kind,
+					nearestCandidate.Incubator,
+					nearestCandidate.References,
+					nearestCandidate.DefenseMonster,
+					nearestCandidate.Position
+				)
+			elseif boundIncubator or boundDefenseMonster then
 				unbindIncubator()
 			end
 
