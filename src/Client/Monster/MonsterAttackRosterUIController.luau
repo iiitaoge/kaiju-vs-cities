@@ -1,7 +1,8 @@
 --[[
 	职责：维护 HUD.Right.Attack 打开的已建造哥斯拉攻击列表。
 	输入：Start；服务器怪兽管理快照；Unit 的 SpawnPointId Attribute。
-	输出：克隆已建造 Unit、显示 Lv.x、响应 Start.Button，并复用正式攻击选择 HUD。
+	输出：新手引导完成提示结束后显示攻击入口；克隆已建造 Unit、显示 Lv.x、响应 Start.Button，
+		并复用正式攻击选择 HUD。
 	内部算法：打开列表时按 MonsterSpawnPointCatalog 顺序查询快照；Built=true 才克隆 Unit；
 		点击后隐藏 Destroy，调用 AttackSelectionHUDController.Open；取消或不可用时恢复列表。
 	不负责：创建怪兽、升级、目标查询、攻击坐标校验或攻击服务器请求。
@@ -15,6 +16,7 @@ local LocalMonsterAttackRosterUIAccess = require(
 	script.Parent.LocalMonsterAttackRosterUIAccess
 )
 local MonsterManagementRemoteClient = require(script.Parent.MonsterManagementRemoteClient)
+local TutorialController = require(script.Parent.Parent.Tutorial.TutorialController)
 local LocalUIVisibilityGate = require(script.Parent.Parent.UI.LocalUIVisibilityGate)
 local LocalGuiButtonState = require(
 	script.Parent.Parent.UI.LocalGuiButtonState
@@ -86,7 +88,7 @@ function MonsterAttackRosterUIController.Start()
 			function(visible)
 				references.AttackButton.Visible = visible
 			end,
-			references.AttackButton.Visible
+			false
 		)
 
 		local function clearClonedUnits()
@@ -221,7 +223,12 @@ function MonsterAttackRosterUIController.Start()
 		references.AttackButton.Activated:Connect(showPanel)
 		references.CloseButton.Activated:Connect(hidePanel)
 		hidePanel()
-		attackButtonVisibility:SetDesiredVisible(true)
+		task.spawn(function()
+			TutorialController.WaitUntilComplete()
+			if playerGui.Parent then
+				attackButtonVisibility:SetDesiredVisible(true)
+			end
+		end)
 	end)
 end
 

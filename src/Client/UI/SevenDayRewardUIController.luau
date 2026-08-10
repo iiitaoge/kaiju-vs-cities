@@ -1,9 +1,9 @@
 --[[
 	职责：把七日奖励配置和服务器状态展示到 Main.Check，并发送领取请求。
 	输入：PlayerGui.Main.Check、ReplicatedStorage 中的奖励 RemoteFunction、七日奖励配置和货币图标数据树。
-	输出：每次客户端加入游戏时自动显示七日奖励面板；七张奖励卡的图标/数值/可用状态、关闭按钮行为，
+	输出：新手引导完成提示结束后自动显示七日奖励面板；七张奖励卡的图标/数值/可用状态、关闭按钮行为，
 	以及成功领取后的最新 UI 状态。
-	内部算法：启动时先显示面板，再读取所有配置并向服务器请求当前状态；已领取档位变暗且不可点击，
+	内部算法：启动时先读取所有配置并向服务器请求当前状态，等待引导完成提示结束后显示面板；已领取档位变暗且不可点击，
 	其余档位保持可点击；点击当前可领取档位发送领取请求，点击其他未领取档位显示英文等待提示，并在本地冷却结束时重新同步一次。
 	不负责：计算奖励、判断冷却、修改货币、创建存档或创建整套 UI。
 ]]
@@ -25,6 +25,7 @@ local LocalUIVisibilityGate = require(script.Parent.LocalUIVisibilityGate)
 local UIModeVisibilityRules = require(
 	ReplicatedStorage.Shared.UI.UIModeVisibilityRules
 )
+local TutorialController = require(script.Parent.Parent.Tutorial.TutorialController)
 
 local SevenDayRewardUIController = {}
 
@@ -464,7 +465,7 @@ function SevenDayRewardUIController.Start()
 		return
 	end
 	references = resolved
-	-- 进入游戏时自动弹出；关闭按钮只影响本次客户端会话。
+	-- 新手引导完成提示结束后自动弹出；关闭按钮只影响本次客户端会话。
 	resolved.Root.Visible = false
 	visibilityGate = LocalUIVisibilityGate.Create(
 		UIModeVisibilityRules.Channels.Gameplay,
@@ -482,8 +483,6 @@ function SevenDayRewardUIController.Start()
 		warn("七日奖励 RemoteFunction 不存在：" .. SevenDayRewardProtocol.RemoteName)
 		return
 	end
-	visibilityGate:SetDesiredVisible(true)
-
 	resolved.CloseButton.Activated:Connect(function()
 		if visibilityGate then
 			visibilityGate:SetDesiredVisible(false)
@@ -499,6 +498,12 @@ function SevenDayRewardUIController.Start()
 	renderConfiguredRewards()
 	refreshState()
 	task.spawn(refreshWhenCooldownEnds)
+	task.spawn(function()
+		TutorialController.WaitUntilComplete()
+		if started and visibilityGate then
+			visibilityGate:SetDesiredVisible(true)
+		end
+	end)
 end
 
 return SevenDayRewardUIController
