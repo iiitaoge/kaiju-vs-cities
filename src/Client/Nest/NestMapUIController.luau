@@ -13,6 +13,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalUIVisibilityGate = require(
 	script.Parent.Parent.UI.LocalUIVisibilityGate
 )
+local LocalGuiButtonState = require(
+	script.Parent.Parent.UI.LocalGuiButtonState
+)
 local UIModeVisibilityRules = require(
 	ReplicatedStorage.Shared.UI.UIModeVisibilityRules
 )
@@ -66,6 +69,7 @@ local active = false
 local actionBusy = false
 local refreshInFlight = false
 local pollingToken = 0
+local actionToken = 0
 local started = false
 
 local function resolveChild(parent: Instance?, name: string): Instance?
@@ -162,9 +166,7 @@ local function resolveReferences(playerGui: PlayerGui): (References?, string?)
 end
 
 local function setButtonEnabled(button: GuiButton, enabled: boolean)
-	button.Active = enabled
-	button.Selectable = enabled
-	button.AutoButtonColor = enabled
+	LocalGuiButtonState.SetEnabled(button, enabled)
 end
 
 local function getDefinitions()
@@ -260,14 +262,16 @@ local function applyState(state)
 	applySelectedSnapshot()
 end
 
-local function refreshState()
+local function refreshState(expectedPollingToken: number?)
 	if not active or refreshInFlight then
 		return
 	end
 	refreshInFlight = true
 	local response = NestMapRemoteClient.GetState()
 	refreshInFlight = false
-	if not active then
+	if not active
+		or (expectedPollingToken ~= nil and expectedPollingToken ~= pollingToken)
+	then
 		return
 	end
 	if response.Succeeded and response.State then
@@ -282,7 +286,7 @@ local function beginPolling()
 	local token = pollingToken
 	task.spawn(function()
 		while active and token == pollingToken do
-			refreshState()
+			refreshState(token)
 			task.wait(NestMapCameraConfigs.RefreshIntervalSeconds)
 		end
 	end)
@@ -320,7 +324,10 @@ local function moveSelection(delta: number)
 	end
 	selectedIndex = ((selectedIndex - 1 + delta) % count) + 1
 	focusSelectedNest()
-	task.spawn(refreshState)
+	local token = pollingToken
+	task.spawn(function()
+		refreshState(token)
+	end)
 end
 
 local function applyActionResponse(response)
@@ -355,12 +362,17 @@ local function dispatchSelected()
 	end
 
 	actionBusy = true
+	actionToken += 1
+	local ownActionToken = actionToken
 	applySelectedSnapshot()
 	task.spawn(function()
 		local response = NestMapRemoteClient.Dispatch(
 			deployment.VehicleInstanceId :: string,
 			nestId :: string
 		)
+		if not active or ownActionToken ~= actionToken then
+			return
+		end
 		actionBusy = false
 		if response.Succeeded then
 			VehicleDeploymentState.Clear()
@@ -383,9 +395,14 @@ local function recallSelected()
 	end
 
 	actionBusy = true
+	actionToken += 1
+	local ownActionToken = actionToken
 	applySelectedSnapshot()
 	task.spawn(function()
 		local response = NestMapRemoteClient.Recall(ownVehicle.VehicleInstanceId)
+		if not active or ownActionToken ~= actionToken then
+			return
+		end
 		actionBusy = false
 		if response.Succeeded and callbacks.OnVehicleStateChanged then
 			callbacks.OnVehicleStateChanged()
@@ -398,6 +415,7 @@ local function closeInternal(notifyStateChanged: boolean)
 	local deploymentWasActive = VehicleDeploymentState.Get().Active
 	active = false
 	pollingToken += 1
+	actionToken += 1
 	actionBusy = false
 	NestMapCameraController.Stop("NestMapClosed")
 	VehicleDeploymentState.Clear()
@@ -446,7 +464,10 @@ function NestMapUIController.Open()
 	applySelectedSnapshot()
 	focusSelectedNest()
 	beginPolling()
-	task.spawn(refreshState)
+	local token = pollingToken
+	task.spawn(function()
+		refreshState(token)
+	end)
 end
 
 function NestMapUIController.Close()
