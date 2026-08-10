@@ -11,6 +11,9 @@ local MonsterDuelCameraProtocol = require(
 	game:GetService("ReplicatedStorage").Shared.Monster.MonsterDuelCameraProtocol
 )
 local MonsterDuelCameraRemoteClient = require(script.Parent.MonsterDuelCameraRemoteClient)
+local LocalGuiButtonState = require(
+	script.Parent.Parent.UI.LocalGuiButtonState
+)
 
 local MonsterDuelWatchButtonController = {}
 
@@ -26,6 +29,7 @@ local references: References? = nil
 local activeCommand: MonsterDuelCameraProtocol.CameraCommand? = nil
 local watching = false
 local pendingCommand: MonsterDuelCameraProtocol.CameraCommand? = nil
+local togglePending = false
 local buttonConnection: RBXScriptConnection? = nil
 
 local function childOfClass(parent: Instance?, name: string, className: string): Instance?
@@ -59,9 +63,7 @@ local function setVisible(visible: boolean)
 	current.Root.Visible = visible
 	current.Check.Visible = visible
 	current.Button.Visible = visible
-	current.Button.Active = visible
-	current.Button.Selectable = visible
-	current.Button.AutoButtonColor = visible
+	LocalGuiButtonState.SetEnabled(current.Button, visible and not togglePending)
 end
 
 local function setText(text: string)
@@ -74,6 +76,7 @@ end
 local function hide()
 	activeCommand = nil
 	pendingCommand = nil
+	togglePending = false
 	watching = false
 	setVisible(false)
 	setText("Watch Duel")
@@ -82,6 +85,7 @@ end
 local function show(command: MonsterDuelCameraProtocol.CameraCommand)
 	activeCommand = command
 	pendingCommand = nil
+	togglePending = false
 	watching = false
 	setText("Watch Duel")
 	setVisible(true)
@@ -101,19 +105,27 @@ local function bindGui(playerGui: PlayerGui)
 	hide()
 	buttonConnection = resolved.Button.Activated:Connect(function()
 		local command = activeCommand
-		if not command then
+		if not command or togglePending then
 			return
 		end
+		togglePending = true
+		LocalGuiButtonState.SetEnabled(resolved.Button, false)
+		local previousWatching = watching
 		watching = not watching
-		setText(if watching then "Stop Watching" else "Watch Duel")
+		setText("Updating...")
 		local sent = MonsterDuelCameraRemoteClient.RequestToggle(
 			command.DuelId,
 			watching
 		)
-		if not sent then
-			watching = not watching
-			setText(if watching then "Stop Watching" else "Watch Duel")
+		if activeCommand ~= command then
+			return
 		end
+		togglePending = false
+		if not sent then
+			watching = previousWatching
+		end
+		setText(if watching then "Stop Watching" else "Watch Duel")
+		LocalGuiButtonState.SetEnabled(resolved.Button, true)
 	end)
 	if commandToRestore then
 		show(commandToRestore)

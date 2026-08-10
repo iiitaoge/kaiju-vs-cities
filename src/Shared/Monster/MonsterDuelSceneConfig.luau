@@ -10,6 +10,10 @@ local camera = table.freeze({
 	TransitionDuration = 1,
 	CompletionTimeout = 5,
 	RestoreDuration = 0.75,
+	AutoFit = table.freeze({
+		Enabled = true,
+		Padding = 1.15,
+	}),
 })
 
 return table.freeze({

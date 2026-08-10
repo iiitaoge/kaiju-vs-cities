@@ -46,6 +46,10 @@ local MonsterAttackCameraProtocol = require(
 local MonsterDuelCameraProtocol = require(
 	ReplicatedStorage.Shared.Monster.MonsterDuelCameraProtocol
 )
+local MonsterDuelSceneConfig = require(
+	ReplicatedStorage.Shared.Monster.MonsterDuelSceneConfig
+)
+local MonsterDuelCameraFit = require(script.Parent.Parent.Camera.MonsterDuelCameraFit)
 local AnalyticsIntentProtocol = require(
 	ReplicatedStorage.Shared.Analytics.AnalyticsIntentProtocol
 )
@@ -91,6 +95,23 @@ local function failure(reason: string): AttackPanelCoordinator.RequestResult
 		CommandId = nil,
 		Monster = nil,
 	}
+end
+
+local function resolveDuelCameraCFrame(
+	command: MonsterDuelCameraProtocol.CameraCommand
+): CFrame
+	local camera = workspace.CurrentCamera
+	local autoFit = MonsterDuelSceneConfig.Camera.AutoFit
+	if not camera or not autoFit.Enabled then
+		return command.CameraCFrame
+	end
+	return MonsterDuelCameraFit.Fit(
+		command.CameraCFrame,
+		command.FieldOfView,
+		camera.ViewportSize,
+		command.CameraFitSpheres,
+		autoFit.Padding
+	)
 end
 
 function PlayerMonsterAttackSelectionCoordinator.Open(
@@ -411,8 +432,9 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 			pendingDuelCameraCommand = command
 			return
 		end
+		local targetCFrame = resolveDuelCameraCFrame(command)
 		local focused = session.Focus({
-			TargetCFrame = command.CameraCFrame,
+			TargetCFrame = targetCFrame,
 			TransitionDuration = command.TransitionDuration,
 			FieldOfView = command.FieldOfView,
 			OnCompleted = function()
@@ -477,8 +499,9 @@ function PlayerMonsterAttackSelectionCoordinator.Open(
 				pendingDuelCameraCommand = nil
 				local session = followSession
 				if session and session.IsActive() then
+					local targetCFrame = resolveDuelCameraCFrame(command)
 					session.Focus({
-						TargetCFrame = command.CameraCFrame,
+						TargetCFrame = targetCFrame,
 						TransitionDuration = command.TransitionDuration,
 						FieldOfView = command.FieldOfView,
 						OnCompleted = function()

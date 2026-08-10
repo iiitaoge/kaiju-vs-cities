@@ -16,6 +16,9 @@ local LocalMonsterAttackRosterUIAccess = require(
 )
 local MonsterManagementRemoteClient = require(script.Parent.MonsterManagementRemoteClient)
 local LocalUIVisibilityGate = require(script.Parent.Parent.UI.LocalUIVisibilityGate)
+local LocalGuiButtonState = require(
+	script.Parent.Parent.UI.LocalGuiButtonState
+)
 local UIModeVisibilityRules = require(
 	ReplicatedStorage.Shared.UI.UIModeVisibilityRules
 )
@@ -29,9 +32,7 @@ local UNIT_CLONE_ATTRIBUTE = "LocalMonsterAttackRosterUnit"
 local started = false
 
 local function setButtonEnabled(button: GuiButton, enabled: boolean)
-	button.Active = enabled
-	button.Selectable = enabled
-	button.AutoButtonColor = enabled
+	LocalGuiButtonState.SetEnabled(button, enabled)
 end
 
 local function requireUnitChild(
@@ -162,6 +163,23 @@ function MonsterAttackRosterUIController.Start()
 							return
 						end
 						attackOpening = true
+						setButtonEnabled(startButton, false)
+						local response = MonsterManagementRemoteClient.GetSnapshot(
+							definition.SpawnPointId
+						)
+						local currentSnapshot = if type(response) == "table"
+							and response.Succeeded == true
+							and type(response.Snapshot) == "table"
+							then response.Snapshot
+							else nil
+						local currentAttackAllowed = currentSnapshot ~= nil
+							and type(currentSnapshot.Attack) == "table"
+							and currentSnapshot.Attack.Allowed == true
+						if not currentAttackAllowed then
+							attackOpening = false
+							showPanel()
+							return
+						end
 						panelDesiredVisible = false
 						nextRefreshToken()
 						panelVisibility:SetDesiredVisible(false)

@@ -14,7 +14,11 @@ local Workspace = game:GetService("Workspace")
 local MonsterDuelCameraProtocol = require(
 	game:GetService("ReplicatedStorage").Shared.Monster.MonsterDuelCameraProtocol
 )
+local MonsterDuelSceneConfig = require(
+	game:GetService("ReplicatedStorage").Shared.Monster.MonsterDuelSceneConfig
+)
 local MonsterDuelCameraRemoteClient = require(script.Parent.MonsterDuelCameraRemoteClient)
+local MonsterDuelCameraFit = require(script.Parent.Parent.Camera.MonsterDuelCameraFit)
 
 local MonsterDuelCameraController = {}
 
@@ -86,6 +90,23 @@ local function beginTransition(
 	camera.CameraType = Enum.CameraType.Scriptable
 end
 
+local function resolveTargetCFrame(
+	command: MonsterDuelCameraProtocol.CameraCommand,
+	camera: Camera
+): CFrame
+	local autoFit = MonsterDuelSceneConfig.Camera.AutoFit
+	if not autoFit.Enabled then
+		return command.CameraCFrame
+	end
+	return MonsterDuelCameraFit.Fit(
+		command.CameraCFrame,
+		command.FieldOfView,
+		camera.ViewportSize,
+		command.CameraFitSpheres,
+		autoFit.Padding
+	)
+end
+
 local function focus(command: MonsterDuelCameraProtocol.CameraCommand)
 	if command.Role ~= "Defender"
 		or command.DefenderUserId ~= Players.LocalPlayer.UserId
@@ -110,10 +131,11 @@ local function focus(command: MonsterDuelCameraProtocol.CameraCommand)
 		active = true
 	end
 	activeDuelId = command.DuelId
-	targetCFrame = command.CameraCFrame
+	local fittedCFrame = resolveTargetCFrame(command, camera)
+	targetCFrame = fittedCFrame
 	targetFieldOfView = command.FieldOfView
 	beginTransition(
-		command.CameraCFrame,
+		fittedCFrame,
 		command.FieldOfView,
 		command.TransitionDuration,
 		nil

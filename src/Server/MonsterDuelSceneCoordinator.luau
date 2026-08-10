@@ -67,6 +67,7 @@ export type Session = {
 	AttackerFailureState: string,
 	DefenderFailureState: string,
 	CameraCFrame: CFrame,
+	CameraFitSpheres: { MonsterDuelCameraProtocol.CameraFitSphere },
 	Active: boolean,
 	DefenderWatching: boolean,
 }
@@ -96,6 +97,31 @@ end
 local function sanitizeName(value: string): string
 	local sanitized = string.gsub(value, "[^%w_%-]", "_")
 	return if sanitized ~= "" then sanitized else "Duel"
+end
+
+local function getModelCameraFitRadius(model: Model): number
+	local boundingBoxCFrame, boundingBoxSize = model:GetBoundingBox()
+	local pivotPosition = model:GetPivot().Position
+	return (boundingBoxCFrame.Position - pivotPosition).Magnitude
+		+ boundingBoxSize.Magnitude * 0.5
+end
+
+local function getCameraFitSpheres(
+	attackerModel: Model,
+	defenderModel: Model,
+	attackerSpawnPoint: BasePart,
+	defenderSpawnPoint: BasePart
+): { MonsterDuelCameraProtocol.CameraFitSphere }
+	return {
+		{
+			Center = attackerSpawnPoint.Position,
+			Radius = getModelCameraFitRadius(attackerModel),
+		},
+		{
+			Center = defenderSpawnPoint.Position,
+			Radius = getModelCameraFitRadius(defenderModel),
+		},
+	}
 end
 
 local function getRuntimeFolder(): Folder
@@ -222,6 +248,7 @@ local function publishFocus(
 		AttackerSpawnPointId = session.Attacker.SpawnPointId,
 		DefenderUserId = session.Defender.Player.UserId,
 		CameraCFrame = session.CameraCFrame,
+		CameraFitSpheres = session.CameraFitSpheres,
 		FieldOfView = MonsterDuelSceneConfig.Camera.FieldOfView,
 		TransitionDuration = MonsterDuelSceneConfig.Camera.TransitionDuration,
 		RestoreDuration = MonsterDuelSceneConfig.Camera.RestoreDuration,
@@ -420,6 +447,12 @@ function MonsterDuelSceneCoordinator.Enter(
 		AttackerFailureState = options.AttackerFailureState,
 		DefenderFailureState = options.DefenderFailureState,
 		CameraCFrame = cameraMarker.CFrame,
+		CameraFitSpheres = getCameraFitSpheres(
+			attackerModel,
+			defenderModel,
+			attackerSpawnPoint,
+			defenderSpawnPoint
+		),
 		Active = true,
 		DefenderWatching = false,
 	}
@@ -471,6 +504,7 @@ function MonsterDuelSceneCoordinator.Enter(
 		AttackerSpawnPointId = attacker.SpawnPointId,
 		DefenderUserId = defender.Player.UserId,
 		CameraCFrame = session.CameraCFrame,
+		CameraFitSpheres = session.CameraFitSpheres,
 		FieldOfView = MonsterDuelSceneConfig.Camera.FieldOfView,
 		TransitionDuration = MonsterDuelSceneConfig.Camera.TransitionDuration,
 		RestoreDuration = MonsterDuelSceneConfig.Camera.RestoreDuration,

@@ -20,6 +20,11 @@ MonsterDuelCameraProtocol.TransitionCompletedKind = "DuelCameraTransitionComplet
 
 export type Role = "Attacker" | "Defender"
 
+export type CameraFitSphere = {
+	Center: Vector3,
+	Radius: number,
+}
+
 export type CameraCommand = {
 	Kind: "DuelAvailable" | "DuelFocus",
 	CommandId: number,
@@ -30,6 +35,7 @@ export type CameraCommand = {
 	DefenderUserId: number,
 	CameraCFrame: CFrame,
 	FieldOfView: number,
+	CameraFitSpheres: { CameraFitSphere },
 	TransitionDuration: number,
 	RestoreDuration: number,
 }
@@ -94,6 +100,31 @@ local function isFiniteCFrame(value): boolean
 	return true
 end
 
+local function isFiniteVector3(value): boolean
+	if typeof(value) ~= "Vector3" then
+		return false
+	end
+	return ValueValidation.IsFiniteNumber(value.X)
+		and ValueValidation.IsFiniteNumber(value.Y)
+		and ValueValidation.IsFiniteNumber(value.Z)
+end
+
+local function isValidCameraFitSpheres(value): boolean
+	if type(value) ~= "table" or #value == 0 then
+		return false
+	end
+	for _, sphere in value do
+		if type(sphere) ~= "table"
+			or not isFiniteVector3(sphere.Center)
+			or not ValueValidation.IsFiniteNumber(sphere.Radius)
+			or sphere.Radius <= 0
+		then
+			return false
+		end
+	end
+	return true
+end
+
 local function validateCommon(command): (boolean, string?)
 	if type(command) ~= "table" then
 		return false, "InvalidCommand"
@@ -146,6 +177,9 @@ function MonsterDuelCameraProtocol.ValidateCommand(command): (boolean, string?)
 			or command.FieldOfView >= 180
 		then
 			return false, "InvalidFieldOfView"
+		end
+		if not isValidCameraFitSpheres(command.CameraFitSpheres) then
+			return false, "InvalidCameraFitSpheres"
 		end
 		if not ValueValidation.IsFiniteNumber(command.RestoreDuration)
 			or command.RestoreDuration < 0
