@@ -27,6 +27,9 @@ local UIModeVisibilityRules = require(
 local LocalUIVisibilityGate = require(
 	script.Parent.Parent.UI.LocalUIVisibilityGate
 )
+local LocalGuiButtonState = require(
+	script.Parent.Parent.UI.LocalGuiButtonState
+)
 local SoundController = require(script.Parent.Parent.Sound.SoundController)
 local AnalyticsIntentProtocol = require(
 	ReplicatedStorage.Shared.Analytics.AnalyticsIntentProtocol
@@ -98,8 +101,8 @@ function RebirthButtonController.Start()
 		end,
 		false
 	)
-	ui.MoneyButton.Active = false
-	ui.MoneyButton.Selectable = false
+	LocalGuiButtonState.SetEnabled(ui.MoneyButton, false)
+	LocalGuiButtonState.SetEnabled(ui.ActionButton, false)
 
 	local touchingParts: { [BasePart]: boolean } = {}
 	local visible = false
@@ -111,7 +114,7 @@ function RebirthButtonController.Start()
 		lastSnapshot = snapshot
 		local presentation = RebirthUIPresentationRules.Resolve(snapshot)
 		if not presentation.Enabled then
-			ui.ActionButton.Active = false
+			LocalGuiButtonState.SetEnabled(ui.ActionButton, false)
 			ui.ActionValue.Text = "Unavailable"
 			return
 		end
@@ -121,8 +124,10 @@ function RebirthButtonController.Start()
 		ui.RequirementValue.Text = presentation.RequirementText
 		ui.InfoTitle.Text = presentation.InfoTitleText
 		ui.Introduction.Text = presentation.IntroductionText
-		ui.ActionButton.Active = presentation.CanExecute and not busy
-		ui.ActionButton.Selectable = presentation.CanExecute and not busy
+		LocalGuiButtonState.SetEnabled(
+			ui.ActionButton,
+			presentation.CanExecute and not busy
+		)
 	end
 
 	local function request(requestKind: string)
@@ -159,8 +164,10 @@ function RebirthButtonController.Start()
 		refreshGeneration += 1
 		visibilityGate:SetDesiredVisible(visible)
 		if not visible then
+			LocalGuiButtonState.SetEnabled(ui.ActionButton, false)
 			return
 		end
+		LocalGuiButtonState.SetEnabled(ui.ActionButton, false)
 		SoundController.Play("Click")
 		AnalyticsIntentClient.Record(
 			AnalyticsIntentProtocol.Intents.RebirthOpened
@@ -197,6 +204,16 @@ function RebirthButtonController.Start()
 		table.clear(touchingParts)
 		setVisible(false)
 	end)
+	task.defer(function()
+		for _, part in ui.Pull:GetTouchingParts() do
+			if belongsToLocalCharacter(part) then
+				touchingParts[part] = true
+			end
+		end
+		if next(touchingParts) ~= nil then
+			setVisible(true)
+		end
+	end)
 
 	ui.ActionButton.Activated:Connect(function()
 		if busy or not visible then
@@ -211,8 +228,7 @@ function RebirthButtonController.Start()
 		AnalyticsIntentClient.Record(
 			AnalyticsIntentProtocol.Intents.RebirthExecuteClicked
 		)
-		ui.ActionButton.Active = false
-		ui.ActionButton.Selectable = false
+		LocalGuiButtonState.SetEnabled(ui.ActionButton, false)
 		ui.ActionValue.Text = "Processing..."
 		local snapshot, reason, actionSucceeded = request("Execute")
 		if actionSucceeded == true then

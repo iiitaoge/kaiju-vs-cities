@@ -18,11 +18,13 @@ local LocalButtonWorldUIController = require(
 	script.Parent.Parent.Button.LocalButtonWorldUIController
 )
 local LocalUIVisibilityGate = require(script.Parent.LocalUIVisibilityGate)
+local LocalGuiButtonState = require(script.Parent.LocalGuiButtonState)
 local TipBlackController = require(script.Parent.TipBlackController)
 local CurrencyIconRenderer = require(script.Parent.CurrencyIconRenderer)
 local UIModeVisibilityRules = require(
 	ReplicatedStorage.Shared.UI.UIModeVisibilityRules
 )
+local LocalUIModeService = require(script.Parent.LocalUIModeService)
 local GroupRewardConfigs = require(
 	ReplicatedStorage.Shared.Reward.GroupRewardConfigs
 )
@@ -257,7 +259,8 @@ local function setWorldPresentation(state: RewardState?)
 		worldUIHandle:SetPresentation(presentation)
 	end
 	if buttonHandle then
-		buttonHandle:SetState(if state and state.Claimed then "Locked" else "Ready")
+		buttonHandle:SetState(if state then (if state.Claimed then "Locked" else "Ready") else "Processing")
+		buttonHandle:RefreshTouching()
 	end
 end
 
@@ -266,9 +269,7 @@ local function setVerifyEnabled(enabled: boolean)
 	if not current then
 		return
 	end
-	current.VerifyButton.Active = enabled
-	current.VerifyButton.Selectable = enabled
-	current.VerifyButton.AutoButtonColor = enabled
+	LocalGuiButtonState.SetEnabled(current.VerifyButton, enabled)
 end
 
 local function renderState(state: RewardState)
@@ -445,6 +446,13 @@ function GroupRewardUIController.Start()
 	end)
 	worldUIHandle = LocalButtonWorldUIController.Bind(groupButton)
 	setWorldPresentation(nil)
+	LocalUIModeService.Observe(function()
+		if buttonHandle then
+			buttonHandle:SetInputEnabled(LocalUIModeService.IsAllowed(
+				UIModeVisibilityRules.Channels.Gameplay
+			))
+		end
+	end)
 	task.spawn(refreshState)
 
 	resolved.CloseButton.Activated:Connect(function()

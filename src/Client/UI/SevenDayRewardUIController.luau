@@ -20,6 +20,11 @@ local SevenDayRewardProtocol = require(
 )
 local SoundController = require(script.Parent.Parent.Sound.SoundController)
 local TipBlackController = require(script.Parent.TipBlackController)
+local LocalGuiButtonState = require(script.Parent.LocalGuiButtonState)
+local LocalUIVisibilityGate = require(script.Parent.LocalUIVisibilityGate)
+local UIModeVisibilityRules = require(
+	ReplicatedStorage.Shared.UI.UIModeVisibilityRules
+)
 
 local SevenDayRewardUIController = {}
 
@@ -66,6 +71,7 @@ local currentState: RewardState? = nil
 local stateReceivedServerTime = 0
 local claimInFlight = false
 local started = false
+local visibilityGate: LocalUIVisibilityGate.Handle? = nil
 
 local function darkenColor(color: Color3): Color3
 	return color:Lerp(Color3.new(0, 0, 0), 0.55)
@@ -296,9 +302,7 @@ local function showUnavailableMessage(day: number, state: RewardState)
 end
 
 local function setCardEnabled(card: DayCardReferences, enabled: boolean)
-	card.Button.Active = enabled
-	card.Button.AutoButtonColor = enabled
-	card.Button.Selectable = enabled
+	LocalGuiButtonState.SetEnabled(card.Button, enabled)
 end
 
 local function setCardCompleted(card: DayCardReferences, completed: boolean)
@@ -343,8 +347,20 @@ local function renderState(state: RewardState)
 	for day = 1, SevenDayRewardConfigs.TotalDays do
 		local card = current.Cards[day]
 		local completed = day < state.Day
-		setCardEnabled(card, not completed)
+		setCardEnabled(card, not completed and not claimInFlight)
 		setCardCompleted(card, completed)
+	end
+end
+
+local function refreshCardInteractivity()
+	local current = references
+	local state = currentState
+	if not current then
+		return
+	end
+	for day = 1, SevenDayRewardConfigs.TotalDays do
+		local completed = state ~= nil and day < state.Day
+		setCardEnabled(current.Cards[day], not claimInFlight and not completed)
 	end
 end
 
@@ -403,9 +419,11 @@ local function claim(day: number)
 	end
 
 	claimInFlight = true
+	refreshCardInteractivity()
 	local response = invoke(SevenDayRewardProtocol.RequestKinds.Claim)
 	claimInFlight = false
 	if not response then
+		refreshCardInteractivity()
 		return
 	end
 	if response.State then
@@ -447,16 +465,29 @@ function SevenDayRewardUIController.Start()
 	end
 	references = resolved
 	-- 进入游戏时自动弹出；关闭按钮只影响本次客户端会话。
-	resolved.Root.Visible = true
+	resolved.Root.Visible = false
+	visibilityGate = LocalUIVisibilityGate.Create(
+		UIModeVisibilityRules.Channels.Gameplay,
+		function(visible)
+			if references then
+				references.Root.Visible = visible
+			end
+		end,
+		false
+	)
+	refreshCardInteractivity()
 
 	remote = resolveRemote()
 	if not remote then
 		warn("七日奖励 RemoteFunction 不存在：" .. SevenDayRewardProtocol.RemoteName)
 		return
 	end
+	visibilityGate:SetDesiredVisible(true)
 
 	resolved.CloseButton.Activated:Connect(function()
-		resolved.Root.Visible = false
+		if visibilityGate then
+			visibilityGate:SetDesiredVisible(false)
+		end
 	end)
 	for day = 1, SevenDayRewardConfigs.TotalDays do
 		local card = resolved.Cards[day]
