@@ -33,6 +33,7 @@ local PlayerRuntimeLoadReporter = require(
 	script.Parent.Analytics.PlayerRuntimeLoadReporter
 )
 local PlotSceneVisibilityService = require(script.Parent.PlotSceneVisibilityService)
+local PlayerPlotInfoService = require(script.Parent.PlayerPlotInfoService)
 
 local PlayerPlotAssignmentService = {}
 
@@ -42,6 +43,17 @@ local OWNER_ATTRIBUTE = "OwnerUserId"
 
 local assignments: { [Player]: Model } = setmetatable({}, { __mode = "k" })
 local started = false
+
+local function refreshPlayerInfo(plot: Model)
+	local refreshed, reason = PlayerPlotInfoService.Refresh(plot)
+	if not refreshed then
+		warn(string.format(
+			"Plot 玩家信息 UI 刷新失败：%s (%s)",
+			plot:GetFullName(),
+			reason or "Unknown"
+		))
+	end
+end
 
 local function assertPlayer(player: Player)
 	assert(typeof(player) == "Instance" and player:IsA("Player"), "player 必须是 Player")
@@ -162,6 +174,7 @@ function PlayerPlotAssignmentService.Assign(player: Player): (Model?, string?)
 
 	local owned = findOwnedPlot(player)
 	if owned then
+		refreshPlayerInfo(owned)
 		return owned, nil
 	end
 	if not getRoot() then
@@ -189,6 +202,7 @@ function PlayerPlotAssignmentService.Assign(player: Player): (Model?, string?)
 			return nil, activateReason
 		end
 		assignments[player] = selected
+		refreshPlayerInfo(selected)
 		return selected, nil
 	end
 
@@ -227,6 +241,7 @@ function PlayerPlotAssignmentService.Release(player: Player): boolean
 
 	clearRuntime(plot)
 	plot:SetAttribute(OWNER_ATTRIBUTE, 0)
+	refreshPlayerInfo(plot)
 	local activated, activateReason = activate(plot)
 	if not activated then
 		warn(string.format(
@@ -253,6 +268,7 @@ function PlayerPlotAssignmentService.Start()
 		if not player or claimedUserIds[ownerUserId] then
 			clearRuntime(plot)
 			plot:SetAttribute(OWNER_ATTRIBUTE, 0)
+			refreshPlayerInfo(plot)
 			local activated, reason = activate(plot)
 			assert(activated, reason)
 			PlotSceneVisibilityService.ApplyDefault(plot)
@@ -261,6 +277,7 @@ function PlayerPlotAssignmentService.Start()
 			local activated, reason = activate(plot)
 			assert(activated, reason)
 			assignments[player] = plot
+			refreshPlayerInfo(plot)
 		end
 	end
 
