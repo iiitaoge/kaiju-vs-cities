@@ -136,7 +136,11 @@ function SoundController.Play(soundName: string)
 		startBGM()
 		return
 	end
-	if soundName == "Click" or soundName == "Yes" or soundName == "No" then
+	if soundName == "Click"
+		or soundName == "Yes"
+		or soundName == "No"
+		or soundName == "CollcetMoney"
+	then
 		playOneShot(soundName)
 		return
 	end

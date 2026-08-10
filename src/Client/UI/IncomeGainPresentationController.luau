@@ -30,6 +30,7 @@ local LocalBuildingEffectPlayer = require(
 local IncomeGainEffectConfigs = require(script.Parent.IncomeGainEffectConfigs)
 local LocalIncomeGainEffectPlayer = require(script.Parent.LocalIncomeGainEffectPlayer)
 local LocalUIVisibilityGate = require(script.Parent.LocalUIVisibilityGate)
+local SoundController = require(script.Parent.Parent.Sound.SoundController)
 local UIModeVisibilityRules = require(
 	ReplicatedStorage.Shared.UI.UIModeVisibilityRules
 )
@@ -132,6 +133,7 @@ end
 -- 输出：房屋弹跳一定开始调度；HUD 已就绪时同时开始五枚固定像素飞钱。
 function IncomeGainPresentationController.PlayTouchContact(model: Model): boolean
 	assert(model:IsA("Model"), "model 必须是 Model")
+	SoundController.Play("CollcetMoney")
 	task.spawn(
 		LocalBuildingEffectPlayer.PlayContact,
 		model,
