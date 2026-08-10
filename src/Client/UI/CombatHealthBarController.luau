@@ -1,8 +1,8 @@
 --[[
 	职责：为所有玩家的出征/守城怪兽和正在被攻击的房屋维护本地战斗血条。
-	输入：Start；只读运行时 Model 上的服务器复制 Attributes。
+	输入：Start；只读 PlayerPlots 与固定演示 Plot 运行时 Model 上的服务器复制 Attributes。
 	输出：符合显示规则的 Model 各有一个本地 blood Attachment。
-	内部算法：观察 PlayerPlots 全部运行时 Model，按身份绑定并仅在相关 Attribute 变化时刷新。
+	内部算法：观察玩家 Plot 和 SoloShowcasePlot 的全部运行时 Model，按身份绑定并仅在相关 Attribute 变化时刷新。
 	不负责：伤害、攻击目标所有权、房屋生命周期或修改模板。
 ]]
 
@@ -178,16 +178,29 @@ function CombatHealthBarController.Start()
 	end
 	started = true
 
-	local playerPlots = workspace:WaitForChild("PlayerPlots")
-	for _, descendant in playerPlots:GetDescendants() do
-		scheduleBind(descendant)
-	end
-	playerPlots.DescendantAdded:Connect(scheduleBind)
-	playerPlots.DescendantRemoving:Connect(function(descendant)
-		if descendant:IsA("Model") then
-			unbind(descendant)
+	local function attachRoot(root: Instance)
+		for _, descendant in root:GetDescendants() do
+			scheduleBind(descendant)
 		end
-	end)
+		root.DescendantAdded:Connect(scheduleBind)
+		root.DescendantRemoving:Connect(function(descendant)
+			if descendant:IsA("Model") then
+				unbind(descendant)
+			end
+		end)
+	end
+
+	attachRoot(workspace:WaitForChild("PlayerPlots"))
+	local showcase = workspace:FindFirstChild("SoloShowcasePlot")
+	if showcase then
+		attachRoot(showcase)
+	else
+		workspace.ChildAdded:Connect(function(child)
+			if child.Name == "SoloShowcasePlot" then
+				attachRoot(child)
+			end
+		end)
+	end
 end
 
 return CombatHealthBarController

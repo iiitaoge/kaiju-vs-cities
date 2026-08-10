@@ -99,6 +99,9 @@ function LocalMonsterAttackCameraMarkerAccess.WaitByPlotName(
 		function()
 			local root = workspace:FindFirstChild("PlayerPlots")
 			local plot = root and root:FindFirstChild(plotName)
+			if not plot then
+				plot = workspace:FindFirstChild(plotName)
+			end
 			return if plot and plot:IsA("Model") then plot else nil
 		end,
 		regionId,

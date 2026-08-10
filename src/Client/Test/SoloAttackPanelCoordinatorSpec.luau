@@ -17,9 +17,14 @@ function SoloAttackPanelCoordinatorSpec.Run(): boolean
 			CFrame = CFrame.new(10, 0, 20),
 			Size = Vector3.new(100, 1, 80),
 		},
-		Bounds = {
-			CFrame = CFrame.new(10, 0, 20),
-			Size = Vector3.new(100, 1, 80),
+		Territories = {
+			{
+				ZoneId = "R1",
+				BoundsId = "Bounds",
+				CFrame = CFrame.new(10, 0, 20),
+				Size = Vector3.new(100, 1, 80),
+				AttackInProgress = false,
+			},
 		},
 	})
 	expect(target ~= nil and target.Kind == "Solo", "合法单人快照没有映射为目标")

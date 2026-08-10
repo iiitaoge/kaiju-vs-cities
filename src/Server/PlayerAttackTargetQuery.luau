@@ -1,11 +1,11 @@
 --[[
-	职责：查询当前攻击者可以浏览的在线玩家城市，或没有其他玩家时的展示空 Plot。
+	职责：查询当前攻击者可以浏览的在线玩家城市，或没有其他玩家时的固定演示 Plot。
 
 	输入：发起攻击的 Player。
 	输出：Succeeded、Reason、玩家目标数组，以及可选的 SoloTarget 快照。
 	内部算法：排除自己，读取每名在线玩家的总 AttackView 和已解锁 Territory；
 	缺少 Plot、总视野或有效领地的玩家不会进入结果；只有服务器中确实没有其他玩家时，
-	才读取某一块展示空 Plot 的 AttackViewBounds 作为视野和可点击范围。
+	才读取固定演示 Plot 的 AttackViewBounds 和当前仍有房屋的 R1/R2 Bounds。
 
 	不负责：选择当前目标、校验最终落点、执行攻击或改变怪兽状态。
 ]]
@@ -42,9 +42,14 @@ export type SoloTargetSnapshot = {
 		CFrame: CFrame,
 		Size: Vector3,
 	},
-	Bounds: {
-		CFrame: CFrame,
-		Size: Vector3,
+	Territories: {
+		{
+			ZoneId: string,
+			BoundsId: string,
+			CFrame: CFrame,
+			Size: Vector3,
+			AttackInProgress: boolean,
+		}
 	},
 }
 
@@ -110,13 +115,10 @@ function PlayerAttackTargetQuery.Query(attacker: Player)
 		if area then
 			soloTarget = {
 				AttackView = {
-					CFrame = area.CFrame,
-					Size = area.Size,
+					CFrame = area.AttackView.CFrame,
+					Size = area.AttackView.Size,
 				},
-				Bounds = {
-					CFrame = area.CFrame,
-					Size = area.Size,
-				},
+				Territories = area.Territories,
 			}
 		end
 	end

@@ -55,11 +55,16 @@ end
 -- 输出：全部独立规则通过时返回 true；任一契约变化时 assert 失败。
 -- 内部算法：覆盖容量边界、状态权限、伤害归零、旋转地盘、稳定选敌和包围盒距离。
 function MonsterRuleModulesSpec.Run(): boolean
-	expect(SoloMonsterAttackConfigs.AttackDuration == 3, "单人攻击表演时长必须为 3 秒")
 	expect(
-		type(SoloMonsterAttackConfigs.BoundsPartName) == "string"
-			and SoloMonsterAttackConfigs.BoundsPartName ~= "",
-		"单人攻击范围名称无效"
+		SoloMonsterAttackConfigs.ShowcasePlotName == "SoloShowcasePlot",
+		"固定单人演示 Plot 名称无效"
+	)
+	expect(
+		type(SoloMonsterAttackConfigs.AttackableRegionIds) == "table"
+			and #SoloMonsterAttackConfigs.AttackableRegionIds == 2
+			and SoloMonsterAttackConfigs.AttackableRegionIds[1] == "R1"
+			and SoloMonsterAttackConfigs.AttackableRegionIds[2] == "R2",
+		"单人演示可攻击区域配置无效"
 	)
 	expect(
 		MonsterAttackProtocol.TargetQueryRemoteName ~= MonsterAttackProtocol.CommandRemoteName,

@@ -1,8 +1,8 @@
 --[[
-	职责：接受并跟踪一只怪兽的服务器权威单人空地出征命令。
-	输入：在线玩家、自己的 SpawnPointId、落点，以及范围访问和执行回调。
+	职责：接受并跟踪一只怪兽的服务器权威单人演示出征命令。
+	输入：在线玩家、自己的 SpawnPointId、R1/R2 可攻击区域内落点，以及范围访问和执行回调。
 	输出：立即返回命令是否接受、CommandId 和怪兽 Model。
-	内部算法：提交瞬间确认没有其他玩家，校验展示空 Plot 的权威 Bounds 和怪兽空闲状态，
+	内部算法：提交瞬间确认没有其他玩家，校验固定演示 Plot 的总 Bounds 与可攻击区域，
 		切换 Releasing 后异步执行；命令接受后新玩家加入不会取消当前出征。
 	不负责：罐体动画、怪兽移动、攻击动画、奖励或客户端 UI。
 ]]
@@ -20,9 +20,20 @@ local attackCoordinateLog = DebugLog.Create("AttackSelectionCoordinates")
 local SoloMonsterAttackCommandCoordinator = {}
 
 export type Area = {
-	CFrame: CFrame,
-	Size: Vector3,
+	AttackView: {
+		CFrame: CFrame,
+		Size: Vector3,
+	},
 	PlotName: string?,
+	Territories: {
+		{
+			ZoneId: string,
+			BoundsId: string,
+			CFrame: CFrame,
+			Size: Vector3,
+			AttackInProgress: boolean,
+		}
+	},
 }
 
 export type AreaAccess = {
@@ -35,11 +46,13 @@ export type CommandContext = {
 	SpawnPointId: string,
 	EntryPoint: Vector3,
 	TargetPlotName: string?,
+	TargetRegionId: string,
 	StartedAt: number,
 }
 
 export type ExecuteOptions = {
 	AreaAccess: AreaAccess,
+	PrepareAttack: (() -> (boolean, string?))?,
 	StartExpedition: (CommandContext, () -> boolean) -> any,
 	OnCommandFinished: (CommandContext, boolean, any) -> (),
 }
@@ -81,6 +94,39 @@ local function hasOtherPlayer(player: Player): boolean
 		end
 	end
 	return false
+end
+
+local function resolveTargetRegion(area: Area, entryPoint: Vector3): (string?, string?)
+	local pointCheck = TerritoryPointRules.Check(
+		area.AttackView.CFrame,
+		area.AttackView.Size,
+		entryPoint
+	)
+	if not pointCheck.Allowed then
+		return nil, pointCheck.Reason or "EntryPointOutsideTerritory"
+	end
+
+	local validTerritoryCount = 0
+	for _, territory in area.Territories do
+		local territoryCheck = TerritoryPointRules.Check(
+			territory.CFrame,
+			territory.Size,
+			entryPoint
+		)
+		if territoryCheck.Reason ~= "InvalidTerritory" then
+			validTerritoryCount += 1
+		end
+		if territoryCheck.Allowed then
+			if territory.AttackInProgress then
+				return nil, "RegionAttackInProgress"
+			end
+			return territory.ZoneId, nil
+		end
+	end
+
+	return nil, if validTerritoryCount > 0
+		then "EntryPointOutsideTerritory"
+		else "SoloAttackRegionUnavailable"
 end
 
 function SoloMonsterAttackCommandCoordinator.Execute(
@@ -127,28 +173,40 @@ function SoloMonsterAttackCommandCoordinator.Execute(
 			Monster = monster.Model,
 		}
 	end
-	local pointCheck = TerritoryPointRules.Check(area.CFrame, area.Size, entryPoint)
-	if not pointCheck.Allowed then
+	local targetRegionId, pointReason = resolveTargetRegion(area, entryPoint)
+	if not targetRegionId then
 		attackCoordinateLog(
 			"[SERVER_TERRITORY]",
 			"mode=Solo",
 			string.format("player=%s:%d", player.Name, player.UserId),
 			"allowed=false",
-			"reason=" .. tostring(pointCheck.Reason)
+			"reason=" .. tostring(pointReason)
 		)
 		return {
 			Succeeded = false,
-			Reason = pointCheck.Reason or "EntryPointOutsideTerritory",
+			Reason = pointReason or "EntryPointOutsideTerritory",
 			CommandId = nil,
 			Monster = monster.Model,
 		}
+	end
+	if options.PrepareAttack then
+		local prepared, prepareReason = options.PrepareAttack()
+		if not prepared then
+			return {
+				Succeeded = false,
+				Reason = prepareReason or "SoloShowcaseResetFailed",
+				CommandId = nil,
+				Monster = monster.Model,
+			}
+		end
 	end
 	attackCoordinateLog(
 		"[SERVER_TERRITORY]",
 		"mode=Solo",
 		string.format("player=%s:%d", player.Name, player.UserId),
 		"allowed=true",
-		"bounds=DisplayedAvailablePlot"
+		"bounds=SoloShowcase",
+		"region=" .. targetRegionId
 	)
 
 	local transition = MonsterRosterCoordinator.Transition(player, spawnPointId, "Releasing")
@@ -163,6 +221,7 @@ function SoloMonsterAttackCommandCoordinator.Execute(
 		SpawnPointId = spawnPointId,
 		EntryPoint = entryPoint,
 		TargetPlotName = area.PlotName,
+		TargetRegionId = targetRegionId,
 		StartedAt = workspace:GetServerTimeNow(),
 	})
 	setActiveCommand(player, spawnPointId, commandId)

@@ -1,28 +1,31 @@
 --[[
-	职责：组装服务器权威的单人空地出征链路。
-	输入：在线玩家、自己的 SpawnPointId、展示空 Plot 的 AttackViewBounds 内落点。
+	职责：组装服务器权威的单人固定演示出征链路。
+	输入：在线玩家、自己的 SpawnPointId、R1/R2 可攻击区域内落点。
 	输出：命令是否接受、Reason、CommandId 和供客户端跟随的怪兽 Model。
-	内部算法：调用单人命令协调器；接受后开罐、最多三秒移动到点击点，
-		连续播放三秒攻击动画且不造成伤害/奖励，最后复用回城与罐体恢复模块。
-	不负责：攻击玩家、房屋、防御单位、奖励、客户端选点或修改场景。
+	内部算法：调用单人命令协调器；接受后开罐、运镜、移动到点击点，
+		复用多人模式的持续激光和 HouseAttackCommitter 扣血流程，最后回城。
+	不负责：目标选择、玩家 Plot、玩家存档、客户端选点或攻击奖励。
 ]]
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local AttackAnimationSelector = require(script.Parent.AttackAnimationSelector)
 local GodzillaMoveService = require(script.Parent.GodzillaMoveService)
 local GodzillaService = require(script.Parent.GodzillaService)
 local ModelMover = require(script.Parent.ModelMover)
 local MonsterAttackCameraPublisher = require(script.Parent.MonsterAttackCameraPublisher)
 local MonsterIncubatorCoordinator = require(script.Parent.MonsterIncubatorCoordinator)
-local MonsterAttackPresentationPlayer = require(
-	script.Parent.MonsterAttackPresentationPlayer
-)
 local MonsterReturnCoordinator = require(script.Parent.MonsterReturnCoordinator)
 local MonsterRosterCoordinator = require(script.Parent.MonsterRosterCoordinator)
+local MonsterStructureLaserCoordinator = require(
+	script.Parent.MonsterStructureLaserCoordinator
+)
 local PlayerPlotAssignmentService = require(script.Parent.PlayerPlotAssignmentService)
 local PlayerRebirthBonusQuery = require(script.Parent.PlayerRebirthBonusQuery)
+local SoloShowcaseHouseAttackAccess = require(
+	script.Parent.SoloShowcaseHouseAttackAccess
+)
+local SoloShowcaseRuntimeService = require(script.Parent.SoloShowcaseRuntimeService)
 local SoloMonsterAttackCommandCoordinator = require(
 	script.Parent.SoloMonsterAttackCommandCoordinator
 )
@@ -110,65 +113,31 @@ local function ensureReturn(player: Player, spawnPointId: string, plot: Model)
 	end
 end
 
-local function playAttackPresentation(
+local function playStructureAttack(
 	player: Player,
-	spawnPointId: string,
+	monster: Model,
 	targetPosition: Vector3,
+	targetRegionId: string,
 	configs,
 	isCancelled: () -> boolean
 )
-	local deadline = workspace:GetServerTimeNow()
-		+ SoloMonsterAttackConfigs.AttackDuration
-	while workspace:GetServerTimeNow() < deadline do
-		if isCancelled() then
-			return result(false, "Cancelled")
-		end
-		local record = MonsterRosterCoordinator.Get(player, spawnPointId)
-		if not record or not record.Model then
-			return result(false, "MonsterUnavailable")
-		end
-		local model = record.Model
-		local choice = AttackAnimationSelector.Next(
-			model,
-			configs.Animation.Animations,
-			configs.Animation.AttackSequence,
-			{ Mode = configs.Attack.Animation.SelectionMode }
-		)
-		local played, playbackOrError = pcall(
-			MonsterAttackPresentationPlayer.Play,
-			model,
-			choice.AssetId,
-			{
-				EffectName = configs.Animation.AttackEffects[choice.Name],
-				ResolveTargetPosition = function()
-					return targetPosition
-				end,
-				HitProgress = configs.Attack.Animation.HitProgress,
-				Speed = configs.Attack.Animation.Speed,
-				Priority = Enum.AnimationPriority.Action,
-				IsCancelled = function()
-					return isCancelled()
-						or workspace:GetServerTimeNow() >= deadline
-						or not model:IsDescendantOf(workspace)
-				end,
-			},
-			function()
-				-- 单人空地攻击只有表现，不提交伤害、奖励或建筑状态。
-			end
-		)
-		if not played then
-			warn("单人出征攻击动画失败：", playbackOrError)
-			return result(false, "AttackAnimationFailed")
-		end
-		if isCancelled() then
-			return result(false, "Cancelled")
-		end
-		if playbackOrError.Cancelled
-			and workspace:GetServerTimeNow() < deadline then
-			return result(false, "AttackAnimationCancelled")
-		end
-	end
-	return result(true, nil)
+	return MonsterStructureLaserCoordinator.Execute(
+		player,
+		monster,
+		targetPosition,
+		{
+			TargetRegionId = targetRegionId,
+			HouseAccess = SoloShowcaseHouseAttackAccess,
+			ModelAnimationConfig = configs.Animation,
+			MonsterAttackConfig = configs.Attack,
+			TurnDuration = configs.Expedition.Movement.TurnDuration,
+			RewardAmount = SoloMonsterAttackConfigs.RewardAmount,
+			RewardPlayer = player,
+			PollStopReason = function()
+				return if isCancelled() then "Cancelled" else nil
+			end,
+		}
+	)
 end
 
 function PlayerSoloMonsterAttackApplication.Execute(
@@ -230,6 +199,7 @@ function PlayerSoloMonsterAttackApplication.Execute(
 		entryPoint,
 		{
 			AreaAccess = WorkspaceSoloAttackAreaAccess,
+			PrepareAttack = SoloShowcaseRuntimeService.Reset,
 			StartExpedition = function(context, isCancelled)
 				local latest = MonsterRosterCoordinator.Get(
 					context.Player,
@@ -252,8 +222,11 @@ function PlayerSoloMonsterAttackApplication.Execute(
 						context.TargetPlotName,
 						context.EntryPoint
 					)
-				if not targetPlotName then
+				if not targetPlotName or not regionId then
 					return result(false, cameraReason or "RegionCameraTargetUnavailable")
+				end
+				if regionId ~= context.TargetRegionId then
+					return result(false, "SoloAttackRegionChanged")
 				end
 				local cameraPublished = MonsterAttackCameraPublisher.Publish(
 					context.Player,
@@ -315,10 +288,11 @@ function PlayerSoloMonsterAttackApplication.Execute(
 				if isCancelled() then
 					return result(false, "Cancelled")
 				end
-				return playAttackPresentation(
+				return playStructureAttack(
 					context.Player,
-					context.SpawnPointId,
+					model,
 					context.EntryPoint,
+					context.TargetRegionId,
 					configs,
 					isCancelled
 				)

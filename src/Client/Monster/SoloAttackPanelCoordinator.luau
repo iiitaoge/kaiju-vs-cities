@@ -1,8 +1,8 @@
 --[[
-	职责：管理没有其他玩家时的单人空地选点会话。
+	职责：管理没有其他玩家时的固定演示场景选点会话。
 	输入：自己的 SpawnPointId、单人目标快照和网络/UI 回调。
 	输出：与正式攻击面板兼容的提交、取消和查询会话。
-	内部算法：只允许展示空 Plot 范围内的世界点；服务器拒绝后保持打开，接受后关闭。
+	内部算法：只允许 R1/R2 可攻击 Bounds 内的世界点；服务器拒绝后保持打开，接受后关闭。
 	不负责：查询玩家、相机、准星、怪兽移动、动画或奖励。
 ]]
 
@@ -59,11 +59,34 @@ function SoloAttackPanelCoordinator.Open(spawnPointId: string, target: Target, o
 		if submitting then
 			return false, "RequestBusy"
 		end
-		local bounds = target.UnlockedTerritories[1]
-		local pointCheck = if bounds
-			then TerritoryPointRules.Check(bounds.CFrame, bounds.Size, worldPoint)
-			else { Allowed = false, Reason = "SoloAttackBoundsUnavailable" }
-		return pointCheck.Allowed, pointCheck.Reason
+
+		local validTerritoryCount = 0
+		local invalidPointReason = nil
+		for _, territory in target.UnlockedTerritories do
+			local pointCheck = TerritoryPointRules.Check(
+				territory.CFrame,
+				territory.Size,
+				worldPoint
+			)
+			if pointCheck.Reason == "InvalidEntryPoint" then
+				invalidPointReason = pointCheck.Reason
+				break
+			end
+			if pointCheck.Reason ~= "InvalidTerritory" then
+				validTerritoryCount += 1
+			end
+			if pointCheck.Allowed then
+				if territory.AttackInProgress then
+					return false, "RegionAttackInProgress"
+				end
+				return true, nil
+			end
+		end
+
+		return false, invalidPointReason
+			or if validTerritoryCount > 0
+				then "EntryPointOutsideTerritory"
+				else "SoloAttackRegionUnavailable"
 	end
 
 	local function submit(worldPoint: Vector3)
