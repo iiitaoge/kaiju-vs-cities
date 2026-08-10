@@ -70,6 +70,7 @@ function ButtonPresentationQuery.Get(player: Player, action)
 		end
 		return ButtonWorldUIPresentationRules.Resolve({
 			Kind = "MonsterBuild",
+			Role = "Attack",
 			Cost = snapshot.Build.Cost,
 			Reason = snapshot.Build.Reason,
 		})
@@ -82,6 +83,7 @@ function ButtonPresentationQuery.Get(player: Player, action)
 		end
 		return ButtonWorldUIPresentationRules.Resolve({
 			Kind = "MonsterBuild",
+			Role = "Defense",
 			Cost = snapshot.Build.Cost,
 			Reason = snapshot.Build.Reason,
 		})

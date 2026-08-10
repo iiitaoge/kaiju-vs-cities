@@ -99,12 +99,24 @@ function ButtonWorldUIPresentationRulesSpec.Run(): boolean
 	assert(not purchasedBoost.Texts.Text4.Visible, "已购买 Boost 不应继续显示自动领取效果")
 	assert(not purchasedBoost.Money.Visible, "已购买 Boost 不应显示价格")
 
-	local monster = ButtonWorldUIPresentationRules.Resolve({
+	local attackMonster = ButtonWorldUIPresentationRules.Resolve({
 		Kind = "MonsterBuild",
+		Role = "Attack",
 		Cost = 500,
 	})
-	assert(monster.Texts.Text1.Text == "Build Monster", "怪兽孵化建造文本错误")
-	assert(monster.Money.Text == "500", "怪兽孵化价格错误")
+	assert(attackMonster.Texts.Text1.Text == "Build Kaiju", "进攻怪兽建造文本错误")
+	assert(attackMonster.Money.Text == "500", "进攻怪兽建造价格错误")
+
+	local defenseMonster = ButtonWorldUIPresentationRules.Resolve({
+		Kind = "MonsterBuild",
+		Role = "Defense",
+		Cost = 500,
+	})
+	assert(
+		defenseMonster.Texts.Text1.Text == "Build Anti Kaiju",
+		"防守怪兽建造文本错误"
+	)
+	assert(defenseMonster.Money.Text == "500", "防守怪兽建造价格错误")
 
 	local oldMonsterPrimary = ButtonWorldUIPresentationRules.Resolve({
 		Kind = "MonsterPrimary",
