@@ -1,13 +1,17 @@
 --[[
-	职责：用 ReplicatedStorage/TutorialAssets 中的 PopUp 与 Beam 模板显示一个客户端引导步骤。
-	输入：Create 接收 PlayerGui；Show 接收英文步骤定义和可选目标 BasePart。
-	输出：可 Show/Hide/Destroy 的表现句柄，模板无效时返回 nil 和稳定原因。
-	内部算法：克隆顶部 Tip；在角色 HumanoidRootPart 与目标间创建本地 Attachment 和 Beam。
-	不负责：步骤判断、服务器查询、Plot/按钮/建筑定位或完成持久化。
+	职责：用 ReplicatedStorage/TutorialAssets 中的 PopUp 与 Beam 模板显示一个客户端引导步骤，
+	并在步骤需要点击时显示动态遮罩与 HUD.Guide 小手指。
+	输入：Create 接收 PlayerGui；Show 接收英文步骤定义和可选世界/UI 引导目标。
+	输出：可 Show/Hide/Destroy 的表现句柄；目标按钮或世界落点会保留可点击区域。
+	内部算法：世界目标继续使用角色到目标的 Beam；UI/世界落点目标使用四块遮罩围出目标矩形，
+	矩形和小手指每帧按当前 GUI 绝对位置或摄像机投影刷新。
+	不负责：步骤判断、服务器查询、Plot/按钮定位、攻击输入或完成持久化。
 ]]
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
 local ResponsiveUIScale = require(ReplicatedStorage.Shared.UI.ResponsiveUIScale)
@@ -26,15 +30,34 @@ export type Definition = {
 	TargetKind: string?,
 }
 
+export type WorldBounds = {
+	CFrame: CFrame,
+	Size: Vector3,
+}
+
+export type GuideTarget = {
+	GuiObject: GuiObject?,
+	WorldPart: BasePart?,
+	WorldPosition: Vector3?,
+	WorldBounds: WorldBounds?,
+	ScreenCenter: boolean?,
+}
+
 export type Handle = {
-	Show: (Definition, BasePart?) -> (),
+	Show: (Definition, GuideTarget?) -> (),
 	Hide: () -> (),
 	Destroy: () -> (),
 }
 
 local GUI_NAME = "TutorialPopUp"
+local CLICK_MASK_GUI_NAME = "TutorialClickMask"
+local CLICK_HAND_GUI_NAME = "TutorialClickHand"
 local ORIGIN_ATTACHMENT_NAME = "TutorialGuideOrigin"
 local TARGET_ATTACHMENT_NAME = "TutorialGuideTarget"
+local MASK_TRANSPARENCY = 0.38
+local TARGET_PADDING = 10
+local MAX_WORLD_HIGHLIGHT_RATIO = 0.55
+local WORLD_FOCUS_RATIO = 0.2
 local RESPONSIVE_CONFIG = table.freeze({
 	ReferenceViewport = Vector2.new(1280, 720),
 	MinScale = 0.58,
@@ -53,6 +76,165 @@ local function getCharacterRoot(): BasePart?
 	return if root and root:IsA("BasePart") then root else nil
 end
 
+local function isVisibleInHierarchy(instance: Instance?): boolean
+	local current = instance
+	while current do
+		if current:IsA("GuiObject") and not current.Visible then
+			return false
+		end
+		if current:IsA("LayerCollector") and not current.Enabled then
+			return false
+		end
+		current = current.Parent
+	end
+	return true
+end
+
+local function createOverlayGui(
+	playerGui: PlayerGui,
+	name: string,
+	displayOrder: number
+): ScreenGui
+	local gui = Instance.new("ScreenGui")
+	gui.Name = name
+	gui.Enabled = false
+	gui.ResetOnSpawn = false
+	gui.DisplayOrder = displayOrder
+	gui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+	gui.IgnoreGuiInset = true
+	gui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets
+	gui.SafeAreaCompatibility = Enum.SafeAreaCompatibility.FullscreenExtension
+	gui.ClipToDeviceSafeArea = true
+	gui.AutoLocalize = false
+	gui.Parent = playerGui
+	return gui
+end
+
+local function createMaskFrame(parent: ScreenGui, name: string): Frame
+	local frame = Instance.new("Frame")
+	frame.Name = name
+	frame.BackgroundColor3 = Color3.new(0, 0, 0)
+	frame.BackgroundTransparency = MASK_TRANSPARENCY
+	frame.BorderSizePixel = 0
+	frame.Active = true
+	frame.Selectable = false
+	frame.ZIndex = 1
+	frame.Parent = parent
+	return frame
+end
+
+local function setFrameRect(frame: Frame, position: Vector2, size: Vector2)
+	local width = math.max(0, size.X)
+	local height = math.max(0, size.Y)
+	frame.Position = UDim2.fromOffset(position.X, position.Y)
+	frame.Size = UDim2.fromOffset(width, height)
+	frame.Visible = width > 0 and height > 0
+end
+
+local function setMaskRect(
+	frames: { Frame },
+	highlight: Frame,
+	viewport: Vector2,
+	rectPosition: Vector2,
+	rectSize: Vector2
+)
+	local left = math.clamp(rectPosition.X, 0, viewport.X)
+	local top = math.clamp(rectPosition.Y, 0, viewport.Y)
+	local right = math.clamp(rectPosition.X + rectSize.X, left, viewport.X)
+	local bottom = math.clamp(rectPosition.Y + rectSize.Y, top, viewport.Y)
+	local width = right - left
+	local height = bottom - top
+
+	setFrameRect(frames[1], Vector2.zero, Vector2.new(viewport.X, top))
+	setFrameRect(
+		frames[2],
+		Vector2.new(0, bottom),
+		Vector2.new(viewport.X, viewport.Y - bottom)
+	)
+	setFrameRect(frames[3], Vector2.new(0, top), Vector2.new(left, height))
+	setFrameRect(
+		frames[4],
+		Vector2.new(right, top),
+		Vector2.new(viewport.X - right, height)
+	)
+
+	highlight.Position = UDim2.fromOffset(left, top)
+	highlight.Size = UDim2.fromOffset(width, height)
+	highlight.Visible = width > 0 and height > 0
+end
+
+local function inflateRect(
+	position: Vector2,
+	size: Vector2,
+	viewport: Vector2
+): (Vector2, Vector2)
+	local inflatedPosition = position - Vector2.new(TARGET_PADDING, TARGET_PADDING)
+	local inflatedSize = size + Vector2.new(TARGET_PADDING * 2, TARGET_PADDING * 2)
+	local left = math.clamp(inflatedPosition.X, 0, viewport.X)
+	local top = math.clamp(inflatedPosition.Y, 0, viewport.Y)
+	local right = math.clamp(inflatedPosition.X + inflatedSize.X, left, viewport.X)
+	local bottom = math.clamp(inflatedPosition.Y + inflatedSize.Y, top, viewport.Y)
+	return Vector2.new(left, top), Vector2.new(right - left, bottom - top)
+end
+
+local function projectWorldPoint(camera: Camera, worldPosition: Vector3): (Vector2?, number?)
+	local projected, visible = camera:WorldToScreenPoint(worldPosition)
+	if not visible or projected.Z <= 0 then
+		return nil, projected.Z
+	end
+	return Vector2.new(projected.X, projected.Y), projected.Z
+end
+
+local function projectWorldBounds(
+	camera: Camera,
+	bounds: WorldBounds
+): (Vector2?, Vector2?)
+	local half = bounds.Size * 0.5
+	local minimum: Vector2? = nil
+	local maximum: Vector2? = nil
+	for x = -1, 1, 2 do
+		for y = -1, 1, 2 do
+			for z = -1, 1, 2 do
+				local worldPoint = bounds.CFrame:PointToWorldSpace(
+					Vector3.new(half.X * x, half.Y * y, half.Z * z)
+				)
+				local screenPoint = projectWorldPoint(camera, worldPoint)
+				if screenPoint then
+					minimum = if minimum
+						then Vector2.new(
+							math.min(minimum.X, screenPoint.X),
+							math.min(minimum.Y, screenPoint.Y)
+						)
+						else screenPoint
+					maximum = if maximum
+						then Vector2.new(
+							math.max(maximum.X, screenPoint.X),
+							math.max(maximum.Y, screenPoint.Y)
+						)
+						else screenPoint
+				end
+			end
+		end
+	end
+	if not minimum or not maximum then
+		return nil, nil
+	end
+	return minimum, maximum - minimum
+end
+
+local function resolveGuiRect(target: GuiObject): (Vector2?, Vector2?)
+	if not target.Parent or not isVisibleInHierarchy(target) then
+		return nil, nil
+	end
+	return target.AbsolutePosition, target.AbsoluteSize
+end
+
+local function resolveGuideTemplate(playerGui: PlayerGui): GuiObject?
+	local hud = playerGui:FindFirstChild("HUD")
+	local guide = hud and hud:FindFirstChild("Guide")
+	return if guide and guide:IsA("GuiObject") then guide else nil
+end
+
 function TutorialPresentation.Create(playerGui: PlayerGui): (Handle?, string?)
 	assert(playerGui:IsA("PlayerGui"), "playerGui 必须是 PlayerGui")
 	local assets = ReplicatedStorage:WaitForChild("TutorialAssets", 20)
@@ -69,6 +251,13 @@ function TutorialPresentation.Create(playerGui: PlayerGui): (Handle?, string?)
 	if previous then
 		previous:Destroy()
 	end
+	for _, name in { CLICK_MASK_GUI_NAME, CLICK_HAND_GUI_NAME } do
+		local oldOverlay = playerGui:FindFirstChild(name)
+		if oldOverlay then
+			oldOverlay:Destroy()
+		end
+	end
+
 	local gui = popupTemplate:Clone() :: ScreenGui
 	gui.Name = GUI_NAME
 	gui.Enabled = false
@@ -89,28 +278,71 @@ function TutorialPresentation.Create(playerGui: PlayerGui): (Handle?, string?)
 	info.RichText = true
 	info.TextScaled = true
 	gui.Parent = playerGui
-	local visibilityGate = LocalUIVisibilityGate.Create(
-		UIModeVisibilityRules.Channels.Tutorial,
-		function(visible)
-			gui.Enabled = visible
-		end,
-		false
-	)
 
+	local clickMaskGui = createOverlayGui(playerGui, CLICK_MASK_GUI_NAME, 190)
+	local clickHandGui = createOverlayGui(playerGui, CLICK_HAND_GUI_NAME, 210)
+	local overlayCoordinateSpace = Instance.new("Frame")
+	overlayCoordinateSpace.Name = "CoordinateSpace"
+	overlayCoordinateSpace.BackgroundTransparency = 1
+	overlayCoordinateSpace.BorderSizePixel = 0
+	overlayCoordinateSpace.Position = UDim2.fromOffset(0, 0)
+	overlayCoordinateSpace.Size = UDim2.fromScale(1, 1)
+	overlayCoordinateSpace.Active = false
+	overlayCoordinateSpace.Selectable = false
+	overlayCoordinateSpace.ZIndex = 0
+	overlayCoordinateSpace.Parent = clickMaskGui
+	local maskFrames = {
+		createMaskFrame(clickMaskGui, "Top"),
+		createMaskFrame(clickMaskGui, "Bottom"),
+		createMaskFrame(clickMaskGui, "Left"),
+		createMaskFrame(clickMaskGui, "Right"),
+	}
+	local highlight = Instance.new("Frame")
+	highlight.Name = "TargetHighlight"
+	highlight.BackgroundTransparency = 1
+	highlight.BorderColor3 = Color3.fromRGB(255, 232, 76)
+	highlight.BorderSizePixel = 3
+	highlight.Active = false
+	highlight.Selectable = false
+	highlight.ZIndex = 2
+	highlight.Visible = false
+	highlight.Parent = clickMaskGui
+
+	local guideTemplate = resolveGuideTemplate(playerGui)
+	local guide: GuiObject? = nil
+	if guideTemplate then
+		guideTemplate.Visible = false
+		guide = guideTemplate:Clone()
+		guide.Name = "Guide"
+		guide.AnchorPoint = Vector2.new(0.5, 0.5)
+		guide.BackgroundTransparency = 1
+		guide.Active = false
+		guide.Selectable = false
+		guide.ZIndex = 1
+		guide.Visible = false
+		guide.Parent = clickHandGui
+	end
+
+	local visibilityGate
 	local beam: Beam? = nil
 	local originAttachment: Attachment? = nil
 	local targetAttachment: Attachment? = nil
 	local currentTarget: BasePart? = nil
+	local currentGuideTarget: GuideTarget? = nil
+	local clickGuideRequested = false
+	local presentationVisible = false
 	local connections: { RBXScriptConnection } = {}
 	local cameraConnection: RBXScriptConnection? = nil
+	local renderConnection: RBXScriptConnection? = nil
 	local destroyed = false
+	local handTime = 0
 
 	local function updateScale()
 		local camera = Workspace.CurrentCamera
 		if camera and camera.ViewportSize.X > 0 and camera.ViewportSize.Y > 0 then
 			uiScale.Scale = ResponsiveUIScale.Compute(
 				camera.ViewportSize,
-				game:GetService("UserInputService").TouchEnabled,
+				UserInputService.TouchEnabled,
 				RESPONSIVE_CONFIG
 			)
 		end
@@ -178,18 +410,160 @@ function TutorialPresentation.Create(playerGui: PlayerGui): (Handle?, string?)
 		beam.Parent = originAttachment
 	end
 
+	local function setClickGuideVisible(visible: boolean)
+		presentationVisible = visible
+		clickMaskGui.Enabled = visible and clickGuideRequested
+		clickHandGui.Enabled = visible and clickGuideRequested
+	end
+
+	local function updateHandSize(viewport: Vector2): Vector2
+		if not guide then
+			return Vector2.zero
+		end
+		local sourceSize = if guideTemplate then guideTemplate.AbsoluteSize else Vector2.zero
+		local fallback = math.clamp(math.min(viewport.X, viewport.Y) * 0.12, 48, 110)
+		local width = if sourceSize.X > 0 then math.clamp(sourceSize.X, 48, 140) else fallback
+		local height = if sourceSize.Y > 0 then math.clamp(sourceSize.Y, 48, 110) else fallback
+		guide.Size = UDim2.fromOffset(width, height)
+		return Vector2.new(width, height)
+	end
+
+	local function resolveCurrentRect(): (Vector2?, Vector2?, Vector2?)
+		local target = currentGuideTarget
+		local camera = Workspace.CurrentCamera
+		local overlayOrigin = overlayCoordinateSpace.AbsolutePosition
+		local viewport = overlayCoordinateSpace.AbsoluteSize
+		if not target or not camera or viewport.X <= 0 or viewport.Y <= 0 then
+			return nil, nil, nil
+		end
+
+		if target.GuiObject then
+			local position, size = resolveGuiRect(target.GuiObject)
+			if position and size and size.X > 0 and size.Y > 0 then
+				local rectPosition, rectSize = inflateRect(
+					position - overlayOrigin,
+					size,
+					viewport
+				)
+				return rectPosition, rectSize, viewport
+			end
+		end
+
+		if target.WorldBounds then
+			local position, size = projectWorldBounds(camera, target.WorldBounds)
+			if position and size then
+				position -= overlayOrigin
+				if size.X > viewport.X * MAX_WORLD_HIGHLIGHT_RATIO
+					or size.Y > viewport.Y * MAX_WORLD_HIGHLIGHT_RATIO
+				then
+					local center = position + size * 0.5
+					local side = math.clamp(
+						math.min(viewport.X, viewport.Y) * WORLD_FOCUS_RATIO,
+						110,
+						260
+					)
+					position = center - Vector2.new(side * 0.5, side * 0.5)
+					size = Vector2.new(side, side)
+				end
+				local rectPosition, rectSize = inflateRect(position, size, viewport)
+				return rectPosition, rectSize, viewport
+			end
+		end
+
+		if target.WorldPosition then
+			local position = projectWorldPoint(camera, target.WorldPosition)
+			if position then
+				position -= overlayOrigin
+				local side = math.clamp(math.min(viewport.X, viewport.Y) * 0.2, 110, 260)
+				local rectPosition, rectSize = inflateRect(
+					position - Vector2.new(side * 0.5, side * 0.5),
+					Vector2.new(side, side),
+					viewport
+				)
+				return rectPosition, rectSize, viewport
+			end
+		end
+
+		if target.ScreenCenter then
+			local side = math.clamp(
+				math.min(viewport.X, viewport.Y) * WORLD_FOCUS_RATIO,
+				110,
+				260
+			)
+			local rectPosition, rectSize = inflateRect(
+				Vector2.new(viewport.X * 0.5 - side * 0.5, viewport.Y * 0.5 - side * 0.5),
+				Vector2.new(side, side),
+				viewport
+			)
+			return rectPosition, rectSize, viewport
+		end
+
+		return nil, nil, nil
+	end
+
+	local function updateClickGuide(deltaTime: number)
+		handTime += deltaTime
+		if not presentationVisible or not clickGuideRequested then
+			clickMaskGui.Enabled = false
+			clickHandGui.Enabled = false
+			highlight.Visible = false
+			if guide then
+				guide.Visible = false
+			end
+			return
+		end
+		local rectPosition, rectSize, viewport = resolveCurrentRect()
+		if not rectPosition or not rectSize or not viewport then
+			clickMaskGui.Enabled = false
+			clickHandGui.Enabled = false
+			highlight.Visible = false
+			if guide then
+				guide.Visible = false
+			end
+			return
+		end
+
+		clickMaskGui.Enabled = true
+		clickHandGui.Enabled = true
+		setMaskRect(maskFrames, highlight, viewport, rectPosition, rectSize)
+		if guide then
+			local guideSize = updateHandSize(viewport)
+			local targetPoint = rectPosition + rectSize * 0.5
+			local bob = math.sin(handTime * 5) * 5
+			local position = targetPoint + Vector2.new(guideSize.X * 0.18, guideSize.Y * 0.45 + bob)
+			local half = guideSize * 0.5
+			position = Vector2.new(
+				math.clamp(position.X, half.X, math.max(half.X, viewport.X - half.X)),
+				math.clamp(position.Y, half.Y, math.max(half.Y, viewport.Y - half.Y))
+			)
+			guide.Position = UDim2.fromOffset(position.X, position.Y)
+			guide.Visible = true
+		end
+	end
+
 	bindCamera()
 	table.insert(connections, Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(bindCamera))
+	renderConnection = RunService.RenderStepped:Connect(updateClickGuide)
+	visibilityGate = LocalUIVisibilityGate.Create(
+		UIModeVisibilityRules.Channels.Tutorial,
+		function(visible)
+			gui.Enabled = visible
+			setClickGuideVisible(visible)
+		end,
+		false
+	)
 
 	local handle = {} :: any
-	function handle.Show(definition: Definition, target: BasePart?)
+	function handle.Show(definition: Definition, target: GuideTarget?)
 		if destroyed then
 			return
 		end
 		title.Text = "TIP:"
 		info.Text = string.format("<b>%s</b>\n%s", definition.Title, definition.Info)
+		currentGuideTarget = target
+		clickGuideRequested = target ~= nil
+		setTarget(if target then target.WorldPart else nil)
 		visibilityGate:SetDesiredVisible(true)
-		setTarget(target)
 	end
 
 	function handle.Hide()
@@ -197,6 +571,8 @@ function TutorialPresentation.Create(playerGui: PlayerGui): (Handle?, string?)
 			return
 		end
 		visibilityGate:SetDesiredVisible(false)
+		currentGuideTarget = nil
+		clickGuideRequested = false
 		clearBeam()
 	end
 
@@ -205,7 +581,13 @@ function TutorialPresentation.Create(playerGui: PlayerGui): (Handle?, string?)
 			return
 		end
 		destroyed = true
+		currentGuideTarget = nil
+		clickGuideRequested = false
 		clearBeam()
+		if renderConnection then
+			renderConnection:Disconnect()
+			renderConnection = nil
+		end
 		if cameraConnection then
 			cameraConnection:Disconnect()
 			cameraConnection = nil
@@ -214,8 +596,22 @@ function TutorialPresentation.Create(playerGui: PlayerGui): (Handle?, string?)
 			connection:Disconnect()
 		end
 		table.clear(connections)
-		visibilityGate:Destroy()
-		gui:Destroy()
+		if visibilityGate then
+			visibilityGate:Destroy()
+			visibilityGate = nil
+		end
+		if guideTemplate and guideTemplate.Parent then
+			guideTemplate.Visible = false
+		end
+		if clickMaskGui.Parent then
+			clickMaskGui:Destroy()
+		end
+		if clickHandGui.Parent then
+			clickHandGui:Destroy()
+		end
+		if gui.Parent then
+			gui:Destroy()
+		end
 	end
 
 	return handle, nil

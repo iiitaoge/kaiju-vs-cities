@@ -1,13 +1,14 @@
 --[[
-	职责：轮询服务器权威引导步骤，解析本地场景目标并驱动 Tip + Beam 表现。
-	输入：Start 无参数；状态来自 TutorialSnapshot 和攻击选择 HUD 可见性。
+	职责：轮询服务器权威引导步骤，解析本地场景目标并驱动 Tip、Beam 与点击引导表现。
+	输入：Start 无参数；状态来自 TutorialSnapshot、攻击选择 HUD 与本地攻击选择状态。
 	输出：未完成玩家的英文引导；首次完成时短暂显示完成提示后清理，并提供完成提示结束信号。
-	内部算法：服务端步骤 → 本地 ChooseTarget 子步骤 → 目标 BasePart → TutorialPresentation。
+	内部算法：服务端步骤 → 本地 ChooseTarget 子步骤 → 世界目标/UI 目标 → TutorialPresentation。
 	不负责：修改金钱/区域/怪兽、提交攻击、判定完成或写入存档。
 ]]
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
 
 local LocalPlayerCityRuntimeAccess = require(
 	script.Parent.Parent.Building.LocalPlayerCityRuntimeAccess
@@ -15,6 +16,12 @@ local LocalPlayerCityRuntimeAccess = require(
 local LocalPlotButtonAccess = require(script.Parent.Parent.Button.LocalPlotButtonAccess)
 local LocalAttackSelectionHUDAccess = require(
 	script.Parent.Parent.Monster.LocalAttackSelectionHUDAccess
+)
+local LocalAttackSelectionTutorialState = require(
+	script.Parent.Parent.Monster.LocalAttackSelectionTutorialState
+)
+local LocalMonsterManagementPanelAccess = require(
+	script.Parent.Parent.Monster.LocalMonsterManagementPanelAccess
 )
 local LocalMonsterBuildPresentationAccess = require(
 	script.Parent.Parent.Monster.LocalMonsterBuildPresentationAccess
@@ -73,6 +80,16 @@ end
 
 local function resolveDefinition(stepId: string, response)
 	local definition = assert(TutorialProgression.GetDefinition(stepId))
+	if stepId == "ChooseTarget" and UserInputService.TouchEnabled then
+		local state = LocalAttackSelectionTutorialState.Get()
+		return {
+			Title = if state.MobileAimReady then "LAUNCH THE ATTACK" else "AIM AT THE TARGET",
+			Info = if state.MobileAimReady
+				then "Press Attack to launch."
+				else "Tap the highlighted city to aim.",
+			TargetKind = definition.TargetKind,
+		}
+	end
 	local amountKey = definition.AmountKey
 	if not amountKey then
 		return definition
@@ -90,6 +107,23 @@ local function resolveDefinition(stepId: string, response)
 		),
 		TargetKind = definition.TargetKind,
 	}
+end
+
+local function isVisibleGuiObject(guiObject: GuiObject?): boolean
+	if not guiObject then
+		return false
+	end
+	local current: Instance? = guiObject
+	while current do
+		if current:IsA("GuiObject") and not current.Visible then
+			return false
+		end
+		if current:IsA("LayerCollector") and not current.Enabled then
+			return false
+		end
+		current = current.Parent
+	end
+	return true
 end
 
 local function findModelPart(model: Model?): BasePart?
@@ -136,12 +170,98 @@ local function resolveTarget(targetKind: string?, plot: Model): BasePart?
 	return nil
 end
 
+local function resolveGuideTarget(
+	stepId: string,
+	playerGui: PlayerGui,
+	plot: Model?,
+	targetKind: string?
+): TutorialPresentation.GuideTarget?
+	if stepId == "StartAttack" then
+		local management = LocalMonsterManagementPanelAccess.Resolve(playerGui)
+		if management
+			and management.Panel.Visible
+			and isVisibleGuiObject(management.StartButton)
+			and management.StartButton.Active
+		then
+			return {
+				GuiObject = management.StartButton,
+				WorldPart = nil,
+				WorldPosition = nil,
+				WorldBounds = nil,
+			}
+		end
+		local incubatorTarget = if plot
+			then resolveTarget("FirstMonsterIncubator", plot)
+			else nil
+		return if incubatorTarget
+			then {
+				GuiObject = nil,
+				WorldPart = incubatorTarget,
+				WorldPosition = nil,
+				WorldBounds = nil,
+			}
+			else nil
+	end
+
+	if stepId == "ChooseTarget" then
+		local state = LocalAttackSelectionTutorialState.Get()
+		if UserInputService.TouchEnabled
+			and state.MobileAimReady
+		then
+			local attackHUD = LocalAttackSelectionHUDAccess.Resolve(playerGui)
+			if attackHUD
+				and isVisibleGuiObject(attackHUD.AttackButton)
+				and attackHUD.AttackButton.Active
+			then
+				return {
+					GuiObject = attackHUD.AttackButton,
+					WorldPart = nil,
+					WorldPosition = nil,
+					WorldBounds = nil,
+				}
+			end
+		end
+		if state.WorldGuideCFrame and state.WorldGuideSize then
+			return {
+				GuiObject = nil,
+				WorldPart = nil,
+				WorldPosition = state.WorldGuideCFrame.Position,
+				WorldBounds = {
+					CFrame = state.WorldGuideCFrame,
+					Size = state.WorldGuideSize,
+				},
+				ScreenCenter = true,
+			}
+		end
+		local attackHUD = LocalAttackSelectionHUDAccess.Resolve(playerGui)
+		if attackHUD and isVisibleGuiObject(attackHUD.BrowseControls) then
+			return {
+				GuiObject = attackHUD.BrowseControls,
+				WorldPart = nil,
+				WorldPosition = nil,
+				WorldBounds = nil,
+			}
+		end
+		return nil
+	end
+
+	local worldTarget = if plot then resolveTarget(targetKind, plot) else nil
+	return if worldTarget
+		then {
+			GuiObject = nil,
+			WorldPart = worldTarget,
+			WorldPosition = nil,
+			WorldBounds = nil,
+		}
+		else nil
+end
+
 local function resolveLocalStep(serverStepId: string, playerGui: PlayerGui): string
 	if serverStepId ~= "StartAttack" then
 		return serverStepId
 	end
 	local refs = LocalAttackSelectionHUDAccess.Resolve(playerGui)
-	if refs and refs.Root.Visible and refs.BrowseControls.Visible then
+	if refs and refs.Root.Visible then
 		return "ChooseTarget"
 	end
 	return serverStepId
@@ -208,7 +328,7 @@ function TutorialController.Start()
 			local stepId = resolveLocalStep(response.StepId, playerGui)
 			local definition = resolveDefinition(stepId, response)
 			local plot = LocalPlayerCityRuntimeAccess.FindPlot(player.UserId)
-			local target = if plot then resolveTarget(definition.TargetKind, plot) else nil
+			local target = resolveGuideTarget(stepId, playerGui, plot, definition.TargetKind)
 			presentation.Show(definition, target)
 			task.wait(POLL_SECONDS)
 		end
