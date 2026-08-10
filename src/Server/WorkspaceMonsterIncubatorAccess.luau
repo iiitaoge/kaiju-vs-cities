@@ -2,7 +2,7 @@
 	职责：管理并验证 Plot/Runtime/MonsterIncubators 中的服务器权威罐体。
 	输入：Plot、SpawnPointId；创建目录或删除时接收明确操作参数。
 	输出：Runtime Folder、含 MonsterHomeAttachment 的罐体合同或稳定失败原因。
-	内部算法：固定 Runtime 路径、唯一名称、身份、直接子级和锚定状态验证。
+	内部算法：固定 Runtime 路径、唯一名称、身份、直接子级、锚定状态和非物理状态验证。
 	不负责：模板、世界定位、Clone、动画、怪兽状态或购买事务。
 ]]
 
@@ -130,6 +130,13 @@ function WorkspaceMonsterIncubatorAccess.Resolve(
 	end
 	if not AnchoredPartRules.HasOnlyAnchoredParts(model) then
 		return nil, "MonsterIncubatorMustBeAnchored"
+	end
+	for _, descendant in model:GetDescendants() do
+		if descendant:IsA("BasePart")
+			and (descendant.CanCollide or descendant.CanTouch or descendant.CanQuery)
+		then
+			return nil, "MonsterIncubatorMustBeNonPhysical"
+		end
 	end
 
 	return {

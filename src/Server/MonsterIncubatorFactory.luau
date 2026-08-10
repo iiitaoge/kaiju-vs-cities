@@ -2,7 +2,7 @@
 	职责：从已验证模板创建一个服务器权威罐体 Model。
 	输入：模板、目标 Pivot、Runtime Folder、完整身份，以及可选的建造表现预隐藏标记。
 	输出：已经定位并挂入 Runtime 的罐体 Model。
-	内部算法：Clone、写入身份、确保零件锚定、PivotTo；可选预隐藏后再 Parent。
+	内部算法：Clone、写入身份、将全部零件固定为非物理并锚定、PivotTo；可选预隐藏后再 Parent。
 	不负责：解析模板/Plot、播放动画、创建怪兽、状态或失败退款。
 ]]
 
@@ -60,6 +60,11 @@ function MonsterIncubatorFactory.Create(
 	for _, descendant in model:GetDescendants() do
 		if descendant:IsA("BasePart") then
 			descendant.Anchored = true
+			-- 培养罐只负责视觉和 UI 锚点，不能参与人物/怪兽物理。
+			-- 不能只依赖模板属性，否则换形态时新罐体可能把角色夹住。
+			descendant.CanCollide = false
+			descendant.CanTouch = false
+			descendant.CanQuery = false
 		end
 	end
 	model:PivotTo(targetCFrame)
