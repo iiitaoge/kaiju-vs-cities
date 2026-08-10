@@ -17,7 +17,7 @@ local geometry = table.freeze({ DesiredGap = 1, MaxGap = 3 })
 local animation = table.freeze({
 	SelectionMode = "Sequence",
 	HitProgress = 0.65,
-	Speed = 2,
+	Speed = 1.3,
 })
 
 local configs = {}

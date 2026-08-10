@@ -9,6 +9,7 @@ return table.freeze({
 	AttackableRegionIds = table.freeze({ "R1", "R2" }),
 	DisplayName = "Solo Showcase",
 	InitialHouseLevel = 1,
+	ShowcaseHouseMaxHealth = 1,
 	RebuildDelaySeconds = 10,
 	RewardAmount = 0,
 	CameraFallbackRegionId = "R1",

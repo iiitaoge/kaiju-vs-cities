@@ -68,8 +68,10 @@ type VehicleCardReferences = {
 	DeployButton: GuiButton,
 	DeployValue: TextTarget,
 	DestroyButton: GuiButton,
+	DestroyInfo: GuiObject,
 	DestroyValue: TextTarget,
 	UpgradeButton: GuiButton,
+	UpgradeInfo: GuiObject,
 	UpgradeValue: TextTarget,
 	NameValue: TextTarget,
 	LevelValue: TextTarget,
@@ -80,6 +82,7 @@ type CrateCardReferences = {
 	Icon: ImageTarget,
 	TitleValue: TextTarget,
 	DiamondButton: GuiButton,
+	DiamondInfo: GuiObject,
 	DiamondValue: TextTarget,
 	RobuxButton: GuiButton,
 	RobuxValue: TextTarget,
@@ -292,8 +295,10 @@ local function resolveVehicleCard(unit: Instance): (VehicleCardReferences?, stri
 		DeployButton = deployButton,
 		DeployValue = deployValue,
 		DestroyButton = destroyButton,
+		DestroyInfo = destroyInfo,
 		DestroyValue = destroyValue,
 		UpgradeButton = upgradeButton,
+		UpgradeInfo = upgradeInfo,
 		UpgradeValue = upgradeValue,
 		NameValue = nameValue,
 		LevelValue = levelValue,
@@ -352,6 +357,7 @@ local function resolveCrateCard(unit: Instance): (CrateCardReferences?, string?)
 		Icon = icon,
 		TitleValue = titleValue,
 		DiamondButton = diamondButton,
+		DiamondInfo = diamondInfo,
 		DiamondValue = diamondValue,
 		RobuxButton = robuxButton,
 		RobuxValue = robuxValue,
@@ -733,6 +739,59 @@ local function setVehicleCardWidth(unit: GuiObject)
 	end
 end
 
+-- 输入：货币按钮内部的横向 Info 行，以及是否包含 SCRAP 这类标题。
+-- 输出：标题、图标、数值始终在按钮边界内的布局。
+-- 内部算法：取消文本的横向自动扩展，按固定比例分配槽位，TextScaled 只在槽位内缩放；
+-- Info 开启裁剪作为最后边界，避免极长数值溢出到相邻控件。
+local function configureCurrencyInfoRow(info: GuiObject, hasTitle: boolean)
+	local layout = info:FindFirstChildOfClass("UIListLayout")
+	if not layout then
+		return
+	end
+
+	info.ClipsDescendants = true
+	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	layout.VerticalAlignment = Enum.VerticalAlignment.Center
+	layout.Padding = UDim.new(0.01, 0)
+
+	local title = info:FindFirstChild("Title")
+	local icon = info:FindFirstChild("Icon")
+	local value = info:FindFirstChild("Val")
+
+	local function configureText(target: Instance?, widthScale: number)
+		if not target or not target:IsA("TextLabel") and not target:IsA("TextButton") then
+			return
+		end
+		local textTarget = target :: TextLabel | TextButton
+		textTarget.AutomaticSize = Enum.AutomaticSize.None
+		textTarget.Size = UDim2.fromScale(widthScale, 0.8)
+		textTarget.TextScaled = true
+		textTarget.TextWrapped = false
+		textTarget.TextXAlignment = Enum.TextXAlignment.Center
+		textTarget.TextYAlignment = Enum.TextYAlignment.Center
+	end
+
+	local function configureIcon(target: Instance?, widthScale: number)
+		if not target or not target:IsA("ImageLabel") and not target:IsA("ImageButton") then
+			return
+		end
+		local imageTarget = target :: ImageLabel | ImageButton
+		imageTarget.AutomaticSize = Enum.AutomaticSize.None
+		imageTarget.Size = UDim2.fromScale(widthScale, 0.8)
+	end
+
+	if hasTitle and title and icon and value then
+		configureText(title, 0.34)
+		configureIcon(icon, 0.18)
+		configureText(value, 0.34)
+	elseif icon and value then
+		configureIcon(icon, 0.24)
+		configureText(value, 0.58)
+	else
+		configureText(value, 0.8)
+	end
+end
+
 local function configureVehicleList()
 	local current = references
 	if not current then
@@ -927,6 +986,7 @@ local function renderCrateCard(crate, layoutOrder: number)
 	local crateConfig = VehicleCrateConfigs.Get(crateId)
 	local iconName = if crateConfig then crateConfig.IconName else ""
 	CurrencyIconRenderer.ApplyNamed(card.Icon, iconName)
+	configureCurrencyInfoRow(card.DiamondInfo, false)
 	card.TitleValue.Text = tostring(crate.Name or crateId)
 	card.DiamondValue.Text = formatBalance(crate.DiamondPrice)
 	card.FiveValue.Text = "X5 " .. formatBalance(crate.FiveDrawDiamondPrice)
@@ -1125,6 +1185,8 @@ local function renderVehicleCard(vehicle)
 		warn("载具 Unit 模板无效：" .. tostring(reason))
 		return
 	end
+	configureCurrencyInfoRow(card.DestroyInfo, true)
+	configureCurrencyInfoRow(card.UpgradeInfo, false)
 
 	local vehicleId = tostring(vehicle.VehicleId or "")
 	local fallbackDefinition = VehicleCatalog.Get(vehicleId)

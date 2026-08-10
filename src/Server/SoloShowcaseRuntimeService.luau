@@ -28,9 +28,6 @@ local TerritoryPointRules = require(
 	ReplicatedStorage.Shared.Monster.TerritoryPointRules
 )
 local HouseCatalog = require(ReplicatedStorage.Shared.Building.HouseCatalog)
-local StructureDurabilityConfigs = require(
-	ReplicatedStorage.Shared.Building.StructureDurabilityConfigs
-)
 local StructureHealthRules = require(
 	ReplicatedStorage.Shared.Building.StructureHealthRules
 )
@@ -292,8 +289,8 @@ local function getState(houseId: string): HouseState?
 	return statesByHouseId[houseId]
 end
 
-local function getMaxHealth(regionId: string): number?
-	return StructureDurabilityConfigs.GetMaxHealth(regionId, INITIAL_HOUSE_LEVEL)
+local function getMaxHealth(_regionId: string): number?
+	return SoloMonsterAttackConfigs.ShowcaseHouseMaxHealth
 end
 
 local function isAliveInRegion(regionId: string): boolean
