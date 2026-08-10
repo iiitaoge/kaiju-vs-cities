@@ -829,35 +829,12 @@ function PlayerMonsterRuntimeCoordinator.Upgrade(
 		return result(true, nil, upgraded.Record, nil)
 	end
 
-	local presented = MonsterBuildPresentationPublisher.Publish({
-		Kind = "MonsterUpgrade",
-		OwnerUserId = player.UserId,
-		SpawnPointId = spawnPointId,
-		PresentationId = plan.PresentationId,
-		BuildSpeedMultiplier = plan.BuildSpeedMultiplier,
-		PreviousMonsterKey = assert(plan.PreviousMonsterKey),
-		MonsterKey = plan.MonsterKey,
-		PreviousIncubatorTemplateId = assert(plan.PreviousIncubatorTemplateId),
-		IncubatorTemplateId = plan.IncubatorTemplateId,
-		PreviousMonsterCFrame = assert(plan.PreviousMonsterCFrame),
-	})
-	local presentationStarted = presented.Succeeded
-	if presentationStarted then
-		presented = MonsterBuildPresentationPublisher.Wait(
-			BuildPresentationTiming.ScaleDuration(
-				2 * plan.DemolishDuration,
-				plan.BuildSpeedMultiplier
-			),
-			nil
-		)
-	end
-
 	local replacedIncubator = MonsterIncubatorBuildCoordinator.Replace(
 		player,
 		plan.Plot,
 		spawnPointId,
 		plan.IncubatorFormIndex,
-		presentationStarted
+		true
 	)
 	if not replacedIncubator.Succeeded or not replacedIncubator.Incubator then
 		local rolledBackMonster = MonsterRosterCoordinator.ReplaceForSpawnPoint(
@@ -883,6 +860,28 @@ function PlayerMonsterRuntimeCoordinator.Upgrade(
 	end
 	MonsterSpawnPointStateService.MarkBuilt(player, spawnPointId, targetLevel, plan.MonsterKey)
 
+	-- 先提交服务端的新罐体，再广播表现；客户端不再依赖旧罐体仍存在。
+	local presented = MonsterBuildPresentationPublisher.Publish({
+		Kind = "MonsterUpgrade",
+		OwnerUserId = player.UserId,
+		SpawnPointId = spawnPointId,
+		PresentationId = plan.PresentationId,
+		BuildSpeedMultiplier = plan.BuildSpeedMultiplier,
+		PreviousMonsterKey = assert(plan.PreviousMonsterKey),
+		MonsterKey = plan.MonsterKey,
+		PreviousIncubatorTemplateId = assert(plan.PreviousIncubatorTemplateId),
+		IncubatorTemplateId = plan.IncubatorTemplateId,
+		PreviousMonsterCFrame = assert(plan.PreviousMonsterCFrame),
+	})
+	if presented.Succeeded then
+		presented = MonsterBuildPresentationPublisher.Wait(
+			BuildPresentationTiming.ScaleDuration(
+				2 * plan.DemolishDuration,
+				plan.BuildSpeedMultiplier
+			),
+			nil
+		)
+	end
 	if presented.Succeeded then
 		presented = MonsterBuildPresentationPublisher.Wait(
 			BuildPresentationTiming.ScaleDuration(

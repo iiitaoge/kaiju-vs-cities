@@ -3,7 +3,8 @@
 	输入：MonsterBuildPresentation RemoteEvent 的协议命令。
 	输出：只产生客户端临时视觉；结束后显示服务器权威模型。
 	内部算法：解析 Plot/配置/模板/权威模型并本地隐藏；复用房屋拆除和升起小模块；
-		首次罐体和怪兽只升起；换形态升级严格串行执行怪兽拆除、罐体拆/建、怪兽建造。
+		首次罐体和怪兽只升起；换形态升级严格串行执行怪兽拆除、罐体拆/建、怪兽建造；
+		表现命令到达时旧罐可能已经被服务器替换，客户端表现对此保持幂等。
 	不负责：创建服务器对象、等待业务阶段、扣款、保存、攻击开合或怪兽状态。
 ]]
 
@@ -206,20 +207,15 @@ local function presentMonsterUpgrade(command)
 		),
 		"找不到培养罐定位点：" .. config.IncubatorSlotId
 	)
-	local oldAuthoritativeIncubator = assert(
-		LocalMonsterBuildPresentationAccess.WaitForIncubator(
-			plot,
-			command.SpawnPointId,
-			command.OwnerUserId,
-			presentation.ResolveTimeout
-		),
-		"找不到服务器培养罐：" .. command.SpawnPointId
+	local oldAuthoritativeIncubator = LocalMonsterBuildPresentationAccess.WaitForIncubator(
+		plot,
+		command.SpawnPointId,
+		command.OwnerUserId,
+		presentation.ResolveTimeout
 	)
-	assert(
-		oldAuthoritativeIncubator:GetAttribute("IncubatorTemplateId")
-			== command.PreviousIncubatorTemplateId,
-		"服务器培养罐模板身份不匹配：" .. command.SpawnPointId
-	)
+	local oldIncubatorIsCurrent = oldAuthoritativeIncubator ~= nil
+		and oldAuthoritativeIncubator:GetAttribute("IncubatorTemplateId")
+			== command.PreviousIncubatorTemplateId
 	local oldIncubatorTemplate = resolveIncubatorTemplate(
 		config,
 		command.PreviousIncubatorTemplateId
@@ -266,32 +262,38 @@ local function presentMonsterUpgrade(command)
 			presentation.Demolish,
 			oldModelScale
 		)
-		local oldIncubatorPivot = oldAuthoritativeIncubator:GetPivot()
-		oldIncubatorSnapshot = LocalBuildingVisibility.Hide(oldAuthoritativeIncubator)
+		local oldIncubatorPivot = incubatorSlot.CFrame
+		if oldIncubatorIsCurrent and oldAuthoritativeIncubator then
+			oldIncubatorPivot = oldAuthoritativeIncubator:GetPivot()
+			oldIncubatorSnapshot = LocalBuildingVisibility.Hide(oldAuthoritativeIncubator)
+		end
 		LocalBuildingDemolitionAnimation.Play(
 			oldIncubatorTemplate,
 			oldIncubatorPivot,
 			incubatorSlot.Position.Y,
 			presentation.Demolish
 		)
-		local newAuthoritativeIncubator = assert(
-			LocalMonsterBuildPresentationAccess.WaitForIncubatorTemplate(
-				plot,
-				command.SpawnPointId,
-				command.OwnerUserId,
-				command.IncubatorTemplateId,
-				presentation.ResolveTimeout
-			),
-			"找不到升级后的服务器培养罐：" .. command.SpawnPointId
+		local newAuthoritativeIncubator = LocalMonsterBuildPresentationAccess.WaitForIncubatorTemplate(
+			plot,
+			command.SpawnPointId,
+			command.OwnerUserId,
+			command.IncubatorTemplateId,
+			presentation.ResolveTimeout
 		)
-		newIncubatorSnapshot = LocalBuildingVisibility.Hide(newAuthoritativeIncubator)
+		local newIncubatorPivot = incubatorSlot.CFrame
+		if newAuthoritativeIncubator then
+			newIncubatorPivot = newAuthoritativeIncubator:GetPivot()
+			newIncubatorSnapshot = LocalBuildingVisibility.Hide(newAuthoritativeIncubator)
+		end
 		LocalBuildingRiseAnimation.Play(
 			newIncubatorTemplate,
-			newAuthoritativeIncubator:GetPivot(),
+			newIncubatorPivot,
 			incubatorSlot.Position.Y,
 			presentation.Rise
 		)
-		LocalBuildingVisibility.Restore(newIncubatorSnapshot)
+		if newIncubatorSnapshot then
+			LocalBuildingVisibility.Restore(newIncubatorSnapshot)
+		end
 		LocalBuildingRiseAnimation.Play(
 			newTemplate,
 			monsterPivot,
