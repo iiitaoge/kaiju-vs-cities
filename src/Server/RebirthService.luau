@@ -26,6 +26,17 @@ local RebirthService = {}
 
 local started = false
 
+local function addActivationState(player: Player, snapshot)
+	local nearButton, buttonReason = RebirthButtonAccess.CheckActivation(player)
+	snapshot.ActivationAllowed = nearButton
+	snapshot.ActivationReason = buttonReason
+	return snapshot
+end
+
+local function getState(player: Player)
+	return addActivationState(player, RebirthCoordinator.GetState(player))
+end
+
 function RebirthService.Start()
 	if started then
 		return
@@ -37,24 +48,25 @@ function RebirthService.Start()
 	remote.OnServerInvoke = function(player, requestKind)
 		local readiness = PlayerDataReadyService.Get(player)
 		if readiness.Status ~= "Ready" or not readiness.CanSave then
-			return RebirthCoordinator.GetState(player), "PlayerDataNotReady", false
+			return getState(player), "PlayerDataNotReady", false
 		end
 		if requestKind == "GetState" then
-			local snapshot = RebirthCoordinator.GetState(player)
+			local snapshot = getState(player)
 			PlayerJourneyAnalyticsCoordinator.RecordRebirthState(player, snapshot)
 			return snapshot, nil, nil
 		end
 		if requestKind ~= "Execute" then
 			SecurityAnalyticsAggregator.Record(player, "Rebirth", "InvalidRequestKind")
-			return RebirthCoordinator.GetState(player), "InvalidRequestKind", false
+			return getState(player), "InvalidRequestKind", false
 		end
 
 		local nearButton, buttonReason = RebirthButtonAccess.CheckActivation(player)
 		if not nearButton then
 			SecurityAnalyticsAggregator.Record(player, "Rebirth", "ActivationRejected")
-			return RebirthCoordinator.GetState(player), buttonReason, false
+			return getState(player), buttonReason, false
 		end
 		local snapshot, succeeded = RebirthCoordinator.Execute(player)
+		snapshot = addActivationState(player, snapshot)
 		return snapshot, if succeeded then nil else snapshot.Reason, succeeded
 	end
 end

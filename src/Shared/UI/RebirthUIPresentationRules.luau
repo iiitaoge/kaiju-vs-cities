@@ -2,7 +2,7 @@
 	职责：把服务器重生状态快照映射为 Rebirth-Button BillboardGui 文本。
 	输入：Count、NextCount、Status、资格门槛和剩余收入。
 	输出：标题、操作文字、门槛、说明以及 CanExecute。
-	内部算法：数字使用紧凑格式；只有 Ready 状态允许点击。
+	内部算法：数字使用紧凑格式；只有 Ready 且激活距离有效时允许点击。
 	不负责：查找 UI、触碰、Remote、资格计算、存档或重生执行。
 ]]
 
@@ -21,19 +21,24 @@ function RebirthUIPresentationRules.Resolve(snapshot)
 		or not finite(snapshot.NextCount)
 		or not finite(snapshot.RequiredRunEarnings)
 		or not finite(snapshot.RemainingRunEarnings)
+		or type(snapshot.ActivationAllowed) ~= "boolean"
 	then
 		return { Enabled = false, CanExecute = false }
 	end
 
 	local status = snapshot.Status
-	local canExecute = status == "Ready"
+	local activationBlocked = status == "Ready" and not snapshot.ActivationAllowed
+	local canExecute = status == "Ready" and snapshot.ActivationAllowed
 	local actionText = if status == "Processing"
 		then "Processing..."
+		elseif activationBlocked then "Approach"
 		elseif canExecute then "Rebirth" else "Locked"
 	local infoTitle = if status == "Processing"
 		then "Saving rebirth..."
 		elseif status == "Failed"
 		then "Rebirth unavailable"
+		elseif activationBlocked
+		then "Approach the rebirth button"
 		elseif canExecute
 		then "Ready to rebirth"
 		else CompactNumberFormatter.Format(snapshot.RemainingRunEarnings) .. " more required"
@@ -43,7 +48,9 @@ function RebirthUIPresentationRules.Resolve(snapshot)
 		CanExecute = canExecute,
 		TitleText = "Rebirth · " .. tostring(snapshot.Count),
 		ActionText = actionText,
-		TipText = if canExecute then "Click to confirm" else "Requirement",
+		TipText = if activationBlocked
+			then "Move closer to confirm"
+			elseif canExecute then "Click to confirm" else "Requirement",
 		RequirementText = CompactNumberFormatter.Format(snapshot.RequiredRunEarnings),
 		InfoTitleText = infoTitle,
 		IntroductionText = string.format(

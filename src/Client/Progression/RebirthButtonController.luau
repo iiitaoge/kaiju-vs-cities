@@ -1,9 +1,10 @@
 --[[
-	职责：让玩家踩到所属 Plot 的重生按钮时显示本地 UI，并只通过 UI 点击请求重生。
+	职责：让所属 Plot 的重生 UI 始终可见，并把两个视觉按钮都接入重生请求。
 	输入：玩家 Plot 下的 Rebirth-Button 场景合同和服务器状态快照。
-	输出：本地 BillboardGui 显隐、文本更新和 Execute Remote 请求。
-	内部算法：追踪本地角色触碰 → 周期刷新状态；UI Button.Activated 才执行重生。
-	不负责：物理按钮下压动画、资格、距离授权、存档或运行时重载。
+	输出：以 Pull 为 Adornee 的本地 BillboardGui、按钮反馈、实体按钮动画和 Execute Remote 请求。
+	内部算法：把世界 UI 放入本地 PlayerGui 但保持 Pull 锚点；周期刷新服务器快照；紫色和绿色按钮共用 Execute；
+	实体 Pull 只播放已有下压动画，不绕过服务器资格校验。
+	不负责：金额资格、距离授权、存档或重生规则。
 ]]
 
 local Players = game:GetService("Players")
@@ -12,6 +13,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local AnalyticsIntentClient = require(script.Parent.Parent.Analytics.AnalyticsIntentClient)
 local LocalRebirthButtonAccess = require(script.Parent.LocalRebirthButtonAccess)
 local LocalPlotButtonAccess = require(script.Parent.Parent.Button.LocalPlotButtonAccess)
+local LocalButtonController = require(script.Parent.Parent.Button.LocalButtonController)
 local RebirthProgressionConfigs = require(
 	ReplicatedStorage.Shared.Progression.RebirthProgressionConfigs
 )
@@ -58,6 +60,17 @@ local function placeBillboardAboveButton(
 	)
 end
 
+-- 输入：Workspace 中的 BillboardGui。
+-- 输出：可由本地鼠标命中的 PlayerGui BillboardGui。
+-- 内部算法：保留 Adornee 的世界投影，只改变 GUI 容器；打开顶层渲染和输入。
+local function attachBillboardToLocalPlayerGui(billboard: BillboardGui)
+	local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+	billboard.ResetOnSpawn = false
+	billboard.Active = true
+	billboard.AlwaysOnTop = true
+	billboard.Parent = playerGui
+end
+
 local function waitForRemote(): RemoteFunction?
 	local remotes = ReplicatedStorage:WaitForChild("Remotes", 10)
 	local remote = remotes and remotes:WaitForChild(RebirthProtocol.RemoteName, 10)
@@ -89,32 +102,47 @@ function RebirthButtonController.Start()
 	end
 
 	local ui = LocalRebirthButtonAccess.Resolve(button)
-	if ui.Billboard.Adornee == nil then
-		ui.Billboard.Adornee = ui.Pull
-	end
+	ui.Billboard.Adornee = ui.Pull
 	placeBillboardAboveButton(button, ui.Pull, ui.Billboard)
-	ui.Billboard.Enabled = false
+	attachBillboardToLocalPlayerGui(ui.Billboard)
+	ui.Billboard.Enabled = true
 	local visibilityGate = LocalUIVisibilityGate.Create(
 		UIModeVisibilityRules.Channels.Gameplay,
 		function(nextVisible)
 			ui.Billboard.Enabled = nextVisible
 		end,
-		false
+		true
 	)
-	LocalGuiButtonState.SetEnabled(ui.MoneyButton, false)
-	LocalGuiButtonState.SetEnabled(ui.ActionButton, false)
 
-	local touchingParts: { [BasePart]: boolean } = {}
-	local visible = false
+	local physicalButton = LocalButtonController.Bind(button)
+	local visible = true
 	local busy = false
-	local refreshGeneration = 0
 	local lastSnapshot = nil
+
+	local function setGuiButtonsEnabled(enabled: boolean)
+		LocalGuiButtonState.SetEnabled(ui.ActionButton, enabled)
+		LocalGuiButtonState.SetEnabled(ui.MoneyButton, enabled)
+	end
+
+	setGuiButtonsEnabled(true)
+
+	local function setPhysicalButtonState(status: string?)
+		local state = if status == "Ready"
+			then "Ready"
+			elseif status == "Insufficient"
+			then "Insufficient"
+			elseif status == "Processing"
+			then "Processing"
+			else "Locked"
+		physicalButton:SetState(state)
+	end
 
 	local function applySnapshot(snapshot)
 		lastSnapshot = snapshot
 		local presentation = RebirthUIPresentationRules.Resolve(snapshot)
 		if not presentation.Enabled then
-			LocalGuiButtonState.SetEnabled(ui.ActionButton, false)
+			setGuiButtonsEnabled(not busy)
+			setPhysicalButtonState(nil)
 			ui.ActionValue.Text = "Unavailable"
 			return
 		end
@@ -124,10 +152,8 @@ function RebirthButtonController.Start()
 		ui.RequirementValue.Text = presentation.RequirementText
 		ui.InfoTitle.Text = presentation.InfoTitleText
 		ui.Introduction.Text = presentation.IntroductionText
-		LocalGuiButtonState.SetEnabled(
-			ui.ActionButton,
-			presentation.CanExecute and not busy
-		)
+		setGuiButtonsEnabled(not busy)
+		setPhysicalButtonState(snapshot.Status)
 	end
 
 	local function request(requestKind: string)
@@ -147,7 +173,7 @@ function RebirthButtonController.Start()
 	end
 
 	local function refresh()
-		if not visible or busy then
+		if busy then
 			return
 		end
 		local snapshot = request("GetState")
@@ -156,71 +182,8 @@ function RebirthButtonController.Start()
 		end
 	end
 
-	local function setVisible(nextVisible: boolean)
-		if visible == nextVisible then
-			return
-		end
-		visible = nextVisible
-		refreshGeneration += 1
-		visibilityGate:SetDesiredVisible(visible)
-		if not visible then
-			LocalGuiButtonState.SetEnabled(ui.ActionButton, false)
-			return
-		end
-		LocalGuiButtonState.SetEnabled(ui.ActionButton, false)
-		SoundController.Play("Click")
-		AnalyticsIntentClient.Record(
-			AnalyticsIntentProtocol.Intents.RebirthOpened
-		)
-
-		local generation = refreshGeneration
-		task.spawn(function()
-			refresh()
-			while visible and generation == refreshGeneration do
-				task.wait(RebirthProgressionConfigs.Button.RefreshIntervalSeconds)
-				refresh()
-			end
-		end)
-	end
-
-	local function belongsToLocalCharacter(part: BasePart): boolean
-		local character = Players.LocalPlayer.Character
-		return character ~= nil and part:IsDescendantOf(character)
-	end
-
-	ui.Pull.Touched:Connect(function(part)
-		if belongsToLocalCharacter(part) then
-			touchingParts[part] = true
-			setVisible(true)
-		end
-	end)
-	ui.Pull.TouchEnded:Connect(function(part)
-		if touchingParts[part] then
-			touchingParts[part] = nil
-			setVisible(next(touchingParts) ~= nil)
-		end
-	end)
-	Players.LocalPlayer.CharacterAdded:Connect(function()
-		table.clear(touchingParts)
-		setVisible(false)
-	end)
-	task.defer(function()
-		for _, part in ui.Pull:GetTouchingParts() do
-			if belongsToLocalCharacter(part) then
-				touchingParts[part] = true
-			end
-		end
-		if next(touchingParts) ~= nil then
-			setVisible(true)
-		end
-	end)
-
-	ui.ActionButton.Activated:Connect(function()
+	local function executeRebirth()
 		if busy or not visible then
-			return
-		end
-		local presentation = RebirthUIPresentationRules.Resolve(lastSnapshot)
-		if not presentation.CanExecute then
 			return
 		end
 
@@ -228,7 +191,7 @@ function RebirthButtonController.Start()
 		AnalyticsIntentClient.Record(
 			AnalyticsIntentProtocol.Intents.RebirthExecuteClicked
 		)
-		LocalGuiButtonState.SetEnabled(ui.ActionButton, false)
+		setGuiButtonsEnabled(false)
 		ui.ActionValue.Text = "Processing..."
 		local snapshot, reason, actionSucceeded = request("Execute")
 		if actionSucceeded == true then
@@ -244,6 +207,20 @@ function RebirthButtonController.Start()
 			applySnapshot(snapshot)
 		else
 			refresh()
+		end
+	end
+
+	ui.ActionButton.Activated:Connect(executeRebirth)
+	ui.MoneyButton.Activated:Connect(executeRebirth)
+
+	SoundController.Play("Click")
+	AnalyticsIntentClient.Record(
+		AnalyticsIntentProtocol.Intents.RebirthOpened
+	)
+	task.spawn(function()
+		while Players.LocalPlayer.Parent and ui.Billboard.Parent do
+			refresh()
+			task.wait(RebirthProgressionConfigs.Button.RefreshIntervalSeconds)
 		end
 	end)
 end
