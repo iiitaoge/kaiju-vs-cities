@@ -9,9 +9,9 @@ local function transactions(incomeCost: number, healthCost: number, autoIncomeCo
 end
 
 local configs = {
-	R1 = { Transactions = transactions(500, 1_000, 1_500) },
-	R2 = { Transactions = transactions(10_000, 20_000, 30_000) },
-	R3 = { Transactions = transactions(120_000, 180_000, 240_000) },
+	R1 = { Transactions = transactions(1_200, 2_000, 3_000) },
+	R2 = { Transactions = transactions(8_000, 12_000, 18_000) },
+	R3 = { Transactions = transactions(100_000, 150_000, 250_000) },
 	R4 = { Transactions = transactions(900_000, 1_200_000, 1_500_000) },
 	R5 = { Transactions = transactions(6_000_000, 8_000_000, 10_000_000) },
 	R6 = { Transactions = transactions(35_000_000, 45_000_000, 60_000_000) },

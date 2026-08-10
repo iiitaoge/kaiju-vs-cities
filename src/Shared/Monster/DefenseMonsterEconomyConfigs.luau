@@ -10,7 +10,7 @@ local DefenseMonsterSlotCatalog = require(script.Parent.DefenseMonsterSlotCatalo
 local MonsterUpgradeEconomyConfigs = require(script.Parent.MonsterUpgradeEconomyConfigs)
 
 local buildCosts = table.freeze({
-	["DM-R1"] = 2_000,
+	["DM-R1"] = 1_500,
 	["DM-R2"] = 8_000,
 	["DM-R3"] = 80_000,
 	["DM-R4"] = 800_000,

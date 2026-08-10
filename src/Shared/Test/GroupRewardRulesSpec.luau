@@ -23,7 +23,7 @@ function GroupRewardRulesSpec.Run(): boolean
 	expect(#GroupRewardConfigs.Rewards == 2, "默认必须同时配置两项奖励")
 	expect(
 		GroupRewardConfigs.Rewards[1].Type == GroupRewardProtocol.Types.Money
-			and GroupRewardConfigs.Rewards[1].Amount == 1000000,
+			and GroupRewardConfigs.Rewards[1].Amount == 500000,
 		"默认现金奖励配置错误"
 	)
 	expect(

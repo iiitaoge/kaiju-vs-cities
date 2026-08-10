@@ -10,15 +10,15 @@ local CurrencyProtocol = require(script.Parent.Parent.Economy.CurrencyProtocol)
 
 local types = CurrencyProtocol.Types
 
--- 测试配置：前四天发钱，后三天发钻石；同种货币按固定步长递进。
+-- 回流配置：金币奖励用于阶段追赶，钻石奖励用于载具成长；Day 1 由程序在教程完成后展示。
 local days = {
-	[1] = { Day = 1, Type = types.Money, Amount = 30000 },
-	[2] = { Day = 2, Type = types.Money, Amount = 60000 },
-	[3] = { Day = 3, Type = types.Money, Amount = 90000 },
-	[4] = { Day = 4, Type = types.Money, Amount = 120000 },
-	[5] = { Day = 5, Type = types.Diamond, Amount = 500 },
-	[6] = { Day = 6, Type = types.Diamond, Amount = 4000 },
-	[7] = { Day = 7, Type = types.Diamond, Amount = 10000 },
+	[1] = { Day = 1, Type = types.Money, Amount = 1_000 },
+	[2] = { Day = 2, Type = types.Diamond, Amount = 100 },
+	[3] = { Day = 3, Type = types.Money, Amount = 50_000 },
+	[4] = { Day = 4, Type = types.Diamond, Amount = 300 },
+	[5] = { Day = 5, Type = types.Money, Amount = 500_000 },
+	[6] = { Day = 6, Type = types.Diamond, Amount = 800 },
+	[7] = { Day = 7, Type = types.Money, Amount = 5_000_000 },
 }
 
 for _, reward in days do
