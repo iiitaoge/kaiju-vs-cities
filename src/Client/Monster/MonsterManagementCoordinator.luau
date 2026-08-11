@@ -1,8 +1,8 @@
 --[[
 	职责：组装怪兽管理状态机、服务器请求和未来 GUI/攻击面板适配器。
 
-	输入：Render、可选 Query/Upgrade、OpenAttackSelection 回调，以及会话期余额变化。
-	输出：Open、ChooseUpgrade、ChooseAttack、UpdateBalance、Retry、Close、GetState 会话接口。
+	输入：Render、可选 Query/Upgrade/UpgradeToMax、OpenAttackSelection 回调，以及会话期金币/钻石变化。
+	输出：Open、ChooseUpgrade、ChooseDiamondUpgrade、ChooseAttack、UpdateBalance、Retry、Close、GetState 会话接口。
 	内部算法：应用纯状态机 → 立即 Render → 异步执行 Effect → 把结果重新送回状态机。
 
 	不负责：创建 ScreenGui、决定美术样式、选择目标玩家或提交攻击坐标。
@@ -31,16 +31,19 @@ export type Options = {
 	Render: (MonsterManagementStateMachine.State) -> (),
 	Query: ((string) -> any)?,
 	Upgrade: ((string) -> any)?,
+	UpgradeToMax: ((string) -> any)?,
 	OpenAttackSelection: ((string, AttackCallbacks) -> AttackSession?)?,
 	OnInsufficientMoney: (() -> ())?,
+	OnInsufficientDiamonds: (() -> ())?,
 	OnUpgradeResult: ((boolean, string?) -> ())?,
 }
 
 export type Session = {
 	Open: (string) -> MonsterManagementStateMachine.TransitionResult,
 	ChooseUpgrade: () -> MonsterManagementStateMachine.TransitionResult,
+	ChooseDiamondUpgrade: () -> MonsterManagementStateMachine.TransitionResult,
 	ChooseAttack: () -> MonsterManagementStateMachine.TransitionResult,
-	UpdateBalance: (number) -> MonsterManagementStateMachine.TransitionResult,
+	UpdateBalance: (number, string?) -> MonsterManagementStateMachine.TransitionResult,
 	Retry: () -> MonsterManagementStateMachine.TransitionResult,
 	Close: () -> MonsterManagementStateMachine.TransitionResult,
 	GetState: () -> MonsterManagementStateMachine.State,
@@ -51,8 +54,10 @@ function MonsterManagementCoordinator.Create(options: Options): Session
 	assert(type(options.Render) == "function", "Render 必须是 function")
 	local query = options.Query or MonsterManagementRemoteClient.GetSnapshot
 	local upgrade = options.Upgrade or MonsterManagementRemoteClient.Upgrade
+	local upgradeToMax = options.UpgradeToMax or MonsterManagementRemoteClient.UpgradeToMax
 	assert(type(query) == "function", "Query 必须是 function")
 	assert(type(upgrade) == "function", "Upgrade 必须是 function")
+	assert(type(upgradeToMax) == "function", "UpgradeToMax 必须是 function")
 
 	local current = MonsterManagementStateMachine.New()
 	local requestId = 0
@@ -66,6 +71,12 @@ function MonsterManagementCoordinator.Create(options: Options): Session
 	local function notifyInsufficientMoney(reason: string?)
 		if reason == "InsufficientMoney" and options.OnInsufficientMoney then
 			options.OnInsufficientMoney()
+		end
+	end
+
+	local function notifyInsufficientDiamonds(reason: string?)
+		if reason == "InsufficientDiamonds" and options.OnInsufficientDiamonds then
+			options.OnInsufficientDiamonds()
 		end
 	end
 
@@ -105,6 +116,7 @@ function MonsterManagementCoordinator.Create(options: Options): Session
 				return
 			end
 			notifyInsufficientMoney(responseOrError.Reason)
+			notifyInsufficientDiamonds(responseOrError.Reason)
 
 			if resolvedKind == "SnapshotLoaded" then
 				if responseOrError.Succeeded then
@@ -134,6 +146,10 @@ function MonsterManagementCoordinator.Create(options: Options): Session
 		end
 		if effect.Kind == "RequestUpgrade" then
 			runRequest(effect, upgrade, "UpgradeResolved")
+			return
+		end
+		if effect.Kind == "RequestMaxUpgrade" then
+			runRequest(effect, upgradeToMax, "UpgradeResolved")
 			return
 		end
 		if effect.Kind == "CloseAttackSelection" then
@@ -208,11 +224,20 @@ function MonsterManagementCoordinator.Create(options: Options): Session
 			notifyInsufficientMoney(transition.Reason)
 			return transition
 		end,
+		ChooseDiamondUpgrade = function()
+			local transition = dispatch({ Kind = "ChooseDiamondUpgrade" })
+			notifyInsufficientDiamonds(transition.Reason)
+			return transition
+		end,
 		ChooseAttack = function()
 			return dispatch({ Kind = "ChooseAttack" })
 		end,
-		UpdateBalance = function(balance: number)
-			return dispatch({ Kind = "BalanceChanged", Balance = balance })
+		UpdateBalance = function(balance: number, currency: string?)
+			return dispatch({
+				Kind = "BalanceChanged",
+				Balance = balance,
+				Currency = currency or "Money",
+			})
 		end,
 		Retry = function()
 			return dispatch({ Kind = "Retry" })

@@ -1,6 +1,6 @@
 --[[
 	职责：显示统一的黑色提示条。
-	输入：ShowMessage、ShowInsufficientMoney 或 ShowVehicleUnlocked 请求。
+	输入：ShowMessage、ShowInsufficientMoney、ShowInsufficientDiamonds 或 ShowVehicleUnlocked 请求。
 	输出：PopUp.TipBlack.Info 的英文提示，并自动隐藏。
 	内部算法：等待 PlayerGui/PopUp/TipBlack/Info → 写入文本 → 显示 → 2 秒后隐藏；
 	新提示会覆盖旧提示的隐藏计时。
@@ -13,6 +13,7 @@ local TipBlackController = {}
 
 local DISPLAY_DURATION_SECONDS = 2
 local INSUFFICIENT_MONEY_TEXT = "Not enough money!"
+local INSUFFICIENT_DIAMONDS_TEXT = "Not enough diamonds!"
 local VEHICLE_UNLOCKED_TEXT = "Vehicle Unlocked!"
 
 type References = {
@@ -105,6 +106,10 @@ end
 
 function TipBlackController.ShowInsufficientMoney()
 	show(INSUFFICIENT_MONEY_TEXT)
+end
+
+function TipBlackController.ShowInsufficientDiamonds()
+	show(INSUFFICIENT_DIAMONDS_TEXT)
 end
 
 function TipBlackController.ShowMessage(text: string)

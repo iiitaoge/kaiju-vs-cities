@@ -1,7 +1,7 @@
 --[[
 	职责：把客户端怪兽管理请求适配为稳定函数。
 
-	输入：GetSnapshot/Upgrade 接收 SpawnPointId。
+	输入：GetSnapshot/Upgrade/UpgradeToMax 接收 SpawnPointId。
 	输出：Succeeded、Reason、Snapshot；网络或响应异常转换为稳定失败。
 	内部算法：调用唯一 MonsterManagementRequest RemoteFunction 并验证响应外形。
 
@@ -54,6 +54,10 @@ end
 
 function MonsterManagementRemoteClient.Upgrade(spawnPointId: string)
 	return request(MonsterManagementProtocol.Upgrade, spawnPointId)
+end
+
+function MonsterManagementRemoteClient.UpgradeToMax(spawnPointId: string)
+	return request(MonsterManagementProtocol.UpgradeToMax, spawnPointId)
 end
 
 return MonsterManagementRemoteClient

@@ -1,7 +1,7 @@
 --[[
 	职责：把本地玩家最近的进攻培养罐或防守怪兽接到 HUD.Panel 管理面板。
 	输入：本地玩家运行时培养罐/防守怪兽、玩家位置、余额镜像和服务器管理快照。
-	输出：HUD.Panel 固定显示标题、现金升级价格、攻击/升级按钮状态及点击请求。
+	输出：HUD.Panel 固定显示标题、金币逐级升级价格、钻石满级升级价格、攻击/升级按钮状态及点击请求。
 	内部算法：在显示范围内选择水平距离最近的可管理目标；进攻培养罐显示攻击和升级，防守怪兽只显示升级；两者共用一个管理会话。
 	不负责：创建 UI、美术布局、扣款、升级模型、选择攻击目标或 Robux 购买。
 ]]
@@ -22,6 +22,7 @@ local MonsterCatalog = require(ReplicatedStorage.Shared.Monster.MonsterCatalog)
 local DefenseMonsterSlotCatalog = require(
 	ReplicatedStorage.Shared.Monster.DefenseMonsterSlotCatalog
 )
+local DiamondProtocol = require(ReplicatedStorage.Shared.Economy.DiamondProtocol)
 local MoneyProtocol = require(ReplicatedStorage.Shared.Economy.MoneyProtocol)
 local MonsterIncubatorUIPresentationConfig = require(
 	ReplicatedStorage.Shared.Monster.MonsterIncubatorUIPresentationConfig
@@ -89,6 +90,8 @@ function MonsterIncubatorUIController.Start()
 			return
 		end
 		panelReferences.Panel.Visible = false
+		panelReferences.Robux.Visible = false
+		panelReferences.DiamondTip.Text = "Max Level"
 		local plot = LocalMonsterBuildPresentationAccess.WaitForPlot(
 			player.UserId,
 			PLOT_WAIT_TIMEOUT
@@ -199,11 +202,17 @@ function MonsterIncubatorUIController.Start()
 				local displayName = if definition then definition.DisplayName else "Monster"
 				refs.Title.Text = string.format("%s · Lv %d", displayName, snapshot.Level)
 				refs.MoneyValue.Text = if snapshot.Upgrade.Reason == "MaxLevel"
-					then "MAX"
+					then "Max Level"
 					else CompactNumberFormatter.Format(snapshot.Upgrade.Cost)
+				refs.DiamondValue.Text = if snapshot.DiamondUpgrade.Reason == "MaxLevel"
+					then "Max Level"
+					else CompactNumberFormatter.Format(snapshot.DiamondUpgrade.Cost)
+				refs.DiamondTip.Text = "Max Level"
 			else
 				refs.Title.Text = "Godzilla"
 				refs.MoneyValue.Text = "..."
+				refs.DiamondValue.Text = "..."
+				refs.DiamondTip.Text = "Max Level"
 			end
 
 			local canInteract = state.Mode == "Managing" and snapshot ~= nil
@@ -216,6 +225,10 @@ function MonsterIncubatorUIController.Start()
 			setButtonEnabled(
 				refs.MoneyButton,
 				canInteract and snapshot.Upgrade.Allowed
+			)
+			setButtonEnabled(
+				refs.DiamondButton,
+				canInteract and snapshot.DiamondUpgrade.Allowed
 			)
 
 			retryToken += 1
@@ -306,6 +319,7 @@ function MonsterIncubatorUIController.Start()
 				Render = render,
 				OpenAttackSelection = AttackSelectionHUDController.Open,
 				OnInsufficientMoney = TipBlackController.ShowInsufficientMoney,
+				OnInsufficientDiamonds = TipBlackController.ShowInsufficientDiamonds,
 				OnUpgradeResult = function(succeeded, reason)
 					if succeeded then
 						SoundController.Play("Yes")
@@ -334,6 +348,13 @@ function MonsterIncubatorUIController.Start()
 					spawnPointId
 				)
 				session.ChooseUpgrade()
+			end))
+			table.insert(uiConnections, panelReferences.DiamondButton.Activated:Connect(function()
+				AnalyticsIntentClient.Record(
+					AnalyticsIntentProtocol.Intents.MonsterUpgradeClicked,
+					spawnPointId
+				)
+				session.ChooseDiamondUpgrade()
 			end))
 			session.Open(spawnPointId)
 		end
@@ -503,7 +524,13 @@ function MonsterIncubatorUIController.Start()
 		player:GetAttributeChangedSignal(MoneyProtocol.BalanceAttributeName):Connect(function()
 			local balance = player:GetAttribute(MoneyProtocol.BalanceAttributeName)
 			if management and type(balance) == "number" then
-				management.UpdateBalance(balance)
+				management.UpdateBalance(balance, "Money")
+			end
+		end)
+		player:GetAttributeChangedSignal(DiamondProtocol.BalanceAttributeName):Connect(function()
+			local balance = player:GetAttribute(DiamondProtocol.BalanceAttributeName)
+			if management and type(balance) == "number" then
+				management.UpdateBalance(balance, "Diamond")
 			end
 		end)
 		RunService.RenderStepped:Connect(function()

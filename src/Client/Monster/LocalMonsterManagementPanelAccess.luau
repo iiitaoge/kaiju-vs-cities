@@ -1,7 +1,7 @@
 --[[
 	职责：解析 HUD.Panel 中供怪兽攻击与升级共用的管理面板。
 	输入：本地 PlayerGui。
-	输出：HUD.Panel、标题、发动攻击按钮、升级按钮及其显示文本；失败返回稳定原因。
+	输出：HUD.Panel、标题、发动攻击按钮、金币逐级升级按钮、钻石满级升级按钮及其显示文本；失败返回稳定原因。
 	内部算法：按 HUD.Panel 的稳定层级解析控件；Money 数值兼容旧模板的 Frame 和新 HUD 的 Money 子节点。
 	不负责：面板显隐、怪兽状态、攻击目标、升级请求或货币计算。
 ]]
@@ -16,6 +16,9 @@ export type References = {
 	StartValue: TextLabel,
 	MoneyButton: TextButton,
 	MoneyValue: TextLabel,
+	DiamondButton: TextButton,
+	DiamondValue: TextLabel,
+	DiamondTip: TextLabel,
 	Robux: Frame,
 }
 
@@ -64,6 +67,20 @@ function LocalMonsterManagementPanelAccess.Resolve(
 		return missing("HUD.Panel.Money.Button.Money.Val")
 	end
 
+	local diamondFrame = childOfClass(panel, "Diamond", "Frame")
+	local diamondButton = childOfClass(diamondFrame, "Button", "TextButton")
+	local diamondValueFrame = childOfClass(diamondButton, "Rebirth", "Frame")
+		or childOfClass(diamondButton, "Money", "Frame")
+		or childOfClass(diamondButton, "Frame", "Frame")
+	local diamondValue = childOfClass(diamondValueFrame, "Val", "TextLabel")
+	local diamondTip = childOfClass(diamondButton, "Tip", "TextLabel")
+	if not diamondButton or not diamondValue then
+		return missing("HUD.Panel.Diamond.Button.Rebirth.Val")
+	end
+	if not diamondTip then
+		return missing("HUD.Panel.Diamond.Button.Tip")
+	end
+
 	local robux = childOfClass(panel, "Robux", "Frame")
 	if not robux then
 		return missing("HUD.Panel.Robux")
@@ -77,6 +94,9 @@ function LocalMonsterManagementPanelAccess.Resolve(
 		StartValue = startValue :: TextLabel,
 		MoneyButton = moneyButton :: TextButton,
 		MoneyValue = moneyValue :: TextLabel,
+		DiamondButton = diamondButton :: TextButton,
+		DiamondValue = diamondValue :: TextLabel,
+		DiamondTip = diamondTip :: TextLabel,
 		Robux = robux :: Frame,
 	}, nil
 end
