@@ -18,12 +18,20 @@ local function snapshot(upgradeAllowed: boolean, affordable: boolean, attackAllo
 		MonsterKey = "Godzilla-L001",
 		MonsterState = "IdleAtSpawn",
 		Balance = if affordable then 1000 else 0,
+		DiamondBalance = 2000,
 		Upgrade = {
 			Allowed = upgradeAllowed,
 			Reason = if upgradeAllowed then nil else "MonsterBusy",
 			Cost = 1000,
 			Affordable = affordable,
 			TargetLevel = 2,
+		},
+		DiamondUpgrade = {
+			Allowed = true,
+			Reason = nil,
+			Cost = 2000,
+			Affordable = true,
+			TargetLevel = 75,
 		},
 		Attack = {
 			Allowed = attackAllowed,
@@ -49,6 +57,14 @@ function MonsterManagementStateMachineSpec.Run(): boolean
 		Snapshot = snapshot(true, false, true),
 	})
 	expect(loaded.State.Mode == "Managing", "加载后应进入 Managing")
+	local diamondUpgrading = MonsterManagementStateMachine.Apply(loaded.State, {
+		Kind = "ChooseDiamondUpgrade",
+	})
+	expect(diamondUpgrading.State.Mode == "Upgrading", "钻石满级升级应进入 Upgrading")
+	expect(
+		diamondUpgrading.Effect and diamondUpgrading.Effect.Kind == "RequestMaxUpgrade",
+		"钻石满级升级 Effect 错误"
+	)
 
 	local insufficient = MonsterManagementStateMachine.Apply(loaded.State, {
 		Kind = "ChooseUpgrade",

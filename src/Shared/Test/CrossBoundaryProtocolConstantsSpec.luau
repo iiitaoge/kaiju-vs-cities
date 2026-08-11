@@ -153,6 +153,10 @@ function CrossBoundaryProtocolConstantsSpec.Run(): boolean
 	end
 	expect(MonsterManagementProtocol.GetSnapshot == "GetSnapshot", "怪兽管理快照请求名称漂移")
 	expect(MonsterManagementProtocol.Upgrade == "Upgrade", "怪兽管理升级请求名称漂移")
+	expect(
+		MonsterManagementProtocol.UpgradeToMax == "UpgradeToMax",
+		"怪兽管理钻石满级升级请求名称漂移"
+	)
 	expect(TutorialProtocol.CompletedVersionAttributeName == "TutorialCompletedVersion", "新手引导完成版本 Attribute 名称漂移")
 	expect(
 		MultiplayerAttackAcceptanceProtocol.RemoteName
