@@ -32,6 +32,14 @@ function ButtonWorldUIPresentationRulesSpec.Run(): boolean
 	})
 	assert(not unlocked.Enabled, "已解锁区域不得继续显示 Unlock UI")
 
+	local buildCity = ButtonWorldUIPresentationRules.Resolve({
+		Kind = "IncomePrimary",
+		Action = "Build",
+		Cost = 2_500,
+	})
+	assert(buildCity.Enabled and buildCity.Texts.Text1.Text == "Build City", "城市建造动作文本错误")
+	assert(buildCity.Money.Text == "2.5K", "城市建造现金价格错误")
+
 	local oldPrimaryUnlock = ButtonWorldUIPresentationRules.Resolve({
 		Kind = "IncomePrimary",
 		Action = "Unlock",

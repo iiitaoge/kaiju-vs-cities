@@ -27,6 +27,11 @@ function IncomeHouseUIPresentationRulesSpec.Run(): boolean
 	assert(manual.Money.Text == "70", "累计待领取金额错误")
 	assert(not manual.Texts.Text1.Visible and not manual.Texts.Text5.Visible, "无关文本没有隐藏")
 
+	local fullHealth = input()
+	fullHealth.CurrentHealth = fullHealth.MaxHealth
+	local fullHealthPresentation = IncomeHouseUIPresentationRules.Resolve(fullHealth)
+	assert(not fullHealthPresentation.Texts.Text3.Visible, "满血房屋不应显示 HP")
+
 	local autoInput = input()
 	autoInput.AutoIncome = true
 	local automatic = IncomeHouseUIPresentationRules.Resolve(autoInput)

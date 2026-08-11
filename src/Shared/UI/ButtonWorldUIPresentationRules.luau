@@ -57,7 +57,7 @@ function ButtonWorldUIPresentationRules.Resolve(snapshot)
 			return { Enabled = false }
 		end
 		local labelByAction = {
-			Build = "Build",
+			Build = "Build City",
 			Upgrade = if type(snapshot.TargetLevel) == "number"
 				then "Upgrade Lv." .. tostring(snapshot.TargetLevel)
 				else "Upgrade",
