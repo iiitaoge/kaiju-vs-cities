@@ -1,8 +1,8 @@
 --[[
 	职责：定义新手引导的英文文案、目标类型，并由权威进度快照解析当前步骤。
-	输入：Resolve 接收完成版本、R1 等级、余额、两项权威费用和 M1-S1 建造状态。
+	输入：Resolve 接收完成版本、R1 等级、余额、两项权威费用、M1-S1 建造状态和事务状态。
 	输出：稳定 StepId；GetDefinition 返回该步骤的纯表现配置。
-	内部算法：按建造 R1 → 收集升级费 → 升级 R1 → 收集建造费 → 建造怪兽 → 发起攻击顺序判断。
+	内部算法：按建造 R1 → 收集升级费 → 升级 R1 → 收集建造费 → 建造怪兽 → 等待建造完成 → 发起攻击顺序判断。
 	不负责：读取玩家状态、查找场景实例、显示 UI、绘制 Beam 或写入存档。
 ]]
 
@@ -14,6 +14,7 @@ export type StepId =
 	| "UpgradeR1"
 	| "CollectForMonsterBuild"
 	| "BuildMonster"
+	| "WaitForMonsterBuild"
 	| "StartAttack"
 	| "ChooseTarget"
 	| "Complete"
@@ -25,6 +26,7 @@ export type Input = {
 	R1UpgradeCost: number,
 	FirstMonsterBuildCost: number,
 	FirstMonsterBuilt: boolean,
+	FirstMonsterBuildInProgress: boolean,
 }
 
 export type Definition = {
@@ -56,13 +58,18 @@ local DEFINITIONS: { [StepId]: Definition } = {
 	CollectForMonsterBuild = table.freeze({
 		Title = "PREPARE YOUR MONSTER",
 		Info = "Keep collecting cash until you have %s.",
-		TargetKind = "R1Building",
+		TargetKind = "R1MonsterBuildBuilding",
 		AmountKey = "FirstMonsterBuildCost",
 	}),
 	BuildMonster = table.freeze({
 		Title = "BUILD GODZILLA",
 		Info = "Step on the button to build your first Godzilla.",
 		TargetKind = "FirstMonsterButton",
+	}),
+	WaitForMonsterBuild = table.freeze({
+		Title = "BUILDING GODZILLA",
+		Info = "Wait for the incubator to finish building.",
+		TargetKind = nil,
 	}),
 	StartAttack = table.freeze({
 		Title = "START AN ATTACK",
@@ -111,6 +118,10 @@ function TutorialProgression.Resolve(input: Input): StepId
 	assertNonNegativeNumber(input.R1UpgradeCost, "R1UpgradeCost")
 	assertNonNegativeNumber(input.FirstMonsterBuildCost, "FirstMonsterBuildCost")
 	assert(type(input.FirstMonsterBuilt) == "boolean", "FirstMonsterBuilt must be boolean")
+	assert(
+		type(input.FirstMonsterBuildInProgress) == "boolean",
+		"FirstMonsterBuildInProgress must be boolean"
+	)
 
 	if input.CompletedVersion >= TutorialProgression.CurrentVersion then
 		return "Complete"
@@ -124,6 +135,9 @@ function TutorialProgression.Resolve(input: Input): StepId
 			else "UpgradeR1"
 	end
 	if not input.FirstMonsterBuilt then
+		if input.FirstMonsterBuildInProgress then
+			return "WaitForMonsterBuild"
+		end
 		return if input.Money < input.FirstMonsterBuildCost
 			then "CollectForMonsterBuild"
 			else "BuildMonster"

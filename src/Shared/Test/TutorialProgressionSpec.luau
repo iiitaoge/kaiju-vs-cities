@@ -28,6 +28,7 @@ function TutorialProgressionSpec.Run(): boolean
 		R1UpgradeCost = r1UpgradeCost,
 		FirstMonsterBuildCost = firstMonsterBuildCost,
 		FirstMonsterBuilt = false,
+		FirstMonsterBuildInProgress = false,
 	}, "BuildR1")
 	expectStep({
 		CompletedVersion = 0,
@@ -36,6 +37,7 @@ function TutorialProgressionSpec.Run(): boolean
 		R1UpgradeCost = r1UpgradeCost,
 		FirstMonsterBuildCost = firstMonsterBuildCost,
 		FirstMonsterBuilt = false,
+		FirstMonsterBuildInProgress = false,
 	}, "CollectForR1Upgrade")
 	expectStep({
 		CompletedVersion = 0,
@@ -44,6 +46,7 @@ function TutorialProgressionSpec.Run(): boolean
 		R1UpgradeCost = r1UpgradeCost,
 		FirstMonsterBuildCost = firstMonsterBuildCost,
 		FirstMonsterBuilt = false,
+		FirstMonsterBuildInProgress = false,
 	}, "UpgradeR1")
 	expectStep({
 		CompletedVersion = 0,
@@ -52,6 +55,7 @@ function TutorialProgressionSpec.Run(): boolean
 		R1UpgradeCost = r1UpgradeCost,
 		FirstMonsterBuildCost = firstMonsterBuildCost,
 		FirstMonsterBuilt = false,
+		FirstMonsterBuildInProgress = false,
 	}, "CollectForMonsterBuild")
 	expectStep({
 		CompletedVersion = 0,
@@ -60,6 +64,7 @@ function TutorialProgressionSpec.Run(): boolean
 		R1UpgradeCost = r1UpgradeCost,
 		FirstMonsterBuildCost = firstMonsterBuildCost,
 		FirstMonsterBuilt = false,
+		FirstMonsterBuildInProgress = false,
 	}, "BuildMonster")
 	expectStep({
 		CompletedVersion = 0,
@@ -67,7 +72,17 @@ function TutorialProgressionSpec.Run(): boolean
 		Money = 0,
 		R1UpgradeCost = r1UpgradeCost,
 		FirstMonsterBuildCost = firstMonsterBuildCost,
+		FirstMonsterBuilt = false,
+		FirstMonsterBuildInProgress = true,
+	}, "WaitForMonsterBuild")
+	expectStep({
+		CompletedVersion = 0,
+		R1Level = 2,
+		Money = 0,
+		R1UpgradeCost = r1UpgradeCost,
+		FirstMonsterBuildCost = firstMonsterBuildCost,
 		FirstMonsterBuilt = true,
+		FirstMonsterBuildInProgress = false,
 	}, "StartAttack")
 	expectStep({
 		CompletedVersion = TutorialProgression.CurrentVersion,
@@ -76,6 +91,7 @@ function TutorialProgressionSpec.Run(): boolean
 		R1UpgradeCost = r1UpgradeCost,
 		FirstMonsterBuildCost = firstMonsterBuildCost,
 		FirstMonsterBuilt = false,
+		FirstMonsterBuildInProgress = false,
 	}, "Complete")
 	assert(
 		TutorialProgression.GetDefinition("CollectForR1Upgrade").AmountKey
@@ -86,6 +102,15 @@ function TutorialProgressionSpec.Run(): boolean
 		TutorialProgression.GetDefinition("CollectForMonsterBuild").AmountKey
 			== "FirstMonsterBuildCost",
 		"TutorialProgressionSpec: monster collection copy must use the authoritative cost"
+	)
+	assert(
+		TutorialProgression.GetDefinition("CollectForMonsterBuild").TargetKind
+			== "R1MonsterBuildBuilding",
+		"TutorialProgressionSpec: monster collection must target its dedicated R1 building"
+	)
+	assert(
+		TutorialProgression.GetDefinition("WaitForMonsterBuild").TargetKind == nil,
+		"TutorialProgressionSpec: monster build wait step must not have a guide target"
 	)
 	return true
 end

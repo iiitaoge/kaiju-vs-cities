@@ -1,8 +1,7 @@
 --[[
-	职责：用 ReplicatedStorage/TutorialAssets 中的 PopUp 与 Beam 模板显示一个客户端引导步骤，
-	并在步骤需要点击时显示动态遮罩与 HUD.Guide 小手指。
-	输入：Create 接收 PlayerGui；Show 接收英文步骤定义和可选世界/UI 引导目标。
-	输出：可 Show/Hide/Destroy 的表现句柄；目标按钮或世界落点会保留可点击区域。
+	职责：用 ReplicatedStorage/TutorialAssets 中的 PopUp 与 Beam 模板显示客户端引导表现。
+	输入：Create 接收 PlayerGui 和可选表现选项；Show 接收英文步骤定义和可选世界/UI 引导目标。
+	输出：可 Show/Hide/Destroy 的表现句柄；支持完整教程模式和仅箭头/Beam 模式。
 	内部算法：世界目标继续使用角色到目标的 Beam；UI/世界落点目标使用四块遮罩围出目标矩形，
 	矩形和小手指每帧按当前 GUI 绝对位置或摄像机投影刷新。
 	不负责：步骤判断、服务器查询、Plot/按钮定位、攻击输入或完成持久化。
@@ -49,9 +48,13 @@ export type Handle = {
 	Destroy: () -> (),
 }
 
-local GUI_NAME = "TutorialPopUp"
-local CLICK_MASK_GUI_NAME = "TutorialClickMask"
-local CLICK_HAND_GUI_NAME = "TutorialClickHand"
+export type Options = {
+	NamePrefix: string?,
+	ShowPopup: boolean?,
+	ShowClickMask: boolean?,
+	ShowClickHand: boolean?,
+}
+
 local ORIGIN_ATTACHMENT_NAME = "TutorialGuideOrigin"
 local TARGET_ATTACHMENT_NAME = "TutorialGuideTarget"
 local MASK_TRANSPARENCY = 0.38
@@ -235,8 +238,27 @@ local function resolveGuideTemplate(playerGui: PlayerGui): GuiObject?
 	return if guide and guide:IsA("GuiObject") then guide else nil
 end
 
-function TutorialPresentation.Create(playerGui: PlayerGui): (Handle?, string?)
+function TutorialPresentation.Create(
+	playerGui: PlayerGui,
+	options: Options?
+): (Handle?, string?)
 	assert(playerGui:IsA("PlayerGui"), "playerGui 必须是 PlayerGui")
+	local namePrefix = if options and options.NamePrefix
+		then options.NamePrefix
+		else "Tutorial"
+	assert(type(namePrefix) == "string" and namePrefix ~= "", "NamePrefix 无效")
+	local showPopup = if options and options.ShowPopup ~= nil
+		then options.ShowPopup
+		else true
+	local showClickMask = if options and options.ShowClickMask ~= nil
+		then options.ShowClickMask
+		else true
+	local showClickHand = if options and options.ShowClickHand ~= nil
+		then options.ShowClickHand
+		else true
+	local guiName = namePrefix .. "PopUp"
+	local clickMaskGuiName = namePrefix .. "ClickMask"
+	local clickHandGuiName = namePrefix .. "ClickHand"
 	local assets = ReplicatedStorage:WaitForChild("TutorialAssets", 20)
 	if not assets or not assets:IsA("Folder") then
 		return nil, "TutorialAssetsUnavailable"
@@ -247,40 +269,47 @@ function TutorialPresentation.Create(playerGui: PlayerGui): (Handle?, string?)
 		return nil, "InvalidTutorialAssets"
 	end
 
-	local previous = playerGui:FindFirstChild(GUI_NAME)
+	local previous = playerGui:FindFirstChild(guiName)
 	if previous then
 		previous:Destroy()
 	end
-	for _, name in { CLICK_MASK_GUI_NAME, CLICK_HAND_GUI_NAME } do
+	for _, name in { clickMaskGuiName, clickHandGuiName } do
 		local oldOverlay = playerGui:FindFirstChild(name)
 		if oldOverlay then
 			oldOverlay:Destroy()
 		end
 	end
 
-	local gui = popupTemplate:Clone() :: ScreenGui
-	gui.Name = GUI_NAME
-	gui.Enabled = false
-	gui.ResetOnSpawn = false
-	gui.DisplayOrder = math.max(gui.DisplayOrder, 200)
-	gui.AutoLocalize = false
-	local tip = childOfClass(gui, "Tip", "Frame")
-	local titleFrame = childOfClass(tip, "Title", "Frame")
-	local title = childOfClass(titleFrame, "Title", "TextLabel")
-	local info = childOfClass(tip, "Info", "TextLabel")
-	local uiScale = gui:FindFirstChildOfClass("UIScale")
-	if not tip or not title or not info or not uiScale then
-		gui:Destroy()
-		return nil, "InvalidTutorialPopupHierarchy"
+	local gui: ScreenGui? = nil
+	local title: TextLabel? = nil
+	local info: TextLabel? = nil
+	local uiScale: UIScale? = nil
+	if showPopup then
+		local popup = popupTemplate:Clone() :: ScreenGui
+		popup.Name = guiName
+		popup.Enabled = false
+		popup.ResetOnSpawn = false
+		popup.DisplayOrder = math.max(popup.DisplayOrder, 200)
+		popup.AutoLocalize = false
+		local tip = childOfClass(popup, "Tip", "Frame")
+		local titleFrame = childOfClass(tip, "Title", "Frame")
+		title = childOfClass(titleFrame, "Title", "TextLabel") :: TextLabel?
+		info = childOfClass(tip, "Info", "TextLabel") :: TextLabel?
+		uiScale = popup:FindFirstChildOfClass("UIScale")
+		if not tip or not title or not info or not uiScale then
+			popup:Destroy()
+			return nil, "InvalidTutorialPopupHierarchy"
+		end
+		title.AutoLocalize = false
+		info.AutoLocalize = false
+		info.RichText = true
+		info.TextScaled = true
+		popup.Parent = playerGui
+		gui = popup
 	end
-	title.AutoLocalize = false
-	info.AutoLocalize = false
-	info.RichText = true
-	info.TextScaled = true
-	gui.Parent = playerGui
 
-	local clickMaskGui = createOverlayGui(playerGui, CLICK_MASK_GUI_NAME, 190)
-	local clickHandGui = createOverlayGui(playerGui, CLICK_HAND_GUI_NAME, 210)
+	local clickMaskGui = createOverlayGui(playerGui, clickMaskGuiName, 190)
+	local clickHandGui = createOverlayGui(playerGui, clickHandGuiName, 210)
 	local overlayCoordinateSpace = Instance.new("Frame")
 	overlayCoordinateSpace.Name = "CoordinateSpace"
 	overlayCoordinateSpace.BackgroundTransparency = 1
@@ -290,7 +319,7 @@ function TutorialPresentation.Create(playerGui: PlayerGui): (Handle?, string?)
 	overlayCoordinateSpace.Active = false
 	overlayCoordinateSpace.Selectable = false
 	overlayCoordinateSpace.ZIndex = 0
-	overlayCoordinateSpace.Parent = clickMaskGui
+	overlayCoordinateSpace.Parent = clickHandGui
 	local maskFrames = {
 		createMaskFrame(clickMaskGui, "Top"),
 		createMaskFrame(clickMaskGui, "Bottom"),
@@ -339,7 +368,7 @@ function TutorialPresentation.Create(playerGui: PlayerGui): (Handle?, string?)
 
 	local function updateScale()
 		local camera = Workspace.CurrentCamera
-		if camera and camera.ViewportSize.X > 0 and camera.ViewportSize.Y > 0 then
+		if uiScale and camera and camera.ViewportSize.X > 0 and camera.ViewportSize.Y > 0 then
 			uiScale.Scale = ResponsiveUIScale.Compute(
 				camera.ViewportSize,
 				UserInputService.TouchEnabled,
@@ -412,8 +441,8 @@ function TutorialPresentation.Create(playerGui: PlayerGui): (Handle?, string?)
 
 	local function setClickGuideVisible(visible: boolean)
 		presentationVisible = visible
-		clickMaskGui.Enabled = visible and clickGuideRequested
-		clickHandGui.Enabled = visible and clickGuideRequested
+		clickMaskGui.Enabled = showClickMask and visible and clickGuideRequested
+		clickHandGui.Enabled = showClickHand and visible and clickGuideRequested
 	end
 
 	local function updateHandSize(viewport: Vector2): Vector2
@@ -523,10 +552,14 @@ function TutorialPresentation.Create(playerGui: PlayerGui): (Handle?, string?)
 			return
 		end
 
-		clickMaskGui.Enabled = true
-		clickHandGui.Enabled = true
-		setMaskRect(maskFrames, highlight, viewport, rectPosition, rectSize)
-		if guide then
+		clickMaskGui.Enabled = showClickMask
+		clickHandGui.Enabled = showClickHand
+		if showClickMask then
+			setMaskRect(maskFrames, highlight, viewport, rectPosition, rectSize)
+		else
+			highlight.Visible = false
+		end
+		if showClickHand and guide then
 			local guideSize = updateHandSize(viewport)
 			local targetPoint = rectPosition + rectSize * 0.5
 			local bob = math.sin(handTime * 5) * 5
@@ -547,7 +580,9 @@ function TutorialPresentation.Create(playerGui: PlayerGui): (Handle?, string?)
 	visibilityGate = LocalUIVisibilityGate.Create(
 		UIModeVisibilityRules.Channels.Tutorial,
 		function(visible)
-			gui.Enabled = visible
+			if gui then
+				gui.Enabled = visible
+			end
 			setClickGuideVisible(visible)
 		end,
 		false
@@ -558,8 +593,10 @@ function TutorialPresentation.Create(playerGui: PlayerGui): (Handle?, string?)
 		if destroyed then
 			return
 		end
-		title.Text = "TIP:"
-		info.Text = string.format("<b>%s</b>\n%s", definition.Title, definition.Info)
+		if title and info then
+			title.Text = "TIP:"
+			info.Text = string.format("<b>%s</b>\n%s", definition.Title, definition.Info)
+		end
 		currentGuideTarget = target
 		clickGuideRequested = target ~= nil
 		setTarget(if target then target.WorldPart else nil)
@@ -609,7 +646,7 @@ function TutorialPresentation.Create(playerGui: PlayerGui): (Handle?, string?)
 		if clickHandGui.Parent then
 			clickHandGui:Destroy()
 		end
-		if gui.Parent then
+		if gui and gui.Parent then
 			gui:Destroy()
 		end
 	end
