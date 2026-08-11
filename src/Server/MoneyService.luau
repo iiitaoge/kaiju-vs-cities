@@ -31,6 +31,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local DebugLog = require(ReplicatedStorage.Shared.DebugLog)
 local MoneyProtocol = require(ReplicatedStorage.Shared.Economy.MoneyProtocol)
+local TaskEventBus = require(script.Parent.TaskEventBus)
+local TaskProtocol = require(ReplicatedStorage.Shared.Task.TaskProtocol)
 local PlayerStateService = require(script.Parent.PlayerStateService)
 local RebirthStateService = require(script.Parent.RebirthStateService)
 
@@ -96,6 +98,10 @@ function MoneyService.Earn(player: Player, amount: number): number
 	assertAmount(amount)
 	local money = MoneyService.Add(player, amount)
 	RebirthStateService.AddRunEarnings(player, amount)
+	TaskEventBus.Publish(player, {
+		Kind = TaskProtocol.EventKinds.MoneyEarned,
+		Amount = amount,
+	})
 	return money
 end
 

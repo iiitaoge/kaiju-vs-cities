@@ -16,6 +16,7 @@ local PlayerJourneyAnalyticsCoordinator = require(
 )
 local DefenseMonsterActionQuery = require(script.Parent.DefenseMonsterActionQuery)
 local MoneyService = require(script.Parent.MoneyService)
+local TaskEventBus = require(script.Parent.TaskEventBus)
 local MonsterSpawnPointActionQuery = require(script.Parent.MonsterSpawnPointActionQuery)
 local PlayerMonsterRuntimeCoordinator = require(script.Parent.PlayerMonsterRuntimeCoordinator)
 local PlayerDefenseMonsterRuntimeCoordinator = require(
@@ -24,6 +25,7 @@ local PlayerDefenseMonsterRuntimeCoordinator = require(
 local DefenseMonsterSlotCatalog = require(
 	ReplicatedStorage.Shared.Monster.DefenseMonsterSlotCatalog
 )
+local TaskProtocol = require(ReplicatedStorage.Shared.Task.TaskProtocol)
 
 local MonsterSpawnPointPurchaseCoordinator = {}
 
@@ -181,6 +183,13 @@ local function executeUnlocked(player: Player, spawnPointId: string, action: "Bu
 		actionStatus.Cost,
 		MoneyService.Get(player)
 	)
+	if action == "Upgrade" then
+		TaskEventBus.Publish(player, {
+			Kind = TaskProtocol.EventKinds.MonsterUpgraded,
+			SpawnPointId = spawnPointId,
+			TargetLevel = targetLevel,
+		})
+	end
 
 	return resultForSpawnPoint(
 		true,
@@ -263,6 +272,19 @@ function MonsterSpawnPointPurchaseCoordinator.IsBusy(player: Player): boolean
 	local playerLocks = locks[player]
 	return exclusiveLocks[player] == true
 		or (playerLocks ~= nil and next(playerLocks) ~= nil)
+end
+
+-- 输入：在线 Player 与 SpawnPointId。
+-- 输出：该出生点当前是否仍在执行建造/升级事务。
+-- 内部算法：读取购买事务的出生点锁；全局独占锁不代表该出生点正在建造。
+function MonsterSpawnPointPurchaseCoordinator.IsSpawnPointBusy(
+	player: Player,
+	spawnPointId: string
+): boolean
+	assert(typeof(player) == "Instance" and player:IsA("Player"), "player 必须是 Player")
+	assert(type(spawnPointId) == "string" and spawnPointId ~= "", "spawnPointId 无效")
+	local playerLocks = locks[player]
+	return playerLocks ~= nil and playerLocks[spawnPointId] == true
 end
 
 function MonsterSpawnPointPurchaseCoordinator.TryAcquireExclusive(

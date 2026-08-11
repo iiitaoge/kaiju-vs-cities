@@ -23,6 +23,7 @@ local GroupRewardStateService = require(script.Parent.GroupRewardStateService)
 local TutorialProgressStateService = require(script.Parent.TutorialProgressStateService)
 local ZoneStateService = require(script.Parent.ZoneStateService)
 local SevenDayRewardStateService = require(script.Parent.SevenDayRewardStateService)
+local TaskStateService = require(script.Parent.TaskStateService)
 local VehicleFleetService = require(script.Parent.VehicleFleetService)
 local HouseCatalog = require(ReplicatedStorage.Shared.Building.HouseCatalog)
 local DefenseMonsterSlotCatalog = require(
@@ -112,6 +113,7 @@ function PlayerSaveStateAdapter.Apply(player: Player, data, now: number?)
 		data.Rebirth.RunEarnings
 	)
 	TutorialProgressStateService.Restore(player, data.Tutorial.Version)
+	TaskStateService.Restore(player, data.Tasks)
 	for _, definition in ZoneCatalog.GetAll() do
 		restoreZone(player, definition, data.Zones[definition.ZoneId])
 	end
@@ -272,6 +274,7 @@ function PlayerSaveStateAdapter.Capture(player: Player, now: number?)
 		Tutorial = {
 			Version = TutorialProgressStateService.Get(player),
 		},
+		Tasks = TaskStateService.Capture(player),
 		Zones = zones,
 		Houses = houses,
 		Monsters = {

@@ -30,9 +30,11 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local PlayerStateService = require(script.Parent.PlayerStateService)
+local TaskEventBus = require(script.Parent.TaskEventBus)
 local HouseLifecycleRules = require(
 	ReplicatedStorage.Shared.Building.HouseLifecycleRules
 )
+local TaskProtocol = require(ReplicatedStorage.Shared.Task.TaskProtocol)
 
 local HouseStateService = {}
 
@@ -132,6 +134,10 @@ function HouseStateService.RollbackDestroy(player: Player, houseId: string, now:
 
 	state:SetAttribute("LastIncomeAt", now or os.time())
 	state:SetAttribute("RespawnAt", nil)
+	TaskEventBus.Publish(player, {
+		Kind = TaskProtocol.EventKinds.HouseBuilt,
+		HouseId = houseId,
+	})
 	return snapshot(state), true
 end
 
@@ -214,6 +220,10 @@ function HouseStateService.CompleteRebuild(player: Player, houseId: string, now:
 
 	state:SetAttribute("LastIncomeAt", now or os.time())
 	state:SetAttribute("RespawnAt", nil)
+	TaskEventBus.Publish(player, {
+		Kind = TaskProtocol.EventKinds.HouseBuilt,
+		HouseId = houseId,
+	})
 	return snapshot(state), true
 end
 

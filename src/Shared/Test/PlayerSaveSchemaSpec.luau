@@ -24,6 +24,7 @@ function PlayerSaveSchemaSpec.Run(): boolean
 	expect(default.Rebirth.Count == 0, "默认重生次数必须为 0")
 	expect(default.Rebirth.RunEarnings == 0, "默认本轮累计收入必须为 0")
 	expect(default.Tutorial.Version == 0, "默认引导版本必须为 0")
+	expect(next(default.Tasks) == nil, "默认任务状态必须为空")
 	expect(next(default.DefenseMonsters.SpawnPoints) == nil, "默认防守怪兽资产必须为空")
 
 	local migrated = PlayerSaveSchema.Normalize({
@@ -49,6 +50,7 @@ function PlayerSaveSchemaSpec.Run(): boolean
 	)
 	expect(migrated.Rebirth.Count == 0, "旧存档重生次数应默认为 0")
 	expect(migrated.Tutorial.Version == 0, "旧存档引导版本应默认为 0")
+	expect(next(migrated.Tasks) == nil, "旧存档任务状态应默认为空")
 	expect(migrated.Monsters.Capacity == 4, "V0 容量迁移错误")
 	expect(migrated.Houses["R1-H1"].Built, "房屋建造状态迁移错误")
 	expect(migrated.Houses["R1-H1"].LifeState == nil, "瞬时房屋状态不得进入 V1")
@@ -103,6 +105,26 @@ function PlayerSaveSchemaSpec.Run(): boolean
 		and rewards.GroupRewardClaims["bad key"] == nil
 		and rewards.GroupRewardClaims.NotClaimed == nil,
 		"群组奖励领取记录规范化错误"
+	)
+	local tasks = PlayerSaveSchema.Normalize({
+		Version = 1,
+		Tasks = {
+			TaskA = {
+				Completed = false,
+				Progress = {
+					Earn = { Kind = "Counter", Current = 25, Completed = false },
+					Bad = { Kind = "Level", Current = -1, Completed = true },
+				},
+			},
+			["bad key"] = { Completed = true },
+		},
+	})
+	expect(tasks.Tasks.TaskA ~= nil, "任务状态规范化错误")
+	expect(
+		tasks.Tasks.TaskA.Progress.Earn.Current == 25
+			and tasks.Tasks.TaskA.Progress.Bad.Current == 0
+			and tasks.Tasks["bad key"] == nil,
+		"任务进度数值或非法键规范化错误"
 	)
 	local completed = PlayerSaveSchema.Normalize({
 		Version = 1,

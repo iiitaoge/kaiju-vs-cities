@@ -38,10 +38,12 @@ local MoneyService = require(script.Parent.MoneyService)
 local RegionEconomyConfigs = require(script.Parent.RegionEconomyConfigs)
 local RegionStateService = require(script.Parent.RegionStateService)
 local RegionUpgradeConfigs = require(script.Parent.RegionUpgradeConfigs)
+local TaskEventBus = require(script.Parent.TaskEventBus)
 local HouseCatalog = require(ReplicatedStorage.Shared.Building.HouseCatalog)
 local IncomeBuildingProgressionRules = require(
 	ReplicatedStorage.Shared.Building.IncomeBuildingProgressionRules
 )
+local TaskProtocol = require(ReplicatedStorage.Shared.Task.TaskProtocol)
 
 local RegionUpgradeService = {}
 
@@ -109,6 +111,10 @@ function RegionUpgradeService.Unlock(player: Player, regionId: string)
 	end
 
 	RegionStateService.SetUnlocked(player, regionId, true)
+	TaskEventBus.Publish(player, {
+		Kind = TaskProtocol.EventKinds.ZoneUnlocked,
+		ZoneId = regionId,
+	})
 	GameAnalyticsGateway.LogDesign(player, "Gameplay:Region:Unlock:" .. regionId)
 	GameAnalyticsGateway.LogResource(
 		player,
@@ -158,6 +164,11 @@ function RegionUpgradeService.Upgrade(player: Player, regionId: string)
 
 	RegionStateService.SetLevel(player, regionId, nextLevel)
 	buildEligibleRegionHouses(player, regionId, nextLevel, now)
+	TaskEventBus.Publish(player, {
+		Kind = TaskProtocol.EventKinds.RegionLevelChanged,
+		ZoneId = regionId,
+		Level = nextLevel,
+	})
 	local action = if currentLevel == 0 then "Build" else "Upgrade"
 	GameAnalyticsGateway.LogDesign(
 		player,

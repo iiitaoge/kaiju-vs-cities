@@ -62,6 +62,8 @@ local GroupRewardUIController = require(
 local SevenDayRewardUIController = require(
 	script.Parent.UI.SevenDayRewardUIController
 )
+local TaskUIController = require(script.Parent.UI.TaskUIController)
+local TaskGuideController = require(script.Parent.UI.TaskGuideController)
 local VehicleUIController = require(script.Parent.UI.VehicleUIController)
 
 -- 输入：服务器意外返回的旧式客户端 Action。
@@ -77,6 +79,8 @@ SoundController.Start()
 StudioSaveResetController.Start()
 task.spawn(SevenDayRewardUIController.Start)
 task.spawn(GroupRewardUIController.Start)
+task.spawn(TaskUIController.Start)
+task.spawn(TaskGuideController.Start)
 VehicleUIController.Start()
 TutorialController.Start()
 AttackSelectionHUDController.Start()

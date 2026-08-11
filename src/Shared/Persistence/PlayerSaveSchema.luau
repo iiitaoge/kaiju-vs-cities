@@ -131,6 +131,38 @@ local function normalizeGroupRewardClaims(values)
 	return result
 end
 
+local function normalizeTasks(values)
+	local result = {}
+	if type(values) ~= "table" then
+		return result
+	end
+	for taskId, value in values do
+		if isValidGroupRewardId(taskId) and type(value) == "table" then
+			local progress = {}
+			if type(value.Progress) == "table" then
+				for requirementId, requirementProgress in value.Progress do
+					if isValidGroupRewardId(requirementId) and type(requirementProgress) == "table" then
+						local progressKind = if type(requirementProgress.Kind) == "string"
+							and requirementProgress.Kind ~= ""
+						then requirementProgress.Kind
+						else "Unknown"
+						progress[requirementId] = {
+							Kind = progressKind,
+							Current = nonNegative(requirementProgress.Current, 0),
+							Completed = requirementProgress.Completed == true,
+						}
+					end
+				end
+			end
+			result[taskId] = {
+				Completed = value.Completed == true,
+				Progress = progress,
+			}
+		end
+	end
+	return result
+end
+
 local function normalizeVehicles(values)
 	local result = {}
 	if type(values) ~= "table" then
@@ -174,6 +206,7 @@ function PlayerSaveSchema.Default()
 			NextClaimAt = 0,
 		},
 		GroupRewardClaims = {},
+		Tasks = {},
 		Vehicles = {},
 		Rebirth = {
 			Count = 0,
@@ -200,6 +233,7 @@ local function migrateV0(raw)
 		Economy = raw.Economy or { Money = raw.Money, Diamond = raw.Diamond },
 		DailyReward = raw.DailyReward,
 		GroupRewardClaims = raw.GroupRewardClaims,
+		Tasks = raw.Tasks,
 		Vehicles = raw.Vehicles,
 		Rebirth = raw.Rebirth,
 		Tutorial = raw.Tutorial,
@@ -242,6 +276,7 @@ function PlayerSaveSchema.Normalize(raw)
 	local economy = if type(raw.Economy) == "table" then raw.Economy else {}
 	local dailyReward = if type(raw.DailyReward) == "table" then raw.DailyReward else {}
 	local groupRewardClaims = normalizeGroupRewardClaims(raw.GroupRewardClaims)
+	local tasks = normalizeTasks(raw.Tasks)
 	local rebirth = if type(raw.Rebirth) == "table" then raw.Rebirth else {}
 	local tutorial = if type(raw.Tutorial) == "table" then raw.Tutorial else {}
 	local monsters = if type(raw.Monsters) == "table" then raw.Monsters else {}
@@ -256,6 +291,7 @@ function PlayerSaveSchema.Normalize(raw)
 		},
 		DailyReward = normalizeDailyReward(dailyReward),
 		GroupRewardClaims = groupRewardClaims,
+		Tasks = tasks,
 		Vehicles = normalizeVehicles(raw.Vehicles),
 		Rebirth = {
 			Count = nonNegativeInteger(rebirth.Count, 0),
