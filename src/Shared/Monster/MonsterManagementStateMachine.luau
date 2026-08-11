@@ -3,7 +3,7 @@
 
 	输入：当前 State，以及面板交互或余额变化 Event。
 	输出：Accepted、Reason、新 State，以及最多一个待协调 Effect。
-	内部算法：按显式状态转换表处理加载、升级和进攻选择；余额变化只重算快照中的可负担状态。
+	内部算法：按显式状态转换表处理加载、金币逐级升级、钻石满级升级和进攻选择；余额变化只重算对应货币的可负担状态。
 
 	不负责：Remote、扣款、怪兽状态写入、目标玩家选择、相机或 GUI 表现。
 ]]
@@ -25,7 +25,9 @@ export type Snapshot = {
 	MonsterKey: string?,
 	MonsterState: string?,
 	Balance: number,
+	DiamondBalance: number,
 	Upgrade: ActionStatus,
+	DiamondUpgrade: ActionStatus,
 	Attack: ActionStatus,
 }
 
@@ -39,7 +41,11 @@ export type State = {
 }
 
 export type Effect = {
-	Kind: "QuerySnapshot" | "RequestUpgrade" | "OpenAttackSelection" | "CloseAttackSelection",
+	Kind: "QuerySnapshot"
+		| "RequestUpgrade"
+		| "RequestMaxUpgrade"
+		| "OpenAttackSelection"
+		| "CloseAttackSelection",
 	SpawnPointId: string,
 }
 
@@ -95,7 +101,9 @@ local function isSnapshot(value, spawnPointId: string): boolean
 		and value.Level >= 1
 		and value.Level % 1 == 0
 		and type(value.Balance) == "number"
+		and type(value.DiamondBalance) == "number"
 		and isActionStatus(value.Upgrade)
+		and isActionStatus(value.DiamondUpgrade)
 		and isActionStatus(value.Attack)
 end
 
@@ -113,7 +121,7 @@ function MonsterManagementStateMachine.New(): State
 end
 
 -- 支持的 Event.Kind：Open、Close、SnapshotLoaded、SnapshotFailed、Retry、BalanceChanged、
--- ChooseUpgrade、UpgradeResolved、ChooseAttack、AttackCancelled、AttackAccepted、AttackUnavailable。
+-- ChooseUpgrade、ChooseDiamondUpgrade、UpgradeResolved、ChooseAttack、AttackCancelled、AttackAccepted、AttackUnavailable。
 function MonsterManagementStateMachine.Apply(current: State, event): TransitionResult
 	if type(current) ~= "table" or type(event) ~= "table" or type(event.Kind) ~= "string" then
 		return rejected(MonsterManagementStateMachine.New(), "InvalidEvent")
@@ -145,8 +153,10 @@ function MonsterManagementStateMachine.Apply(current: State, event): TransitionR
 
 	if event.Kind == "BalanceChanged" then
 		local balance = event.Balance
+		local currency = event.Currency or "Money"
 		if type(balance) ~= "number" or balance ~= balance
 			or balance < 0 or balance >= math.huge
+			or (currency ~= "Money" and currency ~= "Diamond")
 		then
 			return rejected(current, "InvalidBalance")
 		end
@@ -155,12 +165,22 @@ function MonsterManagementStateMachine.Apply(current: State, event): TransitionR
 		end
 
 		local snapshot = table.clone(current.Snapshot)
-		snapshot.Balance = balance
-		snapshot.Upgrade = table.clone(current.Snapshot.Upgrade)
-		snapshot.Upgrade.Affordable = balance >= snapshot.Upgrade.Cost
+		if currency == "Diamond" then
+			snapshot.DiamondBalance = balance
+			snapshot.DiamondUpgrade = table.clone(current.Snapshot.DiamondUpgrade)
+			snapshot.DiamondUpgrade.Affordable = balance >= snapshot.DiamondUpgrade.Cost
+		else
+			snapshot.Balance = balance
+			snapshot.Upgrade = table.clone(current.Snapshot.Upgrade)
+			snapshot.Upgrade.Affordable = balance >= snapshot.Upgrade.Cost
+		end
 		snapshot.Attack = table.clone(current.Snapshot.Attack)
-		snapshot.Attack.Affordable = balance >= snapshot.Attack.Cost
-		local lastReason = if snapshot.Upgrade.Affordable
+		local lastReason = if currency == "Diamond"
+			and snapshot.DiamondUpgrade.Affordable
+			and current.LastReason == "InsufficientDiamonds"
+			then nil
+			elseif currency == "Money"
+			and snapshot.Upgrade.Affordable
 			and current.LastReason == "InsufficientMoney"
 			then nil
 			else current.LastReason
@@ -203,6 +223,23 @@ function MonsterManagementStateMachine.Apply(current: State, event): TransitionR
 		end
 		return result(true, nil, state("Loading", spawnPointId, current.Snapshot, nil), {
 			Kind = "QuerySnapshot",
+			SpawnPointId = spawnPointId,
+		})
+	end
+
+	if event.Kind == "ChooseDiamondUpgrade" then
+		if current.Mode ~= "Managing" or not current.Snapshot then
+			return rejected(current, "InvalidTransition")
+		end
+		local diamondUpgrade = current.Snapshot.DiamondUpgrade
+		if not diamondUpgrade.Allowed then
+			return rejected(current, diamondUpgrade.Reason or "MaxUpgradeLocked")
+		end
+		if not diamondUpgrade.Affordable then
+			return rejected(current, "InsufficientDiamonds")
+		end
+		return result(true, nil, state("Upgrading", spawnPointId, current.Snapshot, nil), {
+			Kind = "RequestMaxUpgrade",
 			SpawnPointId = spawnPointId,
 		})
 	end

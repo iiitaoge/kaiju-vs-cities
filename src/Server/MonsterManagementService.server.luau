@@ -1,7 +1,7 @@
 --[[
 	职责：把 MonsterManagementRequest RemoteFunction 适配到服务器管理协调器。
 
-	输入：Player、GetSnapshot/Upgrade、SpawnPointId。
+	输入：Player、GetSnapshot/Upgrade/UpgradeToMax、SpawnPointId。
 	输出：协调器的 Succeeded、Reason、Snapshot。
 	内部算法：通过 ServerRemoteAccess 获取唯一 RemoteFunction、校验基础输入并保护调用。
 ]]
@@ -32,7 +32,8 @@ remote.OnServerInvoke = function(player, requestKind, spawnPointId)
 		return { Succeeded = false, Reason = "InvalidSpawnPointId", Snapshot = nil }
 	end
 	if requestKind ~= MonsterManagementProtocol.GetSnapshot
-		and requestKind ~= MonsterManagementProtocol.Upgrade then
+		and requestKind ~= MonsterManagementProtocol.Upgrade
+		and requestKind ~= MonsterManagementProtocol.UpgradeToMax then
 		SecurityAnalyticsAggregator.Record(player, "MonsterManagement", "InvalidRequest")
 		return { Succeeded = false, Reason = "InvalidRequest", Snapshot = nil }
 	end
@@ -40,6 +41,9 @@ remote.OnServerInvoke = function(player, requestKind, spawnPointId)
 	local succeeded, responseOrError = xpcall(function()
 		if requestKind == MonsterManagementProtocol.GetSnapshot then
 			return MonsterManagementCoordinator.Query(player, spawnPointId)
+		end
+		if requestKind == MonsterManagementProtocol.UpgradeToMax then
+			return MonsterManagementCoordinator.UpgradeToMax(player, spawnPointId)
 		end
 		return MonsterManagementCoordinator.Upgrade(player, spawnPointId)
 	end, debug.traceback)
@@ -53,7 +57,8 @@ remote.OnServerInvoke = function(player, requestKind, spawnPointId)
 		))
 		return { Succeeded = false, Reason = "ServerError", Snapshot = nil }
 	end
-	if requestKind == MonsterManagementProtocol.Upgrade
+	if (requestKind == MonsterManagementProtocol.Upgrade
+		or requestKind == MonsterManagementProtocol.UpgradeToMax)
 		and not responseOrError.Succeeded
 	then
 		PlayerJourneyAnalyticsCoordinator.RecordMonsterUpgradeRejected(

@@ -1,15 +1,16 @@
 --[[
 	职责：执行与输入方式无关的怪兽出生点建造/升级购买事务。
 
-	输入：Player、SpawnPointId；Upgrade 由当前状态确定下一等级。
+	输入：Player、SpawnPointId；Upgrade 购买下一等级，UpgradeToMax 使用钻石直达满级。
 	输出：Succeeded、Reason、Action、Cost、Balance、Record、NextButtonState。
-	内部算法：同一玩家同一出生点加锁 → 权威预检查 → 扣款 → Build/Upgrade → 失败退款 → 重查按钮状态。
+	内部算法：同一玩家同一出生点加锁 → 权威预检查 → 按动作扣金币/钻石 → Build/Upgrade → 失败退款 → 重查按钮状态。
 
 	不负责：实体按钮、管理 UI、攻击命令、价格计算或表现动画。
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local DiamondService = require(script.Parent.DiamondService)
 local GameAnalyticsGateway = require(script.Parent.Analytics.GameAnalyticsGateway)
 local PlayerJourneyAnalyticsCoordinator = require(
 	script.Parent.Analytics.PlayerJourneyAnalyticsCoordinator
@@ -50,6 +51,16 @@ local function getBuildButtonState(player: Player, spawnPointId: string): string
 		else MonsterSpawnPointActionQuery.GetBuildButtonState(player, spawnPointId)
 end
 
+local function getDiamondUpgradeButtonState(player: Player, spawnPointId: string): string
+	return if DefenseMonsterSlotCatalog.Get(spawnPointId)
+		then DefenseMonsterActionQuery.GetDiamondUpgradeButtonState(player, spawnPointId)
+		else MonsterSpawnPointActionQuery.GetDiamondUpgradeButtonState(player, spawnPointId)
+end
+
+local function getBalance(player: Player, action: string): number
+	return if action == "UpgradeToMax" then DiamondService.Get(player) else MoneyService.Get(player)
+end
+
 local function resultForSpawnPoint(
 	succeeded: boolean,
 	reason: string?,
@@ -62,6 +73,8 @@ local function resultForSpawnPoint(
 	-- 状态刷新属于返回值增强；不能让它把已经提交成功的购买误报为事务失败。
 	local stateQuery = if action == "Build"
 		then getBuildButtonState
+		elseif action == "UpgradeToMax"
+		then getDiamondUpgradeButtonState
 		else getPrimaryButtonState
 	local stateSucceeded, nextButtonState = pcall(
 		stateQuery,
@@ -73,18 +86,27 @@ local function resultForSpawnPoint(
 		Reason = reason,
 		Action = action,
 		Cost = cost,
-		Balance = MoneyService.Get(player),
+		Balance = getBalance(player, action),
 		Record = record,
 		NextButtonState = if stateSucceeded then nextButtonState else "Locked",
 	}
 end
 
-local function executeUnlocked(player: Player, spawnPointId: string, action: "Build" | "Upgrade")
+local function executeUnlocked(
+	player: Player,
+	spawnPointId: string,
+	action: "Build" | "Upgrade" | "UpgradeToMax"
+)
 	local snapshot = getSnapshot(player, spawnPointId)
 	if not snapshot then
 		return resultForSpawnPoint(false, "UnknownSpawnPoint", action, 0, player, spawnPointId, nil)
 	end
-	local actionStatus = snapshot[action]
+	local actionStatus = if action == "UpgradeToMax"
+		then snapshot.DiamondUpgrade
+		else snapshot[action]
+	if not actionStatus then
+		return resultForSpawnPoint(false, "ActionUnavailable", action, 0, player, spawnPointId, nil)
+	end
 	if not actionStatus.Allowed then
 		return resultForSpawnPoint(
 			false,
@@ -99,7 +121,7 @@ local function executeUnlocked(player: Player, spawnPointId: string, action: "Bu
 	if not actionStatus.Affordable then
 		return resultForSpawnPoint(
 			false,
-			"InsufficientMoney",
+			if action == "UpgradeToMax" then "InsufficientDiamonds" else "InsufficientMoney",
 			action,
 			actionStatus.Cost,
 			player,
@@ -108,11 +130,14 @@ local function executeUnlocked(player: Player, spawnPointId: string, action: "Bu
 		)
 	end
 
-	local spend = MoneyService.TrySpend(player, actionStatus.Cost)
+	local spend = if action == "UpgradeToMax"
+		then DiamondService.TrySpend(player, actionStatus.Cost)
+		else MoneyService.TrySpend(player, actionStatus.Cost)
 	if not spend.Succeeded then
 		return resultForSpawnPoint(
 			false,
-			"InsufficientMoney",
+			spend.Reason
+				or if action == "UpgradeToMax" then "InsufficientDiamonds" else "InsufficientMoney",
 			action,
 			actionStatus.Cost,
 			player,
@@ -142,7 +167,11 @@ local function executeUnlocked(player: Player, spawnPointId: string, action: "Bu
 		)
 	end)
 	if not executed or not runtimeResultOrError.Succeeded then
-		MoneyService.Add(player, actionStatus.Cost)
+		if action == "UpgradeToMax" then
+			DiamondService.Add(player, actionStatus.Cost)
+		else
+			MoneyService.Add(player, actionStatus.Cost)
+		end
 		local reason = if executed
 			then runtimeResultOrError.Reason or "RuntimeActionFailed"
 			else "RuntimeActionError"
@@ -168,22 +197,25 @@ local function executeUnlocked(player: Player, spawnPointId: string, action: "Bu
 		string.format("Gameplay:Monster:%s:%s", action, spawnPointId),
 		targetLevel
 	)
-	GameAnalyticsGateway.LogResource(
-		player,
-		"Sink",
-		actionStatus.Cost,
-		"Monster",
-		string.format("%s-%s-L%d", action, spawnPointId, targetLevel)
-	)
+	if action ~= "UpgradeToMax" then
+		GameAnalyticsGateway.LogResource(
+			player,
+			"Sink",
+			actionStatus.Cost,
+			"Monster",
+			string.format("%s-%s-L%d", action, spawnPointId, targetLevel)
+		)
+	end
+	local balance = getBalance(player, action)
 	PlayerJourneyAnalyticsCoordinator.RecordMonsterPurchase(
 		player,
 		spawnPointId,
 		action,
 		targetLevel,
 		actionStatus.Cost,
-		MoneyService.Get(player)
+		balance
 	)
-	if action == "Upgrade" then
+	if action == "Upgrade" or action == "UpgradeToMax" then
 		TaskEventBus.Publish(player, {
 			Kind = TaskProtocol.EventKinds.MonsterUpgraded,
 			SpawnPointId = spawnPointId,
@@ -202,14 +234,18 @@ local function executeUnlocked(player: Player, spawnPointId: string, action: "Bu
 	)
 end
 
-local function executeLocked(player: Player, spawnPointId: string, action: "Build" | "Upgrade")
+local function executeLocked(
+	player: Player,
+	spawnPointId: string,
+	action: "Build" | "Upgrade" | "UpgradeToMax"
+)
 	if exclusiveLocks[player] then
 		return {
 			Succeeded = false,
 			Reason = "ActionBusy",
 			Action = action,
 			Cost = 0,
-			Balance = MoneyService.Get(player),
+			Balance = getBalance(player, action),
 			Record = nil,
 			NextButtonState = "Processing",
 		}
@@ -225,7 +261,7 @@ local function executeLocked(player: Player, spawnPointId: string, action: "Buil
 			Reason = "ActionBusy",
 			Action = action,
 			Cost = 0,
-			Balance = MoneyService.Get(player),
+			Balance = getBalance(player, action),
 			Record = nil,
 			NextButtonState = "Processing",
 		}
@@ -257,6 +293,10 @@ end
 
 function MonsterSpawnPointPurchaseCoordinator.Upgrade(player: Player, spawnPointId: string)
 	return executeLocked(player, spawnPointId, "Upgrade")
+end
+
+function MonsterSpawnPointPurchaseCoordinator.UpgradeToMax(player: Player, spawnPointId: string)
+	return executeLocked(player, spawnPointId, "UpgradeToMax")
 end
 
 function MonsterSpawnPointPurchaseCoordinator.ExecutePrimary(player: Player, spawnPointId: string)

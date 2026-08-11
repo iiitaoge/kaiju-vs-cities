@@ -421,7 +421,7 @@ local function prepareUpgrade(
 	if not state.Built then
 		return nil, "SpawnPointNotBuilt"
 	end
-	if targetLevel ~= state.Level + 1 then
+	if targetLevel <= state.Level then
 		return nil, "InvalidUpgradeLevel"
 	end
 	if not MonsterSpawnPointCatalog.GetMonsterKey(spawnPointId, targetLevel) then

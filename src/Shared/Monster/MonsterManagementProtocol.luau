@@ -7,4 +7,5 @@ return table.freeze({
 	RemoteName = "MonsterManagementRequest",
 	GetSnapshot = "GetSnapshot",
 	Upgrade = "Upgrade",
+	UpgradeToMax = "UpgradeToMax",
 })

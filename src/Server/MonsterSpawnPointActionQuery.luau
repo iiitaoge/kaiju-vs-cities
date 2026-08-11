@@ -2,18 +2,23 @@
 	职责：把出生点状态、怪兽状态、运行时环境和经济配置组合成无副作用的可用操作快照。
 
 	输入：Player、SpawnPointId。
-	输出：Build、Upgrade、Attack 的 Allowed/Reason/Cost/Affordable，以及管理主动作和实体建造按钮状态。
-	内部算法：调用运行时预检查，读取余额，并由 Built 决定主按钮当前代表 Build 还是 Upgrade。
+	输出：Build、Upgrade、DiamondUpgrade、Attack 的 Allowed/Reason/Cost/Affordable，以及管理主动作和实体建造按钮状态。
+	内部算法：调用运行时预检查，读取金币/钻石余额，并由 Built 决定主按钮当前代表 Build 还是 Upgrade。
 
 	不负责：扣款、修改状态、创建模型、发送 Remote 或播放表现。
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local DiamondService = require(script.Parent.DiamondService)
 local MoneyService = require(script.Parent.MoneyService)
 local MonsterRosterCoordinator = require(script.Parent.MonsterRosterCoordinator)
 local MonsterSpawnPointStateService = require(script.Parent.MonsterSpawnPointStateService)
 local PlayerMonsterRuntimeCoordinator = require(script.Parent.PlayerMonsterRuntimeCoordinator)
+local MonsterCatalog = require(ReplicatedStorage.Shared.Monster.MonsterCatalog)
+local MonsterDiamondUpgradeConfigs = require(
+	ReplicatedStorage.Shared.Monster.MonsterDiamondUpgradeConfigs
+)
 local MonsterSpawnPointCatalog = require(ReplicatedStorage.Shared.Monster.MonsterSpawnPointCatalog)
 local MonsterSpawnPointEconomyConfigs = require(
 	ReplicatedStorage.Shared.Monster.MonsterSpawnPointEconomyConfigs
@@ -37,8 +42,10 @@ export type Snapshot = {
 	MonsterKey: string?,
 	MonsterState: string?,
 	Balance: number,
+	DiamondBalance: number,
 	Build: ActionStatus,
 	Upgrade: ActionStatus,
+	DiamondUpgrade: ActionStatus,
 	Attack: ActionStatus,
 	PrimaryAction: "Build" | "Upgrade",
 	PrimaryButtonState: string,
@@ -68,7 +75,8 @@ local function buttonState(action: ActionStatus): string
 end
 
 function MonsterSpawnPointActionQuery.Get(player: Player, spawnPointId: string): Snapshot?
-	if not MonsterSpawnPointCatalog.Get(spawnPointId) then
+	local definition = MonsterSpawnPointCatalog.Get(spawnPointId)
+	if not definition then
 		return nil
 	end
 	local economy = MonsterSpawnPointEconomyConfigs[spawnPointId]
@@ -78,9 +86,15 @@ function MonsterSpawnPointActionQuery.Get(player: Player, spawnPointId: string):
 
 	local state = MonsterSpawnPointStateService.Get(player, spawnPointId)
 	local balance = MoneyService.Get(player)
+	local diamondBalance = DiamondService.Get(player)
 	local buildPermission = PlayerMonsterRuntimeCoordinator.CanBuild(player, spawnPointId)
 	local nextLevel = state.Level + 1
 	local upgradeCost = economy.UpgradeCostByTargetLevel[nextLevel]
+	local maxLevel = MonsterCatalog.GetMaxLevel(definition.ProgressionId)
+	local diamondUpgradeConfig = MonsterDiamondUpgradeConfigs[definition.ProgressionId]
+	if not maxLevel or not diamondUpgradeConfig then
+		return nil
+	end
 	local upgradePermission
 	if not state.Built then
 		upgradePermission = { Allowed = false, Reason = "SpawnPointNotBuilt" }
@@ -118,6 +132,25 @@ function MonsterSpawnPointActionQuery.Get(player: Player, spawnPointId: string):
 		balance,
 		if upgradeCost then nextLevel else nil
 	)
+	local diamondUpgradePermission
+	if not state.Built then
+		diamondUpgradePermission = { Allowed = false, Reason = "SpawnPointNotBuilt" }
+	elseif state.Level >= maxLevel then
+		diamondUpgradePermission = { Allowed = false, Reason = "MaxLevel" }
+	else
+		diamondUpgradePermission = PlayerMonsterRuntimeCoordinator.CanUpgrade(
+			player,
+			spawnPointId,
+			maxLevel
+		)
+	end
+	local diamondUpgrade = status(
+		diamondUpgradePermission.Allowed,
+		diamondUpgradePermission.Reason,
+		diamondUpgradeConfig.MaxUpgradeCost,
+		diamondBalance,
+		if diamondUpgradePermission.Allowed then maxLevel else nil
+	)
 	local attack = status(
 		attackPermission.Allowed,
 		attackPermission.Reason,
@@ -135,8 +168,10 @@ function MonsterSpawnPointActionQuery.Get(player: Player, spawnPointId: string):
 		MonsterKey = state.MonsterKey,
 		MonsterState = if record then record.State else nil,
 		Balance = balance,
+		DiamondBalance = diamondBalance,
 		Build = build,
 		Upgrade = upgrade,
+		DiamondUpgrade = diamondUpgrade,
 		Attack = attack,
 		PrimaryAction = primaryAction,
 		PrimaryButtonState = buttonState(primaryStatus),
@@ -162,6 +197,14 @@ function MonsterSpawnPointActionQuery.GetBuildButtonState(
 		return "Locked"
 	end
 	return buttonState(snapshot.Build)
+end
+
+function MonsterSpawnPointActionQuery.GetDiamondUpgradeButtonState(
+	player: Player,
+	spawnPointId: string
+): string
+	local snapshot = MonsterSpawnPointActionQuery.Get(player, spawnPointId)
+	return if snapshot then buttonState(snapshot.DiamondUpgrade) else "Locked"
 end
 
 return MonsterSpawnPointActionQuery

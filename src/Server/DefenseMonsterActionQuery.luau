@@ -1,13 +1,14 @@
 --[[
 	职责：组合防守怪兽独立资产、运行时状态、经济配置和余额为操作快照。
 	输入：Player、防守 SpawnPointId。
-	输出：Build/Upgrade/Attack 权限、价格、主动作和实体建造按钮状态；Attack 永远不可用。
-	内部算法：未建造时查询 Build；已建造时查询下一等级 Upgrade，二者共用余额状态。
+	输出：Build/Upgrade/DiamondUpgrade/Attack 权限、价格、主动作和实体建造按钮状态；Attack 永远不可用。
+	内部算法：未建造时查询 Build；已建造时查询下一等级 Upgrade 或钻石满级 Upgrade。
 	不负责：扣款、状态写入、模型、UI 或攻击命令。
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local DiamondService = require(script.Parent.DiamondService)
 local DefenseMonsterSpawnPointStateService = require(
 	script.Parent.DefenseMonsterSpawnPointStateService
 )
@@ -15,6 +16,10 @@ local MoneyService = require(script.Parent.MoneyService)
 local MonsterRosterCoordinator = require(script.Parent.MonsterRosterCoordinator)
 local PlayerDefenseMonsterRuntimeCoordinator = require(
 	script.Parent.PlayerDefenseMonsterRuntimeCoordinator
+)
+local MonsterCatalog = require(ReplicatedStorage.Shared.Monster.MonsterCatalog)
+local MonsterDiamondUpgradeConfigs = require(
+	ReplicatedStorage.Shared.Monster.MonsterDiamondUpgradeConfigs
 )
 local DefenseMonsterSlotCatalog = require(
 	ReplicatedStorage.Shared.Monster.DefenseMonsterSlotCatalog
@@ -49,8 +54,11 @@ function DefenseMonsterActionQuery.Get(player: Player, spawnPointId: string)
 	end
 	local state = DefenseMonsterSpawnPointStateService.Get(player, spawnPointId)
 	local balance = MoneyService.Get(player)
+	local diamondBalance = DiamondService.Get(player)
 	local economy = DefenseMonsterEconomyConfigs[spawnPointId]
-	if not economy then
+	local maxLevel = MonsterCatalog.GetMaxLevel(definition.ProgressionId)
+	local diamondUpgradeConfig = MonsterDiamondUpgradeConfigs[definition.ProgressionId]
+	if not economy or not maxLevel or not diamondUpgradeConfig then
 		return nil
 	end
 	local buildPermission = PlayerDefenseMonsterRuntimeCoordinator.CanBuild(
@@ -86,6 +94,25 @@ function DefenseMonsterActionQuery.Get(player: Player, spawnPointId: string)
 		balance,
 		if upgradeCost then nextLevel else nil
 	)
+	local diamondUpgradePermission
+	if not state.Built then
+		diamondUpgradePermission = { Allowed = false, Reason = "DefenseMonsterNotBuilt" }
+	elseif state.Level >= maxLevel then
+		diamondUpgradePermission = { Allowed = false, Reason = "MaxLevel" }
+	else
+		diamondUpgradePermission = PlayerDefenseMonsterRuntimeCoordinator.CanUpgrade(
+			player,
+			spawnPointId,
+			maxLevel
+		)
+	end
+	local diamondUpgrade = status(
+		diamondUpgradePermission.Allowed,
+		diamondUpgradePermission.Reason,
+		diamondUpgradeConfig.MaxUpgradeCost,
+		diamondBalance,
+		if diamondUpgradePermission.Allowed then maxLevel else nil
+	)
 	local primaryAction = if state.Built then "Upgrade" else "Build"
 	local primaryStatus = if primaryAction == "Build" then build else upgrade
 	return {
@@ -95,8 +122,10 @@ function DefenseMonsterActionQuery.Get(player: Player, spawnPointId: string)
 		MonsterKey = state.MonsterKey,
 		MonsterState = if record then record.State else nil,
 		Balance = balance,
+		DiamondBalance = diamondBalance,
 		Build = build,
 		Upgrade = upgrade,
+		DiamondUpgrade = diamondUpgrade,
 		Attack = status(false, "DefenseMonsterCannotAttack", 0, balance, nil),
 		PrimaryAction = primaryAction,
 		PrimaryButtonState = buttonState(primaryStatus),
@@ -115,6 +144,14 @@ function DefenseMonsterActionQuery.GetBuildButtonState(player: Player, spawnPoin
 		return "Locked"
 	end
 	return buttonState(snapshot.Build)
+end
+
+function DefenseMonsterActionQuery.GetDiamondUpgradeButtonState(
+	player: Player,
+	spawnPointId: string
+): string
+	local snapshot = DefenseMonsterActionQuery.Get(player, spawnPointId)
+	return if snapshot then buttonState(snapshot.DiamondUpgrade) else "Locked"
 end
 
 return DefenseMonsterActionQuery

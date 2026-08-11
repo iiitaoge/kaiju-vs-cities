@@ -289,7 +289,7 @@ local function prepareUpgrade(player: Player, spawnPointId: string, targetLevel:
 	if not state.Built then
 		return nil, "DefenseMonsterNotBuilt"
 	end
-	if targetLevel ~= state.Level + 1 then
+	if targetLevel <= state.Level then
 		return nil, "InvalidUpgradeLevel"
 	end
 	local newMonsterKey = DefenseMonsterSlotCatalog.GetMonsterKey(spawnPointId, targetLevel)

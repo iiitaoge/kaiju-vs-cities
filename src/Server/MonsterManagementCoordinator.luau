@@ -1,9 +1,9 @@
 --[[
 	职责：提供与 UI 形态无关的怪兽管理应用接口。
 
-	输入：Query/Upgrade 接收 Player、SpawnPointId。
-	输出：Succeeded、Reason，以及只包含 Upgrade/Attack 的最新管理快照。
-	内部算法：Query 过滤现有权威操作快照；Upgrade 调用同一购买协调器后重新查询。
+	输入：Query/Upgrade/UpgradeToMax 接收 Player、SpawnPointId。
+	输出：Succeeded、Reason，以及包含金币逐级升级、钻石满级升级和 Attack 的最新快照。
+	内部算法：Query 过滤现有权威操作快照；两种升级都调用同一购买协调器后重新查询。
 
 	不负责：Remote、GUI、目标玩家选择、攻击提交或相机。
 ]]
@@ -38,7 +38,9 @@ local function getSnapshot(player: Player, spawnPointId: string)
 		MonsterKey = source.MonsterKey,
 		MonsterState = source.MonsterState,
 		Balance = source.Balance,
+		DiamondBalance = source.DiamondBalance,
 		Upgrade = source.Upgrade,
+		DiamondUpgrade = source.DiamondUpgrade,
 		Attack = source.Attack,
 	}, nil
 end
@@ -58,6 +60,16 @@ end
 
 function MonsterManagementCoordinator.Upgrade(player: Player, spawnPointId: string)
 	local purchase = MonsterSpawnPointPurchaseCoordinator.Upgrade(player, spawnPointId)
+	local snapshot, snapshotReason = getSnapshot(player, spawnPointId)
+	return response(
+		purchase.Succeeded,
+		purchase.Reason or snapshotReason,
+		snapshot
+	)
+end
+
+function MonsterManagementCoordinator.UpgradeToMax(player: Player, spawnPointId: string)
+	local purchase = MonsterSpawnPointPurchaseCoordinator.UpgradeToMax(player, spawnPointId)
 	local snapshot, snapshotReason = getSnapshot(player, spawnPointId)
 	return response(
 		purchase.Succeeded,
