@@ -1,7 +1,7 @@
 --[[
 	职责：连接 Main.Map 的巢穴浏览、部署、召回和生命条表现。
 	输入：Map UI 按钮、VehicleDeploymentState 和 NestMapRemoteClient 的状态/动作结果。
-	输出：当前 Nest 的名称、提示、占领载具血条和可用动作；Map 关闭时恢复镜头。
+	输出：当前 Nest 的名称、每分钟收益、提示、占领载具血条和可用动作；Map 关闭时恢复镜头。
 	内部算法：打开时定位 Nest0；左右按钮循环切换 Nest；普通浏览不显示部署，
 	只有待部署载具存在且该 Nest 没有我方载具时显示 Deploy；我方已派遣时显示 Recall。
 	不负责：巢穴占用、战斗、奖励、载具拥有关系或车辆列表渲染。
@@ -28,6 +28,9 @@ local NestMapCameraController = require(script.Parent.NestMapCameraController)
 local NestMapRemoteClient = require(script.Parent.NestMapRemoteClient)
 local NestMapSceneAccess = require(script.Parent.NestMapSceneAccess)
 local SoundController = require(script.Parent.Parent.Sound.SoundController)
+local CompactNumberFormatter = require(
+	ReplicatedStorage.Shared.UI.CompactNumberFormatter
+)
 
 local NestMapUIController = {}
 
@@ -200,6 +203,20 @@ local function getSelectedSnapshot()
 	return if nestId then stateByNestId[nestId] else nil
 end
 
+local function getSelectedRewardText(): string
+	local definition = getSelectedDefinition()
+	if not definition
+		or type(definition.BaseDiamonds) ~= "number"
+		or type(definition.BaseIntervalSeconds) ~= "number"
+		or definition.BaseIntervalSeconds <= 0
+	then
+		return "Income unavailable"
+	end
+
+	local diamondsPerMinute = definition.BaseDiamonds * 60 / definition.BaseIntervalSeconds
+	return "+" .. CompactNumberFormatter.Format(diamondsPerMinute) .. " diamonds/min"
+end
+
 local function applySelectedSnapshot()
 	local current = references
 	if not current then
@@ -215,9 +232,7 @@ local function applySelectedSnapshot()
 	current.Title.Text = if occupant and occupant.OwnerName
 		then tostring(occupant.OwnerName)
 		else "Neutral"
-	current.Val.Text = if deployment.Active and ownVehicle == nil
-		then "Look around and deploy a vehicle"
-		else "Look around"
+	current.Val.Text = getSelectedRewardText()
 
 	local hasOccupant = occupant ~= nil
 	current.ProgressBar.Visible = hasOccupant

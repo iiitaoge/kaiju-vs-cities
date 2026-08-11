@@ -4,7 +4,7 @@
 	输出：点击 Vehicle 打开面板，点击 Close 关闭面板，DiamondVal/MoneyVal 显示最新余额，
 	区域三未解锁时隐藏 HUD 载具入口，解锁后显示；
 	Vrhicle/Crate/Map 三个页签显示唯一的 ON 状态；载具列表显示服务端车辆，
-	并把升级/销毁按钮请求交给服务器；Shop 显示箱子并接入钻石单抽/五连抽，
+	并把派遣/召回、升级/销毁按钮请求交给服务器；Shop 显示箱子并接入钻石单抽/五连抽，
 	DropRates 显示当前箱子的稀有度概率和载具列表。
 	内部算法：启动时解析固定 UI 路径并隐藏面板；使用一个 activeTab 状态切换每个页签的
 	ON/OFF Frame；使用一个 cratePage 和 activeCrateId 状态切换 Shop/DropRates 与箱子；
@@ -39,6 +39,7 @@ local VehicleCrateRemoteClient = require(
 local VehicleManagementRemoteClient = require(
 	script.Parent.Parent.Vehicle.VehicleManagementRemoteClient
 )
+local NestMapRemoteClient = require(script.Parent.Parent.Nest.NestMapRemoteClient)
 local NestMapUIController = require(script.Parent.Parent.Nest.NestMapUIController)
 local SoundController = require(script.Parent.Parent.Sound.SoundController)
 local TipBlackController = require(script.Parent.TipBlackController)
@@ -644,6 +645,13 @@ local VEHICLE_MANAGEMENT_FAILURE_MESSAGES: { [string]: string } = {
 	ActionBusy = "Please wait for the current action to finish.",
 }
 
+local VEHICLE_RECALL_FAILURE_MESSAGES: { [string]: string } = {
+	VehicleInBattle = "Vehicles in battle cannot be recalled.",
+	VehicleNotDispatched = "This vehicle is no longer deployed.",
+	PlayerDataNotReady = "Player data is still loading. Please try again.",
+	ActionBusy = "Please wait for the current action to finish.",
+}
+
 local function showCratePurchaseResult(response)
 	if response.Succeeded then
 		local rewards = response.Rewards
@@ -688,6 +696,19 @@ local function showVehicleManagementResult(response, action: "Upgrade" | "Destro
 	TipBlackController.ShowMessage(
 		VEHICLE_MANAGEMENT_FAILURE_MESSAGES[reason]
 			or "Vehicle action failed. Please try again."
+	)
+end
+
+local function showVehicleRecallResult(response)
+	if response.Succeeded then
+		TipBlackController.ShowMessage("Vehicle recalled.")
+		return
+	end
+
+	local reason = tostring(response.Reason)
+	TipBlackController.ShowMessage(
+		VEHICLE_RECALL_FAILURE_MESSAGES[reason]
+			or "Vehicle recall failed. Please try again."
 	)
 end
 
@@ -742,7 +763,7 @@ end
 -- 输入：货币按钮内部的横向 Info 行，以及是否包含 SCRAP 这类标题。
 -- 输出：标题、图标、数值始终在按钮边界内的布局。
 -- 内部算法：取消文本的横向自动扩展，按固定比例分配槽位，TextScaled 只在槽位内缩放；
--- Info 开启裁剪作为最后边界，避免极长数值溢出到相邻控件。
+-- 同时保留较小的 TextSize 作为模板属性被恢复时的安全值，避免标题溢出到相邻控件。
 local function configureCurrencyInfoRow(info: GuiObject, hasTitle: boolean)
 	local layout = info:FindFirstChildOfClass("UIListLayout")
 	if not layout then
@@ -765,8 +786,10 @@ local function configureCurrencyInfoRow(info: GuiObject, hasTitle: boolean)
 		local textTarget = target :: TextLabel | TextButton
 		textTarget.AutomaticSize = Enum.AutomaticSize.None
 		textTarget.Size = UDim2.fromScale(widthScale, 0.8)
+		textTarget.TextSize = 16
 		textTarget.TextScaled = true
 		textTarget.TextWrapped = false
+		textTarget.ClipsDescendants = true
 		textTarget.TextXAlignment = Enum.TextXAlignment.Center
 		textTarget.TextYAlignment = Enum.TextYAlignment.Center
 	end
@@ -781,8 +804,8 @@ local function configureCurrencyInfoRow(info: GuiObject, hasTitle: boolean)
 	end
 
 	if hasTitle and title and icon and value then
-		configureText(title, 0.34)
-		configureIcon(icon, 0.18)
+		configureText(title, 0.38)
+		configureIcon(icon, 0.16)
 		configureText(value, 0.34)
 	elseif icon and value then
 		configureIcon(icon, 0.24)
@@ -1185,9 +1208,6 @@ local function renderVehicleCard(vehicle)
 		warn("载具 Unit 模板无效：" .. tostring(reason))
 		return
 	end
-	configureCurrencyInfoRow(card.DestroyInfo, true)
-	configureCurrencyInfoRow(card.UpgradeInfo, false)
-
 	local vehicleId = tostring(vehicle.VehicleId or "")
 	local fallbackDefinition = VehicleCatalog.Get(vehicleId)
 	local level = if type(vehicle.Level) == "number" then vehicle.Level else 1
@@ -1203,7 +1223,9 @@ local function renderVehicleCard(vehicle)
 	card.UpgradeValue.Text = if level >= VehicleProgressionConfigs.MaxLevel
 		then "MAX"
 		else formatBalance(vehicle.UpgradeCost)
-	card.DeployValue.Text = if active then "Deployed" else "Deploy"
+	configureCurrencyInfoRow(card.DestroyInfo, true)
+	configureCurrencyInfoRow(card.UpgradeInfo, false)
+	card.DeployValue.Text = if active then "Recall" else "Deploy"
 	setButtonEnabled(card.DestroyButton, not active and not vehicleActionBusy[instanceId])
 	setButtonEnabled(
 		card.UpgradeButton,
@@ -1211,10 +1233,31 @@ local function renderVehicleCard(vehicle)
 		and level < VehicleProgressionConfigs.MaxLevel
 		and not vehicleActionBusy[instanceId]
 	)
-	setButtonEnabled(card.DeployButton, not active)
+	setButtonEnabled(card.DeployButton, not vehicleActionBusy[instanceId])
 
 	card.DeployButton.Activated:Connect(function()
+		if vehicleActionBusy[instanceId] then
+			return
+		end
 		if active then
+			vehicleActionBusy[instanceId] = true
+			setButtonEnabled(card.DeployButton, false)
+			task.spawn(function()
+				local response = NestMapRemoteClient.Recall(instanceId)
+				vehicleActionBusy[instanceId] = nil
+				if response.Succeeded then
+					SoundController.Play("Yes")
+				else
+					if response.Reason ~= "RequestFailed"
+						and response.Reason ~= "InvalidServerResponse"
+						and response.Reason ~= "PlayerDataNotReady"
+					then
+						SoundController.Play("No")
+					end
+				end
+				showVehicleRecallResult(response)
+				refreshVehicles()
+			end)
 			return
 		end
 		VehicleDeploymentState.Begin(instanceId)
