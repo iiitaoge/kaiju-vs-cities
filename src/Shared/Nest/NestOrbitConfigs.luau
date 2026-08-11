@@ -8,7 +8,7 @@
 
 local values = {
 	-- 先给可运行的默认值，后续直接手调这里的数值即可。
-	Nest0Radius = 130,
+	Nest0Radius = 145,
 	DefaultRadius = 60,
 	TravelSpeed = 80,
 	OrbitPeriodSeconds = 12,
