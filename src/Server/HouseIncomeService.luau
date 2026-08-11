@@ -12,6 +12,7 @@
 	- SettleRegionHouses：逐栋结算的数量和新增收入总和。
 	- CollectHouse：目标房屋领取金额和玩家新余额。
 	- CollectRegion：目标区域结算、逐栋领取明细、领取总额和玩家新余额。
+	- 成功领取会在 MoneyService.Earn 后通知本轮金币漏斗。
 
 	读取：
 	- RegionEconomyConfigs
@@ -33,6 +34,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local EconomyMath = require(script.Parent.EconomyMath)
 local HouseStateService = require(script.Parent.HouseStateService)
+local PlayerJourneyAnalyticsCoordinator = require(
+	script.Parent.Analytics.PlayerJourneyAnalyticsCoordinator
+)
 local MoneyService = require(script.Parent.MoneyService)
 local PlayerRebirthBonusQuery = require(script.Parent.PlayerRebirthBonusQuery)
 local RegionEconomyConfigs = require(script.Parent.RegionEconomyConfigs)
@@ -96,6 +100,16 @@ local function getBuiltHouseCount(player: Player, regionId: string): number
 		end
 	end
 	return count
+end
+
+local function earnCollectedMoney(player: Player, amount: number): number
+	if amount <= 0 then
+		return MoneyService.Get(player)
+	end
+
+	local balance = MoneyService.Earn(player, amount)
+	PlayerJourneyAnalyticsCoordinator.RecordMoneyRunEarnings(player)
+	return balance
 end
 
 -- 输入：player、已登记的 houseId。
@@ -287,9 +301,7 @@ function HouseIncomeService.CollectHouse(
 	end
 
 	local collected = HouseStateService.TakeStoredMoney(player, houseId)
-	local balance = if collected > 0
-		then MoneyService.Earn(player, collected)
-		else MoneyService.Get(player)
+	local balance = earnCollectedMoney(player, collected)
 	return {
 		Accepted = true,
 		Reason = nil,
@@ -334,9 +346,7 @@ function HouseIncomeService.CollectRegion(
 			end
 		end
 	end
-	local balance = if collected > 0
-		then MoneyService.Earn(player, collected)
-		else MoneyService.Get(player)
+	local balance = earnCollectedMoney(player, collected)
 	return {
 		Accepted = true,
 		Reason = nil,

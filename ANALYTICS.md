@@ -111,6 +111,15 @@ UI 意图来自低信任客户端，只允许固定白名单和稳定 SubjectId�
 | 怪兽 | 每个进攻/防守 SpawnPoint 的等级（未建造为 0）、已建造总数 | Playable、重生完成；建造/升级时另记 Progression |
 | 攻击 | 时长、摧毁房屋、奖励、击败守怪、塔命中、承受塔伤 | 每次攻击完成 |
 
+### MoneyRun 原生漏斗
+
+- 漏斗名：`MoneyRun`。
+- 口径：`MoneyService.Earn` 成功入账后的 `RebirthStateService.RunEarnings`，每次重生重新开始一轮。
+- 步骤：`10 → 50 → 100 → 250 → 500 → 1K → 2.5K → 5K → 10K → 25K → 50K → 100K → 250K → 500K → 1M` Gold。
+- 会话 ID：`MoneyRun:<UserId>:<RebirthCount>`，同一玩家同一轮重连后仍归入同一漏斗会话。
+- 单笔收入跨过多个门槛时按升序逐级上报全部中间步骤；网关失败时从失败步骤留待下一笔收入重试。
+- 退款、测试补发等走 `MoneyService.Add` 的金额不计入该漏斗。
+
 Studio 金钱作弊和测试脚本不会生成 Resource Source/Sink 行为事件；Studio 快照仍可能反映测试时的当前余额。项目目前没有真实 Robux/Marketplace 成交链路，因此暂不伪造付费事件，接入购买系统时应在服务器收据确认后增加 Business Event。
 
 ## SDK 来源

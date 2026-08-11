@@ -30,4 +30,5 @@ return table.freeze({
 	AttackLaunchFunnelName = "AttackLaunch",
 	MonsterUpgradeFunnelName = "MonsterUpgrade",
 	RebirthFunnelName = "Rebirth",
+	MoneyRunFunnelName = "MoneyRun",
 })

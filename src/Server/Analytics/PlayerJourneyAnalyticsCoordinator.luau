@@ -15,12 +15,16 @@ local GameAnalyticsGateway = require(script.Parent.GameAnalyticsGateway)
 local PlayerProgressionSnapshotAnalytics = require(
 	script.Parent.PlayerProgressionSnapshotAnalytics
 )
+local RebirthStateService = require(script.Parent.Parent.RebirthStateService)
 local RobloxFunnelGateway = require(script.Parent.RobloxFunnelGateway)
 local TutorialProgressStateService = require(
 	script.Parent.Parent.TutorialProgressStateService
 )
 local AnalyticsIntentProtocol = require(
 	ReplicatedStorage.Shared.Analytics.AnalyticsIntentProtocol
+)
+local MoneyRunFunnelRules = require(
+	ReplicatedStorage.Shared.Analytics.MoneyRunFunnelRules
 )
 local DefenseMonsterSlotCatalog = require(
 	ReplicatedStorage.Shared.Monster.DefenseMonsterSlotCatalog
@@ -44,6 +48,7 @@ type PlayerRecord = {
 	Attack: Flow?,
 	Upgrade: Flow?,
 	Rebirth: Flow?,
+	MoneyRun: Flow?,
 	TutorialLastStep: number,
 }
 
@@ -91,11 +96,25 @@ local function getRecord(player: Player): PlayerRecord
 			Attack = nil,
 			Upgrade = nil,
 			Rebirth = nil,
+			MoneyRun = nil,
 			TutorialLastStep = 0,
 		}
 		records[player] = record
 	end
 	return record
+end
+
+local function getMoneyRunFlow(player: Player, rebirthCount: number): Flow
+	local record = getRecord(player)
+	local sessionId = string.format("MoneyRun:%d:%d", player.UserId, rebirthCount)
+	if not record.MoneyRun or record.MoneyRun.SessionId ~= sessionId then
+		record.MoneyRun = {
+			SessionId = sessionId,
+			SubjectId = nil,
+			LastStep = 0,
+		}
+	end
+	return record.MoneyRun
 end
 
 local function newFlow(subjectId: string?): Flow
@@ -168,8 +187,10 @@ end
 local function logTutorialStep(player: Player, step: number): boolean
 	local record = getRecord(player)
 	local stepName = TUTORIAL_STEPS[step]
+	-- Roblox 会自动补齐跳过的漏斗步骤；6~8 必须在本服会话中连续上报，保留名称。
 	if not stepName
 		or step <= record.TutorialLastStep
+		or (step >= 6 and step ~= record.TutorialLastStep + 1)
 		or TutorialProgressStateService.Get(player) >= TutorialProgression.CurrentVersion
 	then
 		return false
@@ -206,6 +227,31 @@ end
 function PlayerJourneyAnalyticsCoordinator.RecordPlayable(player: Player)
 	logTutorialStep(player, 1)
 	PlayerProgressionSnapshotAnalytics.Log(player, "Playable")
+end
+
+-- 输入：已由 MoneyService.Earn 累加后的玩家本轮收入。
+-- 输出：无；只向 Roblox 原生 MoneyRun 漏斗补齐已经跨过的步骤。
+-- 内部算法：以玩家 + 重生次数作为稳定会话；逐级调用网关，失败则停在失败步骤等待下次收入重试。
+function PlayerJourneyAnalyticsCoordinator.RecordMoneyRunEarnings(player: Player)
+	local rebirth = RebirthStateService.Get(player)
+	local flow = getMoneyRunFlow(player, rebirth.Count)
+	local crossedSteps = MoneyRunFunnelRules.GetCrossedSteps(
+		rebirth.RunEarnings,
+		flow.LastStep
+	)
+
+	for _, step in crossedSteps do
+		if not RobloxFunnelGateway.LogRecurringStep(
+			player,
+			GameAnalyticsConfig.MoneyRunFunnelName,
+			flow.SessionId,
+			step.Step,
+			step.Name
+		) then
+			break
+		end
+		flow.LastStep = step.Step
+	end
 end
 
 function PlayerJourneyAnalyticsCoordinator.RecordRegionUnlocked(
@@ -369,16 +415,16 @@ function PlayerJourneyAnalyticsCoordinator.RecordAttackTargetsLoaded(
 	targetCount: number
 )
 	local record = getRecord(player)
-	if advanceFlow(
+	advanceFlow(
 		player,
 		record.Attack,
 		GameAnalyticsConfig.AttackLaunchFunnelName,
 		ATTACK_STEPS,
 		3,
 		record.Attack and record.Attack.SubjectId or nil
-	) then
-		logTutorialStep(player, 6)
-	end
+	)
+	-- 新手漏斗与 AttackLaunch 是两条独立漏斗；目标查询成功即可完成新手第 6 步。
+	logTutorialStep(player, 6)
 	GameAnalyticsGateway.LogDesign(player, "Gameplay:Attack:TargetsLoaded", targetCount)
 end
 
@@ -634,16 +680,16 @@ function PlayerJourneyAnalyticsCoordinator.RecordClientIntent(
 	end
 	if intent == intents.AttackTargetSelected then
 		assert(subjectId)
-		if advanceFlow(
+		advanceFlow(
 			player,
 			record.Attack,
 			GameAnalyticsConfig.AttackLaunchFunnelName,
 			ATTACK_STEPS,
 			4,
 			subjectId
-		) then
-			logTutorialStep(player, 7)
-		end
+		)
+		-- 合法目标选择本身完成新手第 7 步，不依赖 AttackLaunch 会话是否顺序到达。
+		logTutorialStep(player, 7)
 		GameAnalyticsGateway.LogDesign(player, "UI:Attack:TargetSelected:" .. subjectId)
 		return true
 	end

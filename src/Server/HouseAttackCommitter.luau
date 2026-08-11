@@ -3,6 +3,9 @@ local HouseAttackGeometry = require(script.Parent.HouseAttackGeometry)
 local HouseAttackTargetAccess = require(script.Parent.HouseAttackTargetAccess)
 local HouseTargetReservationService = require(script.Parent.HouseTargetReservationService)
 local MoneyService = require(script.Parent.MoneyService)
+local PlayerJourneyAnalyticsCoordinator = require(
+	script.Parent.Analytics.PlayerJourneyAnalyticsCoordinator
+)
 
 local HouseAttackCommitter = {}
 
@@ -184,6 +187,9 @@ function HouseAttackCommitter.Commit(
 	end
 
 	local balance = MoneyService.Earn(options.RewardPlayer, options.RewardAmount)
+	if options.RewardAmount > 0 then
+		PlayerJourneyAnalyticsCoordinator.RecordMoneyRunEarnings(options.RewardPlayer)
+	end
 	GameAnalyticsGateway.LogDesign(
 		options.RewardPlayer,
 		"Gameplay:Combat:HouseDestroyed:" .. houseId,
