@@ -71,6 +71,27 @@ function RebirthProgressionRulesSpec.Run(): boolean
 		MonsterMoveSpeedMultiplier = { BaseMultiplier = 1, PerRebirth = 0 },
 	})
 	expectNear(custom.IncomeMultiplier, 5, "规则必须使用调用方传入的配置")
+
+	local configuredPresentation = RebirthProgressionRules.ResolvePresentation(
+		2,
+		RebirthProgressionConfigs.Presentation
+	)
+	expect(
+		configuredPresentation.LevelText == "Kaiju max Lv. 30 → 45",
+		"第二次重生等级文案配置错误"
+	)
+	expect(
+		configuredPresentation.RewardText == "Next rewards: Income x1.5 · Build x1.2 · Damage x1.3 · HP x1.2 · Move x1.04",
+		"第二次重生奖励文案配置错误"
+	)
+	local fallbackPresentation = RebirthProgressionRules.ResolvePresentation(
+		99,
+		RebirthProgressionConfigs.Presentation
+	)
+	expect(
+		fallbackPresentation.LevelText == "Kaiju max Lv. 75 · All forms unlocked",
+		"超出已配置次数时等级文案没有兜底"
+	)
 	return true
 end
 

@@ -35,6 +35,10 @@ function LocalRebirthButtonAccess.Resolve(button: Model)
 
 	local buyFrame = child(panel, "Buy", "Frame")
 	local infoFrame = child(buyFrame, "Info", "Frame")
+	local buyIcon = buyFrame:FindFirstChild("Icon")
+	if buyIcon and not buyIcon:IsA("GuiObject") then
+		buyIcon = nil
+	end
 	local infoTitle = child(infoFrame, "Title", "TextLabel") :: TextLabel
 	local introduction = child(infoFrame, "Introduction", "TextLabel") :: TextLabel
 	local moneyFrame = child(infoFrame, "Money", "Frame")
@@ -51,6 +55,9 @@ function LocalRebirthButtonAccess.Resolve(button: Model)
 		ActionTip = actionTip,
 		MoneyButton = moneyButton,
 		RequirementValue = requirementValue,
+		BuyFrame = buyFrame,
+		BuyIcon = buyIcon,
+		InfoFrame = infoFrame,
 		InfoTitle = infoTitle,
 		Introduction = introduction,
 	}

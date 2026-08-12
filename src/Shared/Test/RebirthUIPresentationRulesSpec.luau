@@ -4,11 +4,27 @@ local Rules = require(ReplicatedStorage.Shared.UI.RebirthUIPresentationRules)
 
 local Spec = {}
 
+local bonuses = {
+	IncomeMultiplier = 1.25,
+	BuildSpeedMultiplier = 1.1,
+	MonsterDamageMultiplier = 1.15,
+	MonsterHealthMultiplier = 1.1,
+	MonsterMoveSpeedMultiplier = 1.02,
+}
+
 function Spec.Run(): boolean
 	local insufficient = Rules.Resolve({
 		Status = "Insufficient",
 		Count = 0,
 		NextCount = 1,
+		CurrentMaxLevel = 15,
+		NextMaxLevel = 30,
+		TotalMaxLevel = 75,
+		NextBonuses = bonuses,
+		NextPresentation = {
+			LevelText = "Configured level text",
+			RewardText = "Configured reward text",
+		},
 		RequiredRunEarnings = 1_000_000,
 		RemainingRunEarnings = 250_000,
 		ActivationAllowed = true,
@@ -21,17 +37,35 @@ function Spec.Run(): boolean
 		Status = "Ready",
 		Count = 0,
 		NextCount = 1,
+		CurrentMaxLevel = 15,
+		NextMaxLevel = 30,
+		TotalMaxLevel = 75,
+		NextBonuses = bonuses,
+		NextPresentation = {
+			LevelText = "Configured level text",
+			RewardText = "Configured reward text",
+		},
 		RequiredRunEarnings = 1_000_000,
 		RemainingRunEarnings = 0,
 		ActivationAllowed = true,
 	})
 	assert(ready.CanExecute and ready.ActionText == "Rebirth", "资格满足时应允许点击")
+	assert(string.find(ready.IntroductionText, "Configured level text", 1, true), "未使用重生等级配置文案")
+	assert(string.find(ready.IntroductionText, "Configured reward text", 1, true), "未使用重生奖励配置文案")
 	assert(string.find(ready.IntroductionText, "becomes 1", 1, true), "缺少下一次重生次数")
 
 	local tooFar = Rules.Resolve({
 		Status = "Ready",
 		Count = 0,
 		NextCount = 1,
+		CurrentMaxLevel = 15,
+		NextMaxLevel = 30,
+		TotalMaxLevel = 75,
+		NextBonuses = bonuses,
+		NextPresentation = {
+			LevelText = "Configured level text",
+			RewardText = "Configured reward text",
+		},
 		RequiredRunEarnings = 1_000_000,
 		RemainingRunEarnings = 0,
 		ActivationAllowed = false,

@@ -39,6 +39,18 @@ local AnalyticsIntentProtocol = require(
 
 local RebirthButtonController = {}
 
+local function configureInformationLayout(ui)
+	-- 当前场景的 Buy.Icon 是未配置资源的占位图，会遮掉说明区；没有真实图标时把说明扩展到整块面板。
+	if ui.BuyIcon then
+		ui.BuyIcon.Visible = false
+	end
+	ui.InfoFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+	ui.InfoFrame.Position = UDim2.fromScale(0.5, 0.5)
+	ui.InfoFrame.Size = UDim2.fromScale(0.95, 0.95)
+	ui.Introduction.Position = UDim2.fromScale(0.5, 0.25)
+	ui.Introduction.Size = UDim2.fromScale(0.95, 0.45)
+end
+
 -- 输入：按钮世界包围盒、UI 锚点零件及 Billboard 的世界尺寸。
 -- 输出：BillboardGui 的世界偏移，使 UI 底边位于按钮顶面上方。
 local function placeBillboardAboveButton(
@@ -102,6 +114,7 @@ function RebirthButtonController.Start()
 	end
 
 	local ui = LocalRebirthButtonAccess.Resolve(button)
+	configureInformationLayout(ui)
 	ui.Billboard.Adornee = ui.Pull
 	placeBillboardAboveButton(button, ui.Pull, ui.Billboard)
 	attachBillboardToLocalPlayerGui(ui.Billboard)

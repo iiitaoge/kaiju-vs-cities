@@ -44,6 +44,11 @@ export type BonusSnapshot = {
 	MonsterMoveSpeedMultiplier: number,
 }
 
+export type PresentationConfig = {
+	LevelText: string,
+	RewardText: string,
+}
+
 local function assertFiniteNonNegative(value: number, name: string)
 	assert(
 		type(value) == "number"
@@ -158,6 +163,29 @@ function RebirthProgressionRules.ResolveBonuses(
 			"MonsterMoveSpeedMultiplier"
 		),
 	}
+end
+
+function RebirthProgressionRules.ResolvePresentation(
+	rebirthCount: number,
+	config
+): PresentationConfig
+	assertRebirthCount(rebirthCount)
+	assert(type(config) == "table", "presentationConfig 必须是 table")
+
+	local presentation = config[rebirthCount] or config.Default
+	assert(type(presentation) == "table", "缺少重生展示配置：" .. tostring(rebirthCount))
+	assert(
+		type(presentation.LevelText) == "string" and presentation.LevelText ~= "",
+		"重生展示 LevelText 无效"
+	)
+	assert(
+		type(presentation.RewardText) == "string" and presentation.RewardText ~= "",
+		"重生展示 RewardText 无效"
+	)
+	return table.freeze({
+		LevelText = presentation.LevelText,
+		RewardText = presentation.RewardText,
+	})
 end
 
 return table.freeze(RebirthProgressionRules)
