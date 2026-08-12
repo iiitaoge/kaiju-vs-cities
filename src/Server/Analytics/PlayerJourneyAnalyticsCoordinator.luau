@@ -44,8 +44,13 @@ type Flow = {
 	LastStep: number,
 }
 
+type PendingAttackTargetsLoaded = {
+	SubjectId: string,
+}
+
 type PlayerRecord = {
 	Attack: Flow?,
+	PendingAttackTargetsLoaded: PendingAttackTargetsLoaded?,
 	Upgrade: Flow?,
 	Rebirth: Flow?,
 	MoneyRun: Flow?,
@@ -94,6 +99,7 @@ local function getRecord(player: Player): PlayerRecord
 	if not record then
 		record = {
 			Attack = nil,
+			PendingAttackTargetsLoaded = nil,
 			Upgrade = nil,
 			Rebirth = nil,
 			MoneyRun = nil,
@@ -415,14 +421,24 @@ function PlayerJourneyAnalyticsCoordinator.RecordAttackTargetsLoaded(
 	targetCount: number
 )
 	local record = getRecord(player)
-	advanceFlow(
+	local attack = record.Attack
+	local advanced = advanceFlow(
 		player,
-		record.Attack,
+		attack,
 		GameAnalyticsConfig.AttackLaunchFunnelName,
 		ATTACK_STEPS,
 		3,
-		record.Attack and record.Attack.SubjectId or nil
+		attack and attack.SubjectId or nil
 	)
+	if advanced then
+		record.PendingAttackTargetsLoaded = nil
+	elseif attack and attack.LastStep == 1 and attack.SubjectId then
+		-- Start Clicked 使用 RemoteEvent，目标查询使用 RemoteFunction；两条通道可能反序到达。
+		-- 先到的目标结果只暂存到当前管理会话，等 Start Clicked 到达后补写第 3 步。
+		record.PendingAttackTargetsLoaded = {
+			SubjectId = attack.SubjectId,
+		}
+	end
 	-- 新手漏斗与 AttackLaunch 是两条独立漏斗；目标查询成功即可完成新手第 6 步。
 	logTutorialStep(player, 6)
 	GameAnalyticsGateway.LogDesign(player, "Gameplay:Attack:TargetsLoaded", targetCount)
@@ -457,6 +473,7 @@ function PlayerJourneyAnalyticsCoordinator.RecordAttackAccepted(
 		spawnPointId
 	)
 	record.Attack = nil
+	record.PendingAttackTargetsLoaded = nil
 	logTutorialStep(player, 8)
 end
 
@@ -616,6 +633,7 @@ function PlayerJourneyAnalyticsCoordinator.RecordClientIntent(
 	local intents = AnalyticsIntentProtocol.Intents
 	if intent == intents.MonsterManagementOpened then
 		assert(subjectId)
+		record.PendingAttackTargetsLoaded = nil
 		record.Upgrade = beginFlow(
 			player,
 			GameAnalyticsConfig.MonsterUpgradeFunnelName,
@@ -646,6 +664,7 @@ function PlayerJourneyAnalyticsCoordinator.RecordClientIntent(
 			{ reason = reasonCategory(reason) }
 		)
 		record.Attack = nil
+		record.PendingAttackTargetsLoaded = nil
 		record.Upgrade = nil
 		return true
 	end
@@ -667,7 +686,7 @@ function PlayerJourneyAnalyticsCoordinator.RecordClientIntent(
 	end
 	if intent == intents.AttackStartClicked then
 		assert(subjectId)
-		advanceFlow(
+		local advanced = advanceFlow(
 			player,
 			record.Attack,
 			GameAnalyticsConfig.AttackLaunchFunnelName,
@@ -675,6 +694,21 @@ function PlayerJourneyAnalyticsCoordinator.RecordClientIntent(
 			2,
 			subjectId
 		)
+		if advanced then
+			local pending = record.PendingAttackTargetsLoaded
+			if pending and pending.SubjectId == subjectId then
+				if advanceFlow(
+					player,
+					record.Attack,
+					GameAnalyticsConfig.AttackLaunchFunnelName,
+					ATTACK_STEPS,
+					3,
+					subjectId
+				) then
+					record.PendingAttackTargetsLoaded = nil
+				end
+			end
+		end
 		GameAnalyticsGateway.LogDesign(player, "UI:Attack:StartClicked:" .. subjectId)
 		return true
 	end
@@ -708,6 +742,7 @@ function PlayerJourneyAnalyticsCoordinator.RecordClientIntent(
 		)
 		if intent ~= intents.AttackValidationFailed then
 			record.Attack = nil
+			record.PendingAttackTargetsLoaded = nil
 		end
 		return true
 	end
