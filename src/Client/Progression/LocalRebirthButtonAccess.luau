@@ -1,10 +1,12 @@
 --[[
-	职责：按固定层级解析 Rebirth-Button 的物理 Pull 和 BillboardGui 控件。
-	输入：Rebirth-Button Model。
-	输出：客户端控制器需要的实例引用；结构不符时直接报合同错误。
-	内部算法：BillboardGui 可位于按钮任意后代；其余 UI 使用明确路径。
+	职责：从 ReplicatedStorage.UI.Rebith 克隆并解析重生按钮的本地 BillboardGui。
+	输入：Rebirth-Button Model，以及 ReplicatedStorage.UI.Rebith 模板。
+	输出：客户端控制器需要的 Pull、BillboardGui 和新 UI 控件引用；结构不符时直接报合同错误。
+	内部算法：关闭按钮模型中旧的 BillboardGui，克隆新模板，再按新 UI 的固定层级解析。
 	不负责：等待场景、触碰、文本计算、Remote 或重生。
 ]]
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalRebirthButtonAccess = {}
 
@@ -17,34 +19,57 @@ local function child(parent: Instance, name: string, className: string): Instanc
 	return found
 end
 
+local function cloneBillboardTemplate(button: Model): BillboardGui
+	for _, descendant in button:GetDescendants() do
+		if descendant:IsA("BillboardGui") then
+			descendant.Enabled = false
+		end
+	end
+
+	local uiFolder = ReplicatedStorage:WaitForChild("UI", 10)
+	assert(uiFolder and uiFolder:IsA("Folder"), "ReplicatedStorage.UI 必须是 Folder")
+	local template = uiFolder:WaitForChild("Rebith", 10)
+	assert(template and template:IsA("Attachment"), "ReplicatedStorage.UI.Rebith 必须是 Attachment")
+	local billboard = template:FindFirstChild("BillboardGui")
+	assert(
+		billboard and billboard:IsA("BillboardGui"),
+		"ReplicatedStorage.UI.Rebith 缺少 BillboardGui"
+	)
+
+	local clone = billboard:Clone()
+	clone.Name = "RebirthBillboardGui"
+	clone.Enabled = false
+	return clone
+end
+
 function LocalRebirthButtonAccess.Resolve(button: Model)
 	assert(button:IsA("Model"), "Rebirth-Button 必须是 Model")
 	local pull = button:FindFirstChild("Pull")
 	assert(pull and pull:IsA("BasePart"), "Rebirth-Button 缺少 BasePart Pull")
-	local billboard = button:FindFirstChild("BillboardGui", true)
-	assert(billboard and billboard:IsA("BillboardGui"), "Rebirth-Button 缺少 BillboardGui")
+	local billboard = cloneBillboardTemplate(button)
 
 	local panel = child(billboard, "Panel", "Frame")
 	local titleFrame = child(panel, "Title", "Frame")
 	local titleLabel = child(titleFrame, "Title", "TextLabel") :: TextLabel
-	local rebirthFrame = child(panel, "Rebirth", "Frame")
-	local actionButton = child(rebirthFrame, "Button", "TextButton") :: TextButton
-	local actionContent = child(actionButton, "Rebirth", "Frame")
-	local actionValue = child(actionContent, "Val", "TextLabel") :: TextLabel
-	local actionTip = child(actionButton, "Tip", "TextLabel") :: TextLabel
 
 	local buyFrame = child(panel, "Buy", "Frame")
 	local infoFrame = child(buyFrame, "Info", "Frame")
+	local rebirthFrame = child(infoFrame, "Rebirth", "Frame")
+	local actionButton = child(rebirthFrame, "Button", "TextButton") :: TextButton
+	local actionContent = child(actionButton, "Rebirth", "Frame")
+	local actionValue = child(actionContent, "Val", "TextLabel") :: TextLabel
+
+	local moneyFrame = child(panel, "Money", "Frame")
+	local actionTip = child(moneyFrame, "Tip", "TextLabel") :: TextLabel
+	local moneyContent = child(moneyFrame, "Money", "Frame")
+	local requirementValue = child(moneyContent, "Val", "TextLabel") :: TextLabel
+
 	local buyIcon = buyFrame:FindFirstChild("Icon")
 	if buyIcon and not buyIcon:IsA("GuiObject") then
 		buyIcon = nil
 	end
 	local infoTitle = child(infoFrame, "Title", "TextLabel") :: TextLabel
 	local introduction = child(infoFrame, "Introduction", "TextLabel") :: TextLabel
-	local moneyFrame = child(infoFrame, "Money", "Frame")
-	local moneyButton = child(moneyFrame, "Button", "TextButton") :: TextButton
-	local moneyContent = child(moneyButton, "Money", "Frame")
-	local requirementValue = child(moneyContent, "Val", "TextLabel") :: TextLabel
 
 	return {
 		Pull = pull,
@@ -53,7 +78,6 @@ function LocalRebirthButtonAccess.Resolve(button: Model)
 		ActionButton = actionButton,
 		ActionValue = actionValue,
 		ActionTip = actionTip,
-		MoneyButton = moneyButton,
 		RequirementValue = requirementValue,
 		BuyFrame = buyFrame,
 		BuyIcon = buyIcon,

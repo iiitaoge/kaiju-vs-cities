@@ -1,8 +1,8 @@
 --[[
-	职责：让所属 Plot 的重生 UI 始终可见，并把两个视觉按钮都接入重生请求。
+	职责：让所属 Plot 的新重生 UI 始终可见，并把操作按钮接入重生请求。
 	输入：玩家 Plot 下的 Rebirth-Button 场景合同和服务器状态快照。
 	输出：以 Pull 为 Adornee 的本地 BillboardGui、按钮反馈、实体按钮动画和 Execute Remote 请求。
-	内部算法：把世界 UI 放入本地 PlayerGui 但保持 Pull 锚点；周期刷新服务器快照；紫色和绿色按钮共用 Execute；
+	内部算法：由 LocalRebirthButtonAccess 克隆 ReplicatedStorage.UI.Rebith，放入本地 PlayerGui；周期刷新服务器快照；
 	实体 Pull 只播放已有下压动画，不绕过服务器资格校验。
 	不负责：金额资格、距离授权、存档或重生规则。
 ]]
@@ -40,15 +40,10 @@ local AnalyticsIntentProtocol = require(
 local RebirthButtonController = {}
 
 local function configureInformationLayout(ui)
-	-- 当前场景的 Buy.Icon 是未配置资源的占位图，会遮掉说明区；没有真实图标时把说明扩展到整块面板。
+	-- 新模板已经由 Studio 配置好 Info 布局；这里只屏蔽未配置资源的占位图。
 	if ui.BuyIcon then
 		ui.BuyIcon.Visible = false
 	end
-	ui.InfoFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-	ui.InfoFrame.Position = UDim2.fromScale(0.5, 0.5)
-	ui.InfoFrame.Size = UDim2.fromScale(0.95, 0.95)
-	ui.Introduction.Position = UDim2.fromScale(0.5, 0.25)
-	ui.Introduction.Size = UDim2.fromScale(0.95, 0.45)
 end
 
 -- 输入：按钮世界包围盒、UI 锚点零件及 Billboard 的世界尺寸。
@@ -134,7 +129,6 @@ function RebirthButtonController.Start()
 
 	local function setGuiButtonsEnabled(enabled: boolean)
 		LocalGuiButtonState.SetEnabled(ui.ActionButton, enabled)
-		LocalGuiButtonState.SetEnabled(ui.MoneyButton, enabled)
 	end
 
 	setGuiButtonsEnabled(true)
@@ -224,7 +218,6 @@ function RebirthButtonController.Start()
 	end
 
 	ui.ActionButton.Activated:Connect(executeRebirth)
-	ui.MoneyButton.Activated:Connect(executeRebirth)
 
 	SoundController.Play("Click")
 	AnalyticsIntentClient.Record(
