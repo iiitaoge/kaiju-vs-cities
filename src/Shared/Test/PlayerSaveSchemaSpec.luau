@@ -25,6 +25,8 @@ function PlayerSaveSchemaSpec.Run(): boolean
 	expect(default.Rebirth.RunEarnings == 0, "默认本轮累计收入必须为 0")
 	expect(default.Tutorial.Version == 0, "默认引导版本必须为 0")
 	expect(next(default.Tasks) == nil, "默认任务状态必须为空")
+	expect(next(default.Purchases.ProcessedPurchaseIds) == nil, "默认收据记录必须为空")
+	expect(default.Purchases.PendingMonsterUpgrade == nil, "默认付费怪兽意图必须为空")
 	expect(next(default.DefenseMonsters.SpawnPoints) == nil, "默认防守怪兽资产必须为空")
 
 	local migrated = PlayerSaveSchema.Normalize({
@@ -50,6 +52,7 @@ function PlayerSaveSchemaSpec.Run(): boolean
 	)
 	expect(migrated.Rebirth.Count == 0, "旧存档重生次数应默认为 0")
 	expect(migrated.Tutorial.Version == 0, "旧存档引导版本应默认为 0")
+	expect(migrated.Purchases.PendingMonsterUpgrade == nil, "旧存档付费意图应默认为空")
 	expect(next(migrated.Tasks) == nil, "旧存档任务状态应默认为空")
 	expect(migrated.Monsters.Capacity == 4, "V0 容量迁移错误")
 	expect(migrated.Houses["R1-H1"].Built, "房屋建造状态迁移错误")
@@ -133,6 +136,31 @@ function PlayerSaveSchemaSpec.Run(): boolean
 	expect(
 		completed.DailyReward.Day == 8 and completed.DailyReward.NextClaimAt == 0,
 		"七日奖励完成状态规范化错误"
+	)
+	local purchases = PlayerSaveSchema.Normalize({
+		Version = 1,
+		Purchases = {
+			ProcessedPurchaseIds = {
+				Receipt_01 = true,
+				["bad key"] = true,
+				NotProcessed = false,
+			},
+			PendingMonsterUpgrade = {
+				ProductId = 123,
+				SpawnPointId = "M1-S1",
+			},
+		},
+	})
+	expect(purchases.Purchases.ProcessedPurchaseIds.Receipt_01, "收据幂等记录规范化错误")
+	expect(
+		purchases.Purchases.ProcessedPurchaseIds["bad key"] == nil
+			and purchases.Purchases.ProcessedPurchaseIds.NotProcessed == nil,
+		"非法收据记录不得进入存档"
+	)
+	expect(
+		purchases.Purchases.PendingMonsterUpgrade.ProductId == 123
+			and purchases.Purchases.PendingMonsterUpgrade.SpawnPointId == "M1-S1",
+		"付费怪兽目标规范化错误"
 	)
 
 	local invalid, reason = PlayerSaveSchema.Normalize({ Version = 99 })

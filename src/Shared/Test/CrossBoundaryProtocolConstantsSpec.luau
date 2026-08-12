@@ -47,6 +47,9 @@ local GroupRewardProtocol = require(
 )
 local RebirthProtocol = require(ReplicatedStorage.Shared.Progression.RebirthProtocol)
 local TutorialProtocol = require(ReplicatedStorage.Shared.Tutorial.TutorialProtocol)
+local PaidPurchaseProtocol = require(
+	ReplicatedStorage.Shared.Monetization.PaidPurchaseProtocol
+)
 
 local CrossBoundaryProtocolConstantsSpec = {}
 
@@ -74,6 +77,8 @@ function CrossBoundaryProtocolConstantsSpec.Run(): boolean
 	expect(MonsterAttackProtocol.TargetQueryRemoteName == "MonsterAttackTargets", "怪兽目标查询 Remote 名称漂移")
 	expect(MonsterAttackProtocol.CommandRemoteName == "MonsterAttackCommand", "怪兽攻击 Remote 名称漂移")
 	expect(MonsterManagementProtocol.RemoteName == "MonsterManagementRequest", "怪兽管理 Remote 名称漂移")
+	expect(PaidPurchaseProtocol.RequestRemoteName == "PaidPurchaseRequest", "付费准备 Remote 名称漂移")
+	expect(PaidPurchaseProtocol.ResultRemoteName == "PaidPurchaseResult", "付费结果 Remote 名称漂移")
 	expect(RebirthProtocol.RemoteName == "RebirthRequest", "重生 Remote 名称漂移")
 	expect(
 		SevenDayRewardProtocol.RemoteName == "SevenDayRewardRequest",

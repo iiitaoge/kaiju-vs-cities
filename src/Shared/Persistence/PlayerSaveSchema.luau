@@ -195,6 +195,49 @@ local function normalizeVehicles(values)
 	return result
 end
 
+local function isValidPurchaseId(value): boolean
+	return type(value) == "string"
+		and value ~= ""
+		and #value <= 128
+		and string.match(value, "^[A-Za-z0-9_.%-]+$") ~= nil
+end
+
+local function normalizePurchases(values)
+	local result = {
+		ProcessedPurchaseIds = {},
+		PendingMonsterUpgrade = nil,
+	}
+	if type(values) ~= "table" then
+		return result
+	end
+
+	if type(values.ProcessedPurchaseIds) == "table" then
+		for purchaseId, processed in values.ProcessedPurchaseIds do
+			if processed == true and isValidPurchaseId(purchaseId) then
+				result.ProcessedPurchaseIds[purchaseId] = true
+			end
+		end
+	end
+
+	local pending = values.PendingMonsterUpgrade
+	if type(pending) == "table"
+		and type(pending.ProductId) == "number"
+		and pending.ProductId > 0
+		and pending.ProductId < math.huge
+		and pending.ProductId % 1 == 0
+		and type(pending.SpawnPointId) == "string"
+		and pending.SpawnPointId ~= ""
+		and #pending.SpawnPointId <= 64
+		and string.match(pending.SpawnPointId, "^[A-Za-z0-9_.%-]+$") ~= nil
+	then
+		result.PendingMonsterUpgrade = {
+			ProductId = pending.ProductId,
+			SpawnPointId = pending.SpawnPointId,
+		}
+	end
+	return result
+end
+
 function PlayerSaveSchema.Default()
 	return {
 		Version = PlayerSaveSchema.CurrentVersion,
@@ -208,6 +251,10 @@ function PlayerSaveSchema.Default()
 		GroupRewardClaims = {},
 		Tasks = {},
 		Vehicles = {},
+		Purchases = {
+			ProcessedPurchaseIds = {},
+			PendingMonsterUpgrade = nil,
+		},
 		Rebirth = {
 			Count = 0,
 			RunEarnings = 0,
@@ -235,6 +282,7 @@ local function migrateV0(raw)
 		GroupRewardClaims = raw.GroupRewardClaims,
 		Tasks = raw.Tasks,
 		Vehicles = raw.Vehicles,
+		Purchases = raw.Purchases,
 		Rebirth = raw.Rebirth,
 		Tutorial = raw.Tutorial,
 		Zones = raw.Zones,
@@ -281,6 +329,7 @@ function PlayerSaveSchema.Normalize(raw)
 	local tutorial = if type(raw.Tutorial) == "table" then raw.Tutorial else {}
 	local monsters = if type(raw.Monsters) == "table" then raw.Monsters else {}
 	local defenseMonsters = if type(raw.DefenseMonsters) == "table" then raw.DefenseMonsters else {}
+	local purchases = normalizePurchases(raw.Purchases)
 	return {
 		Version = 1,
 		ContentRevision = nonNegativeInteger(raw.ContentRevision, 0),
@@ -293,6 +342,7 @@ function PlayerSaveSchema.Normalize(raw)
 		GroupRewardClaims = groupRewardClaims,
 		Tasks = tasks,
 		Vehicles = normalizeVehicles(raw.Vehicles),
+		Purchases = purchases,
 		Rebirth = {
 			Count = nonNegativeInteger(rebirth.Count, 0),
 			RunEarnings = nonNegative(rebirth.RunEarnings, 0),

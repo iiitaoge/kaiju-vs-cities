@@ -383,6 +383,66 @@ function PlayerPersistenceCoordinator.SavePlayer(player: Player): (boolean, stri
 	return queuePlayer(player, false)
 end
 
+-- 输入：在线玩家和等待秒数。
+-- 输出：普通保存队列是否已空闲；超时或会话不可用返回 false。
+-- 内部算法：只观察当前玩家会话，不创建新保存；付费准备/收据提交在此之后再取得替换独占权。
+function PlayerPersistenceCoordinator.WaitUntilIdle(
+	player: Player,
+	timeoutSeconds: number?
+): boolean
+	assert(typeof(player) == "Instance" and player:IsA("Player"), "player 必须是 Player")
+	local timeout = timeoutSeconds or 5
+	assert(type(timeout) == "number" and timeout >= 0, "timeoutSeconds 无效")
+	local deadline = os.clock() + timeout
+	while os.clock() <= deadline do
+		if player.Parent ~= Players then
+			return false
+		end
+		local record = sessionsByUserId[player.UserId]
+		if record
+			and not record.ReleaseRequested
+			and not record.ExclusiveOperation
+			and not record.Running
+			and record.Pending == nil
+			and record.Latest == nil
+			and not record.RetryScheduled
+		then
+			return true
+		end
+		task.wait(0.05)
+	end
+	return false
+end
+
+-- 输入：由 CommitReplacement 返回 Uncertain 后等待后台重试完成的在线玩家。
+-- 输出：该替换提交是否已经结束；超时不改变后台队列。
+function PlayerPersistenceCoordinator.WaitForReplacement(
+	player: Player,
+	timeoutSeconds: number?
+): boolean
+	assert(typeof(player) == "Instance" and player:IsA("Player"), "player 必须是 Player")
+	local timeout = timeoutSeconds or 5
+	assert(type(timeout) == "number" and timeout >= 0, "timeoutSeconds 无效")
+	local deadline = os.clock() + timeout
+	while os.clock() <= deadline do
+		if player.Parent ~= Players then
+			return false
+		end
+		local record = sessionsByUserId[player.UserId]
+		if not record then
+			return false
+		end
+		if not record.ExclusiveOperation
+			and not record.Running
+			and record.Pending == nil
+		then
+			return true
+		end
+		task.wait(0.05)
+	end
+	return false
+end
+
 -- 输入：在线且存档 Ready 的 Player，以及已经完整构建的新业务存档。
 -- 输出：Succeeded、Uncertain、Reason、Revision。
 -- 内部算法：只在普通保存队列空闲时取得独占权，使用单一 CommitId 同步重试；

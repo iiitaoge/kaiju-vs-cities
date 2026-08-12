@@ -35,6 +35,45 @@ local function copyGroupRewardClaims(values)
 	return result
 end
 
+local function copyPurchases(values)
+	local result = {
+		ProcessedPurchaseIds = {},
+		PendingMonsterUpgrade = nil,
+	}
+	if type(values) ~= "table" then
+		return result
+	end
+	if type(values.ProcessedPurchaseIds) == "table" then
+		for purchaseId, processed in values.ProcessedPurchaseIds do
+			if processed == true
+				and type(purchaseId) == "string"
+				and purchaseId ~= ""
+				and #purchaseId <= 128
+				and string.match(purchaseId, "^[A-Za-z0-9_.%-]+$") ~= nil
+			then
+				result.ProcessedPurchaseIds[purchaseId] = true
+			end
+		end
+	end
+	local pending = values.PendingMonsterUpgrade
+	if type(pending) == "table"
+		and type(pending.ProductId) == "number"
+		and pending.ProductId > 0
+		and pending.ProductId < math.huge
+		and pending.ProductId % 1 == 0
+		and type(pending.SpawnPointId) == "string"
+		and pending.SpawnPointId ~= ""
+		and #pending.SpawnPointId <= 64
+		and string.match(pending.SpawnPointId, "^[A-Za-z0-9_.%-]+$") ~= nil
+	then
+		result.PendingMonsterUpgrade = {
+			ProductId = pending.ProductId,
+			SpawnPointId = pending.SpawnPointId,
+		}
+	end
+	return result
+end
+
 function RebirthResetRules.Create(currentCount: number, savedAt: number, preserved)
 	assert(
 		type(currentCount) == "number"
@@ -78,6 +117,7 @@ function RebirthResetRules.Create(currentCount: number, savedAt: number, preserv
 			}
 		end
 		data.GroupRewardClaims = copyGroupRewardClaims(preserved.GroupRewardClaims)
+		data.Purchases = copyPurchases(preserved.Purchases)
 	end
 	data.SavedAt = savedAt
 	data.Rebirth.Count = currentCount + 1

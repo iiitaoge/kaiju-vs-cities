@@ -48,6 +48,7 @@ export type SectionName =
 	| "Monsters"
 	| "MonsterSpawnPoints"
 	| "DefenseMonsterSpawnPoints"
+	| "Purchases"
 export type EntitySectionName = "Zones" | "Houses" | "Monsters" | "MonsterSpawnPoints" | "DefenseMonsterSpawnPoints"
 
 -- 权威数据属于下方 Instance 树，而不属于当前 ModuleScript 的执行缓存。
@@ -62,6 +63,7 @@ local VALID_SECTIONS = {
 	Monsters = true,
 	MonsterSpawnPoints = true,
 	DefenseMonsterSpawnPoints = true,
+	Purchases = true,
 }
 
 local started = false
