@@ -17,10 +17,10 @@ local MonsterRosterCoordinator = require(script.Parent.MonsterRosterCoordinator)
 local PlayerDefenseMonsterRuntimeCoordinator = require(
 	script.Parent.PlayerDefenseMonsterRuntimeCoordinator
 )
-local MonsterCatalog = require(ReplicatedStorage.Shared.Monster.MonsterCatalog)
 local MonsterDiamondUpgradeConfigs = require(
 	ReplicatedStorage.Shared.Monster.MonsterDiamondUpgradeConfigs
 )
+local PlayerMonsterLevelLimitQuery = require(script.Parent.PlayerMonsterLevelLimitQuery)
 local DefenseMonsterSlotCatalog = require(
 	ReplicatedStorage.Shared.Monster.DefenseMonsterSlotCatalog
 )
@@ -56,7 +56,11 @@ function DefenseMonsterActionQuery.Get(player: Player, spawnPointId: string)
 	local balance = MoneyService.Get(player)
 	local diamondBalance = DiamondService.Get(player)
 	local economy = DefenseMonsterEconomyConfigs[spawnPointId]
-	local maxLevel = MonsterCatalog.GetMaxLevel(definition.ProgressionId)
+	local levelLimit = PlayerMonsterLevelLimitQuery.Get(player, definition.ProgressionId)
+	if not levelLimit then
+		return nil
+	end
+	local maxLevel = levelLimit.MaxLevel
 	local diamondUpgradeConfig = MonsterDiamondUpgradeConfigs[definition.ProgressionId]
 	if not economy or not maxLevel or not diamondUpgradeConfig then
 		return nil
@@ -98,7 +102,12 @@ function DefenseMonsterActionQuery.Get(player: Player, spawnPointId: string)
 	if not state.Built then
 		diamondUpgradePermission = { Allowed = false, Reason = "DefenseMonsterNotBuilt" }
 	elseif state.Level >= maxLevel then
-		diamondUpgradePermission = { Allowed = false, Reason = "MaxLevel" }
+		diamondUpgradePermission = {
+			Allowed = false,
+			Reason = if state.Level >= levelLimit.TotalMaxLevel
+				then "MaxLevel"
+				else "RebirthRequired",
+		}
 	else
 		diamondUpgradePermission = PlayerDefenseMonsterRuntimeCoordinator.CanUpgrade(
 			player,

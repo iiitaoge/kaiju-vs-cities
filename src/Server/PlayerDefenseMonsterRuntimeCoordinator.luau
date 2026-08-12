@@ -44,9 +44,13 @@ local DefenseMonsterSlotCatalog = require(
 	ReplicatedStorage.Shared.Monster.DefenseMonsterSlotCatalog
 )
 local MonsterCatalog = require(ReplicatedStorage.Shared.Monster.MonsterCatalog)
+local MonsterLevelLimitRules = require(
+	ReplicatedStorage.Shared.Monster.MonsterLevelLimitRules
+)
 local MonsterExpeditionConfigs = require(
 	ReplicatedStorage.Shared.Monster.MonsterExpeditionConfigs
 )
+local PlayerMonsterLevelLimitQuery = require(script.Parent.PlayerMonsterLevelLimitQuery)
 
 local PlayerDefenseMonsterRuntimeCoordinator = {}
 
@@ -291,6 +295,15 @@ local function prepareUpgrade(player: Player, spawnPointId: string, targetLevel:
 	end
 	if targetLevel <= state.Level then
 		return nil, "InvalidUpgradeLevel"
+	end
+	local levelLimit = assert(PlayerMonsterLevelLimitQuery.Get(player, definition.ProgressionId))
+	local levelAllowed, levelReason = MonsterLevelLimitRules.CheckTargetLevel(
+		targetLevel,
+		levelLimit.MaxLevel,
+		levelLimit.TotalMaxLevel
+	)
+	if not levelAllowed then
+		return nil, levelReason
 	end
 	local newMonsterKey = DefenseMonsterSlotCatalog.GetMonsterKey(spawnPointId, targetLevel)
 	if not newMonsterKey then

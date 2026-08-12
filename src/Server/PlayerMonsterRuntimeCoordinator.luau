@@ -61,12 +61,16 @@ local MonsterIncubatorConfigs = require(
 	ReplicatedStorage.Shared.Monster.MonsterIncubatorConfigs
 )
 local MonsterCatalog = require(ReplicatedStorage.Shared.Monster.MonsterCatalog)
+local MonsterLevelLimitRules = require(
+	ReplicatedStorage.Shared.Monster.MonsterLevelLimitRules
+)
 local MonsterSpawnPointCatalog = require(
 	ReplicatedStorage.Shared.Monster.MonsterSpawnPointCatalog
 )
 local MonsterCapacityRules = require(ReplicatedStorage.Shared.Monster.MonsterCapacityRules)
 local MonsterStateRules = require(ReplicatedStorage.Shared.Monster.MonsterStateRules)
 local PlayerRebirthBonusQuery = require(script.Parent.PlayerRebirthBonusQuery)
+local PlayerMonsterLevelLimitQuery = require(script.Parent.PlayerMonsterLevelLimitQuery)
 
 local PlayerMonsterRuntimeCoordinator = {}
 
@@ -417,12 +421,22 @@ local function prepareUpgrade(
 	if not MonsterSpawnPointCatalog.Get(spawnPointId) then
 		return nil, "UnknownSpawnPoint"
 	end
+	local definition = assert(MonsterSpawnPointCatalog.Get(spawnPointId))
 	local state = MonsterSpawnPointStateService.Get(player, spawnPointId)
 	if not state.Built then
 		return nil, "SpawnPointNotBuilt"
 	end
 	if targetLevel <= state.Level then
 		return nil, "InvalidUpgradeLevel"
+	end
+	local levelLimit = assert(PlayerMonsterLevelLimitQuery.Get(player, definition.ProgressionId))
+	local levelAllowed, levelReason = MonsterLevelLimitRules.CheckTargetLevel(
+		targetLevel,
+		levelLimit.MaxLevel,
+		levelLimit.TotalMaxLevel
+	)
+	if not levelAllowed then
+		return nil, levelReason
 	end
 	if not MonsterSpawnPointCatalog.GetMonsterKey(spawnPointId, targetLevel) then
 		return nil, "MaxLevel"

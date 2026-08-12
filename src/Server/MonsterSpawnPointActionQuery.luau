@@ -15,10 +15,10 @@ local MoneyService = require(script.Parent.MoneyService)
 local MonsterRosterCoordinator = require(script.Parent.MonsterRosterCoordinator)
 local MonsterSpawnPointStateService = require(script.Parent.MonsterSpawnPointStateService)
 local PlayerMonsterRuntimeCoordinator = require(script.Parent.PlayerMonsterRuntimeCoordinator)
-local MonsterCatalog = require(ReplicatedStorage.Shared.Monster.MonsterCatalog)
 local MonsterDiamondUpgradeConfigs = require(
 	ReplicatedStorage.Shared.Monster.MonsterDiamondUpgradeConfigs
 )
+local PlayerMonsterLevelLimitQuery = require(script.Parent.PlayerMonsterLevelLimitQuery)
 local MonsterSpawnPointCatalog = require(ReplicatedStorage.Shared.Monster.MonsterSpawnPointCatalog)
 local MonsterSpawnPointEconomyConfigs = require(
 	ReplicatedStorage.Shared.Monster.MonsterSpawnPointEconomyConfigs
@@ -90,7 +90,11 @@ function MonsterSpawnPointActionQuery.Get(player: Player, spawnPointId: string):
 	local buildPermission = PlayerMonsterRuntimeCoordinator.CanBuild(player, spawnPointId)
 	local nextLevel = state.Level + 1
 	local upgradeCost = economy.UpgradeCostByTargetLevel[nextLevel]
-	local maxLevel = MonsterCatalog.GetMaxLevel(definition.ProgressionId)
+	local levelLimit = PlayerMonsterLevelLimitQuery.Get(player, definition.ProgressionId)
+	if not levelLimit then
+		return nil
+	end
+	local maxLevel = levelLimit.MaxLevel
 	local diamondUpgradeConfig = MonsterDiamondUpgradeConfigs[definition.ProgressionId]
 	if not maxLevel or not diamondUpgradeConfig then
 		return nil
@@ -136,7 +140,12 @@ function MonsterSpawnPointActionQuery.Get(player: Player, spawnPointId: string):
 	if not state.Built then
 		diamondUpgradePermission = { Allowed = false, Reason = "SpawnPointNotBuilt" }
 	elseif state.Level >= maxLevel then
-		diamondUpgradePermission = { Allowed = false, Reason = "MaxLevel" }
+		diamondUpgradePermission = {
+			Allowed = false,
+			Reason = if state.Level >= levelLimit.TotalMaxLevel
+				then "MaxLevel"
+				else "RebirthRequired",
+		}
 	else
 		diamondUpgradePermission = PlayerMonsterRuntimeCoordinator.CanUpgrade(
 			player,

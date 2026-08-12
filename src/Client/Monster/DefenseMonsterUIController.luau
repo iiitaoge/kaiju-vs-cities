@@ -175,6 +175,8 @@ function DefenseMonsterUIController.Start()
 				)
 				refs.MoneyValue.Text = if snapshot.Upgrade.Reason == "MaxLevel"
 					then "MAX"
+					elseif snapshot.Upgrade.Reason == "RebirthRequired"
+					then "REBIRTH"
 					else CompactNumberFormatter.Format(snapshot.Upgrade.Cost)
 			else
 				refs.Title.Text = "Godzilla"
