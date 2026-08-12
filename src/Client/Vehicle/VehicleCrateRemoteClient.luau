@@ -1,6 +1,6 @@
 --[[
 	职责：把载具箱子 RemoteFunction 适配成稳定的客户端调用。
-	输入：GetState 无参数；PurchaseDiamond 接收 crateId 和抽取次数 1/5。
+	输入：GetState 无参数；PurchaseDiamond 只接收钻石单抽 crateId。
 	输出：服务端返回的箱子状态、购买结果和余额。
 	内部算法：等待唯一 RemoteFunction → 保护 InvokeServer → 校验基本响应外形。
 	不负责：按钮、概率计算、货币判断、随机或存档。

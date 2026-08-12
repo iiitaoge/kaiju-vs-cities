@@ -54,13 +54,19 @@ local function getFleet(player: Player): FleetState
 	return fleet
 end
 
-function VehicleFleetService.Register(player: Player, vehicleId: string): RegisterResult
+local function register(
+	player: Player,
+	vehicleId: string,
+	requireFeatureUnlocked: boolean
+): RegisterResult
 	assertPlayer(player)
 	assert(type(vehicleId) == "string" and vehicleId ~= "", "vehicleId 必须是非空字符串")
 	if player.Parent ~= Players then
 		return { Succeeded = false, Reason = "PlayerUnavailable", Vehicle = nil }
 	end
-	if not ZoneStateService.GetUnlocked(player, VehicleCatalog.UnlockRegionId) then
+	if requireFeatureUnlocked
+		and not ZoneStateService.GetUnlocked(player, VehicleCatalog.UnlockRegionId)
+	then
 		return { Succeeded = false, Reason = "R3Locked", Vehicle = nil }
 	end
 
@@ -81,6 +87,17 @@ function VehicleFleetService.Register(player: Player, vehicleId: string): Regist
 	}
 	fleet.Vehicles[instanceId] = vehicle
 	return { Succeeded = true, Reason = nil, Vehicle = vehicle }
+end
+
+function VehicleFleetService.Register(player: Player, vehicleId: string): RegisterResult
+	return register(player, vehicleId, true)
+end
+
+-- 输入：已确认的付费载具奖励。
+-- 输出：与普通 Register 相同的拥有实例；不要求 R3 已解锁，避免外部收据因功能门槛丢失。
+-- 内部算法：复用唯一载具实例注册流程，只跳过 UI 功能入口的区域解锁检查。
+function VehicleFleetService.RegisterReward(player: Player, vehicleId: string): RegisterResult
+	return register(player, vehicleId, false)
 end
 
 function VehicleFleetService.Restore(player: Player, savedVehicles)
@@ -224,6 +241,23 @@ function VehicleFleetService.Remove(player: Player, instanceId: string): (boolea
 	if vehicleCount <= 1 then
 		return false, "CannotDestroyLastVehicle"
 	end
+	fleet.Vehicles[instanceId] = nil
+	return true, nil
+end
+
+-- 输入：已确认付费奖励事务中本次新注册的实例 ID。
+-- 输出：删除该实例；允许回滚空 Fleet 中的最后一台新奖励载具。
+-- 内部算法：复用拥有权、活动状态和实例查找校验，只跳过“不能删除最后一台”限制。
+function VehicleFleetService.RemoveReward(player: Player, instanceId: string): (boolean, string?)
+	local vehicle = VehicleFleetService.Get(player, instanceId)
+	if not vehicle then
+		return false, "VehicleNotOwned"
+	end
+	if vehicle.Active then
+		return false, "VehicleActive"
+	end
+	local fleet = fleets[player]
+	assert(fleet, "载具 Fleet 状态丢失")
 	fleet.Vehicles[instanceId] = nil
 	return true, nil
 end

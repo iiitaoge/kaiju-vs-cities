@@ -4,7 +4,7 @@
 	输出：点击 Vehicle 打开面板，点击 Close 关闭面板，DiamondVal/MoneyVal 显示最新余额，
 	区域三未解锁时隐藏 HUD 载具入口，解锁后显示；
 	Vrhicle/Crate/Map 三个页签显示唯一的 ON 状态；载具列表显示服务端车辆，
-	并把派遣/召回、升级/销毁按钮请求交给服务器；Shop 显示箱子并接入钻石单抽/五连抽，
+	并把派遣/召回、升级/销毁按钮请求交给服务器；Shop 显示箱子并接入钻石单抽、付费单抽/五连抽，
 	DropRates 显示当前箱子的稀有度概率和载具列表。
 	内部算法：启动时解析固定 UI 路径并隐藏面板；使用一个 activeTab 状态切换每个页签的
 	ON/OFF Frame；使用一个 cratePage 和 activeCrateId 状态切换 Shop/DropRates 与箱子；
@@ -13,6 +13,7 @@
 ]]
 
 local Players = game:GetService("Players")
+local MarketplaceService = game:GetService("MarketplaceService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local CompactNumberFormatter = require(
@@ -39,6 +40,12 @@ local VehicleCrateRemoteClient = require(
 local VehicleManagementRemoteClient = require(
 	script.Parent.Parent.Vehicle.VehicleManagementRemoteClient
 )
+local PaidPurchaseRemoteClient = require(
+	script.Parent.Parent.Monetization.PaidPurchaseRemoteClient
+)
+local PaidPurchaseProtocol = require(
+	ReplicatedStorage.Shared.Monetization.PaidPurchaseProtocol
+)
 local NestMapRemoteClient = require(script.Parent.Parent.Nest.NestMapRemoteClient)
 local NestMapUIController = require(script.Parent.Parent.Nest.NestMapUIController)
 local SoundController = require(script.Parent.Parent.Sound.SoundController)
@@ -48,6 +55,9 @@ local VehicleLotteryPresentationController = require(
 )
 
 local VehicleUIController = {}
+
+-- Studio 原始 Robux 图标是写在 Val.Text 里的私有字符，不是独立 ImageLabel。
+local ROBUX_ICON = utf8.char(0xE002)
 
 type ImageTarget = ImageLabel | ImageButton
 type TextTarget = TextLabel | TextButton
@@ -1012,29 +1022,49 @@ local function renderCrateCard(crate, layoutOrder: number)
 	configureCurrencyInfoRow(card.DiamondInfo, false)
 	card.TitleValue.Text = tostring(crate.Name or crateId)
 	card.DiamondValue.Text = formatBalance(crate.DiamondPrice)
-	card.FiveValue.Text = "X5 " .. formatBalance(crate.FiveDrawDiamondPrice)
-	card.RobuxValue.Text = if type(crate.RobuxProductId) == "number"
-		and crate.RobuxProductId > 0
-		then tostring(crate.RobuxProductId)
+	local robuxSingleProductId = if type(crate.RobuxSingleProductId) == "number"
+		then crate.RobuxSingleProductId
+		else 0
+	local robuxFiveProductId = if type(crate.RobuxFiveDrawProductId) == "number"
+		then crate.RobuxFiveDrawProductId
+		else 0
+	local robuxSinglePrice = if crateConfig
+		and type(crateConfig.RobuxSinglePriceInRobux) == "number"
+		then crateConfig.RobuxSinglePriceInRobux
+		else nil
+	local robuxFivePrice = if crateConfig
+		and type(crateConfig.RobuxFiveDrawPriceInRobux) == "number"
+		then crateConfig.RobuxFiveDrawPriceInRobux
+		else nil
+	card.RobuxValue.Text = if robuxSingleProductId > 0 and robuxSinglePrice
+		then ROBUX_ICON .. formatBalance(robuxSinglePrice)
+		else "Soon"
+	card.FiveValue.Text = if robuxFiveProductId > 0 and robuxFivePrice
+		then "5x " .. ROBUX_ICON .. formatBalance(robuxFivePrice)
 		else "Soon"
 
 	local busy = crateActionBusy[crateId] == true
+	local paidRandomItemsAllowed = localPlayer:GetAttribute(
+		PaidPurchaseProtocol.PaidRandomItemsAllowedAttributeName
+	) == true
 	-- 区域三仍由服务端校验；客户端保持可点击，确保锁定/余额不足时能显示原因。
 	setButtonEnabled(card.DiamondButton, not busy)
-	-- 五连抽使用钻石购买；Robux 购买仍未开放。
-	setButtonEnabled(card.FiveButton, not busy)
-	-- Robux 收据链尚未启用，即使未来填入 ProductId，也先由专门购买流程接管。
-	setButtonEnabled(card.RobuxButton, false)
+	setButtonEnabled(card.FiveButton, paidRandomItemsAllowed and robuxFiveProductId > 0 and not busy)
+	setButtonEnabled(card.RobuxButton, paidRandomItemsAllowed and robuxSingleProductId > 0 and not busy)
 
-	local function purchase(drawCount: number)
+	local function purchaseDiamond()
 		if crateActionBusy[crateId] then
 			return
 		end
 		crateActionBusy[crateId] = true
 		setButtonEnabled(card.DiamondButton, false)
 		setButtonEnabled(card.FiveButton, false)
+		setButtonEnabled(card.RobuxButton, false)
 		task.spawn(function()
-			local response = VehicleCrateRemoteClient.PurchaseDiamond(crateId, drawCount)
+			local response = VehicleCrateRemoteClient.PurchaseDiamond(
+				crateId,
+				VehicleCrateProtocol.DrawCounts.Single
+			)
 			if response.Succeeded then
 				SoundController.Play("Yes")
 			else
@@ -1047,7 +1077,7 @@ local function renderCrateCard(crate, layoutOrder: number)
 				warn(string.format(
 					"载具箱子购买失败：%s/%d (%s)",
 					crateId,
-					drawCount,
+					VehicleCrateProtocol.DrawCounts.Single,
 					tostring(response.Reason)
 				))
 			end
@@ -1063,11 +1093,37 @@ local function renderCrateCard(crate, layoutOrder: number)
 		end)
 	end
 
+	local function purchaseRobux(productId: number)
+		if crateActionBusy[crateId] or productId <= 0 then
+			return
+		end
+		if localPlayer:GetAttribute(
+			PaidPurchaseProtocol.PaidRandomItemsAllowedAttributeName
+		) ~= true then
+			TipBlackController.ShowMessage("Paid crate purchases are unavailable.")
+			return
+		end
+		crateActionBusy[crateId] = true
+		setButtonEnabled(card.DiamondButton, false)
+		setButtonEnabled(card.FiveButton, false)
+		setButtonEnabled(card.RobuxButton, false)
+		local prompted = pcall(function()
+			MarketplaceService:PromptProductPurchase(localPlayer, productId)
+		end)
+		if not prompted then
+			crateActionBusy[crateId] = nil
+			TipBlackController.ShowMessage("Unable to open purchase dialog.")
+		end
+	end
+
 	card.DiamondButton.Activated:Connect(function()
-		purchase(VehicleCrateProtocol.DrawCounts.Single)
+		purchaseDiamond()
 	end)
 	card.FiveButton.Activated:Connect(function()
-		purchase(VehicleCrateProtocol.DrawCounts.Five)
+		purchaseRobux(robuxFiveProductId)
+	end)
+	card.RobuxButton.Activated:Connect(function()
+		purchaseRobux(robuxSingleProductId)
 	end)
 	unit.Parent = current.CrateShopList
 end
@@ -1443,6 +1499,39 @@ function VehicleUIController.Start()
 		applyFeatureVisibility(
 			localPlayer:GetAttribute(VehicleCrateProtocol.FeatureUnlockedAttributeName) == true
 		)
+	end)
+	localPlayer:GetAttributeChangedSignal(
+		PaidPurchaseProtocol.PaidRandomItemsAllowedAttributeName
+	):Connect(function()
+		task.spawn(refreshCrates)
+	end)
+	local paidResultEvent = PaidPurchaseRemoteClient.GetResultEvent()
+	paidResultEvent.OnClientEvent:Connect(function(result)
+		if type(result) ~= "table"
+			or result.Kind ~= PaidPurchaseProtocol.ResultKinds.PurchaseGranted
+			or result.ProductKind ~= "VehicleCrate"
+		then
+			return
+		end
+		if type(result.CrateId) == "string" then
+			crateActionBusy[result.CrateId] = nil
+		end
+		SoundController.Play("Yes")
+		showCratePurchaseResult({ Succeeded = true, Rewards = result.Rewards })
+		refreshBalances()
+		task.spawn(refreshVehicles)
+		task.spawn(refreshCrates)
+	end)
+	MarketplaceService.PromptProductPurchaseFinished:Connect(function(
+		finishedPlayer,
+		_productId,
+		isPurchased
+	)
+		if finishedPlayer ~= localPlayer or isPurchased then
+			return
+		end
+		table.clear(crateActionBusy)
+		task.spawn(refreshCrates)
 	end)
 
 	resolved.OpenButton.Activated:Connect(function()

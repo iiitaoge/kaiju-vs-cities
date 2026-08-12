@@ -23,10 +23,7 @@ function VehicleCrateRulesSpec.Run(): boolean
 			VehicleCrateRules.GetDiamondPrice(crate, 1) == crate.DiamondPrice,
 			"单抽价格错误"
 		)
-		expect(
-			VehicleCrateRules.GetDiamondPrice(crate, 5) == crate.FiveDrawDiamondPrice,
-			"五连抽价格错误"
-		)
+		expect(VehicleCrateRules.GetDiamondPrice(crate, 5) == nil, "五连抽不得使用钻石价格")
 	end
 
 	local wood = VehicleCrateConfigs.Get("Wood")

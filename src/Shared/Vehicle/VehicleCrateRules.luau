@@ -21,6 +21,14 @@ local function hasVehicleForRarity(vehicleDefinitions, rarity: string): boolean
 	return false
 end
 
+local function isProductId(value): boolean
+	return type(value) == "number"
+		and value == value
+		and value < math.huge
+		and value >= 0
+		and value % 1 == 0
+end
+
 function VehicleCrateRules.Validate(
 	crate,
 	rarityOrder,
@@ -38,11 +46,10 @@ function VehicleCrateRules.Validate(
 	then
 		return false, "InvalidDiamondPrice"
 	end
-	if not isFiniteNumber(crate.FiveDrawDiamondPrice)
-		or crate.FiveDrawDiamondPrice <= 0
-		or crate.FiveDrawDiamondPrice % 1 ~= 0
+	if not isProductId(crate.RobuxSingleProductId)
+		or not isProductId(crate.RobuxFiveDrawProductId)
 	then
-		return false, "InvalidFiveDrawDiamondPrice"
+		return false, "InvalidRobuxProductId"
 	end
 	if type(rarityOrder) ~= "table" or #rarityOrder == 0 then
 		return false, "InvalidRarityOrder"
@@ -76,11 +83,6 @@ function VehicleCrateRules.GetDiamondPrice(crate, drawCount: number): number?
 	if drawCount == 1 then
 		return if isFiniteNumber(crate.DiamondPrice) and crate.DiamondPrice > 0
 			then crate.DiamondPrice
-			else nil
-	end
-	if drawCount == 5 then
-		return if isFiniteNumber(crate.FiveDrawDiamondPrice) and crate.FiveDrawDiamondPrice > 0
-			then crate.FiveDrawDiamondPrice
 			else nil
 	end
 	return nil

@@ -1,6 +1,6 @@
 --[[
 	职责：提供载具箱子的服务器权威查询和钻石购买。
-	输入：RemoteFunction 接收 GetState，或接收 crateId 与抽取次数 1/5 的 PurchaseDiamond。
+	输入：RemoteFunction 接收 GetState，或接收 crateId 的钻石单抽 PurchaseDiamond。
 	输出：公开箱子/概率/载具配置；购买返回抽中的载具实例和最新钻石余额。
 	内部算法：校验准备状态与 R3 解锁 → 校验箱子和价格 → 扣钻石 → 服务端随机抽取
 	→ 将每个结果登记为一个未部署的 Fleet 实例 → 排入立即存档；失败时回滚本次购买。
@@ -69,12 +69,10 @@ local function serializeCrate(crate)
 		CrateId = crate.CrateId,
 		Name = crate.Name,
 		DiamondPrice = crate.DiamondPrice,
-		FiveDrawDiamondPrice = crate.FiveDrawDiamondPrice,
+		RobuxSingleProductId = crate.RobuxSingleProductId,
+		RobuxFiveDrawProductId = crate.RobuxFiveDrawProductId,
 		RarityRates = copyRates(crate.RarityRates),
 	}
-	if type(crate.RobuxProductId) == "number" and crate.RobuxProductId > 0 then
-		serialized.RobuxProductId = crate.RobuxProductId
-	end
 	return serialized
 end
 
@@ -131,7 +129,7 @@ end
 
 local function rollbackPurchase(player: Player, instanceIds, diamondCost: number)
 	for _, instanceId in instanceIds do
-		local removed, reason = VehicleFleetService.Remove(player, instanceId)
+		local removed, reason = VehicleFleetService.RemoveReward(player, instanceId)
 		if not removed then
 			warn(string.format(
 				"载具箱子回滚失败：%s (%s)",
@@ -143,6 +141,43 @@ local function rollbackPurchase(player: Player, instanceIds, diamondCost: number
 	DiamondService.Add(player, diamondCost)
 end
 
+local function drawRewards(
+	player: Player,
+	crate,
+	drawCount: number,
+	registerVehicle
+)
+	local rewards = {}
+	local registeredInstanceIds = {}
+	for _ = 1, drawCount do
+		local draw, drawReason = VehicleCrateRules.ResolveDraw(
+			crate,
+			VehicleCrateConfigs.RarityOrder,
+			VehicleCatalog.GetAll(),
+			random:NextNumber(0, 1),
+			random:NextNumber(0, 1)
+		)
+		if not draw or not draw.Vehicle then
+			return nil, registeredInstanceIds, drawReason or "CrateConfigurationInvalid"
+		end
+
+		local registered = registerVehicle(player, draw.Vehicle.VehicleId)
+		if not registered.Succeeded or not registered.Vehicle then
+			return nil, registeredInstanceIds, registered.Reason or "VehicleGrantFailed"
+		end
+
+		table.insert(registeredInstanceIds, registered.Vehicle.InstanceId)
+		table.insert(rewards, {
+			InstanceId = registered.Vehicle.InstanceId,
+			VehicleId = draw.Vehicle.VehicleId,
+			Name = draw.Vehicle.Name,
+			Rarity = draw.Rarity,
+			Level = registered.Vehicle.Level,
+		})
+	end
+	return rewards, registeredInstanceIds, nil
+end
+
 local function purchaseDiamond(player: Player, crateId: string, drawCount: number)
 	if not isFeatureUnlocked(player) then
 		return response(player, false, "R3Locked")
@@ -151,6 +186,9 @@ local function purchaseDiamond(player: Player, crateId: string, drawCount: numbe
 	local crate = VehicleCrateConfigs.Get(crateId)
 	if not crate then
 		return response(player, false, "UnknownCrate")
+	end
+	if drawCount ~= VehicleCrateProtocol.DrawCounts.Single then
+		return response(player, false, "InvalidDrawCount")
 	end
 
 	local diamondCost = VehicleCrateRules.GetDiamondPrice(crate, drawCount)
@@ -163,35 +201,15 @@ local function purchaseDiamond(player: Player, crateId: string, drawCount: numbe
 		return response(player, false, spent.Reason or "InsufficientDiamonds")
 	end
 
-	local rewards = {}
-	local registeredInstanceIds = {}
-	for _ = 1, drawCount do
-		local draw, drawReason = VehicleCrateRules.ResolveDraw(
-			crate,
-			VehicleCrateConfigs.RarityOrder,
-			VehicleCatalog.GetAll(),
-			random:NextNumber(0, 1),
-			random:NextNumber(0, 1)
-		)
-		if not draw or not draw.Vehicle then
-			rollbackPurchase(player, registeredInstanceIds, diamondCost)
-			return response(player, false, drawReason or "CrateConfigurationInvalid")
-		end
-
-		local registered = VehicleFleetService.Register(player, draw.Vehicle.VehicleId)
-		if not registered.Succeeded or not registered.Vehicle then
-			rollbackPurchase(player, registeredInstanceIds, diamondCost)
-			return response(player, false, registered.Reason or "VehicleGrantFailed")
-		end
-
-		table.insert(registeredInstanceIds, registered.Vehicle.InstanceId)
-		table.insert(rewards, {
-			InstanceId = registered.Vehicle.InstanceId,
-			VehicleId = draw.Vehicle.VehicleId,
-			Name = draw.Vehicle.Name,
-			Rarity = draw.Rarity,
-			Level = registered.Vehicle.Level,
-		})
+	local rewards, registeredInstanceIds, drawReason = drawRewards(
+		player,
+		crate,
+		drawCount,
+		VehicleFleetService.Register
+	)
+	if not rewards then
+		rollbackPurchase(player, registeredInstanceIds, diamondCost)
+		return response(player, false, drawReason or "CrateConfigurationInvalid")
 	end
 
 	queueSave(player)
@@ -203,6 +221,65 @@ local function purchaseDiamond(player: Player, crateId: string, drawCount: numbe
 	}
 	result.Rewards = rewards
 	return result
+end
+
+-- 输入：已由收据服务确认的玩家、CrateId 和抽取次数（1/5）。
+-- 输出：不扣钻石的载具奖励列表；失败不确认收据。
+-- 内部算法：复用同一概率规则和 Fleet 注册；付费奖励绕过区域 UI 门槛，但不绕过目录校验。
+function VehicleCrateService.GrantRobux(player: Player, crateId: string, drawCount: number)
+	assertPlayer(player)
+	if type(crateId) ~= "string" or crateId == "" then
+		return { Succeeded = false, Reason = "InvalidCrateId", Rewards = nil }
+	end
+	if type(drawCount) ~= "number" or (drawCount ~= 1 and drawCount ~= 5) then
+		return { Succeeded = false, Reason = "InvalidDrawCount", Rewards = nil }
+	end
+	if actionBusy[player] then
+		return { Succeeded = false, Reason = "ActionBusy", Rewards = nil }
+	end
+	local crate = VehicleCrateConfigs.Get(crateId)
+	if not crate then
+		return { Succeeded = false, Reason = "UnknownCrate", Rewards = nil }
+	end
+	actionBusy[player] = true
+	local succeeded, rewardsOrError, registeredInstanceIds, drawReason = xpcall(function()
+		local rewards, instanceIds, reason = drawRewards(
+			player,
+			crate,
+			drawCount,
+			VehicleFleetService.RegisterReward
+		)
+		return rewards, instanceIds, reason
+	end, debug.traceback)
+	actionBusy[player] = nil
+	if not succeeded then
+		warn(string.format(
+			"付费载具抽奖异常：%s/%s/%d (%s)",
+			player.Name,
+			crateId,
+			drawCount,
+			tostring(rewardsOrError)
+		))
+		return { Succeeded = false, Reason = "ServerError", Rewards = nil }
+	end
+	if not rewardsOrError then
+		for _, instanceId in registeredInstanceIds do
+			local removed, removeReason = VehicleFleetService.RemoveReward(player, instanceId)
+			if not removed then
+				warn("付费载具抽奖回滚失败：", instanceId, removeReason or "Unknown")
+			end
+		end
+		return { Succeeded = false, Reason = drawReason or "VehicleGrantFailed", Rewards = nil }
+	end
+	return {
+		Succeeded = true,
+		Reason = nil,
+		Rewards = rewardsOrError,
+		Purchase = {
+			CrateId = crateId,
+			DrawCount = drawCount,
+		},
+	}
 end
 
 local function validateRequestValue(value, valueName: string): (boolean, string?)
@@ -235,7 +312,7 @@ local function onRequest(player: Player, requestKind, crateId, drawCount)
 	if not validCrateId then
 		return response(player, false, crateReason)
 	end
-	if type(drawCount) ~= "number" or drawCount % 1 ~= 0 then
+	if drawCount ~= VehicleCrateProtocol.DrawCounts.Single then
 		return response(player, false, "InvalidDrawCount")
 	end
 	if actionBusy[player] then
