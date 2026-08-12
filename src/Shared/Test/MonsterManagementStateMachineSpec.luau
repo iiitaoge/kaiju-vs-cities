@@ -33,6 +33,14 @@ local function snapshot(upgradeAllowed: boolean, affordable: boolean, attackAllo
 			Affordable = true,
 			TargetLevel = 75,
 		},
+		RobuxUpgrade = {
+			Allowed = true,
+			Reason = nil,
+			Cost = 0,
+			Affordable = true,
+			TargetLevel = 75,
+			ProductId = 123,
+		},
 		Attack = {
 			Allowed = attackAllowed,
 			Reason = if attackAllowed then nil else "MonsterBusy",

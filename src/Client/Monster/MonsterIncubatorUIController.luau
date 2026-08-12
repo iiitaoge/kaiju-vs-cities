@@ -7,6 +7,7 @@
 ]]
 
 local Players = game:GetService("Players")
+local MarketplaceService = game:GetService("MarketplaceService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
@@ -22,6 +23,7 @@ local MonsterCatalog = require(ReplicatedStorage.Shared.Monster.MonsterCatalog)
 local DefenseMonsterSlotCatalog = require(
 	ReplicatedStorage.Shared.Monster.DefenseMonsterSlotCatalog
 )
+local PaidProductConfigs = require(ReplicatedStorage.Shared.Monetization.PaidProductConfigs)
 local DiamondProtocol = require(ReplicatedStorage.Shared.Economy.DiamondProtocol)
 local MoneyProtocol = require(ReplicatedStorage.Shared.Economy.MoneyProtocol)
 local MonsterIncubatorUIPresentationConfig = require(
@@ -47,11 +49,18 @@ local LocalGuiButtonState = require(
 )
 local TipBlackController = require(script.Parent.Parent.UI.TipBlackController)
 local SoundController = require(script.Parent.Parent.Sound.SoundController)
+local PaidPurchaseRemoteClient = require(
+	script.Parent.Parent.Monetization.PaidPurchaseRemoteClient
+)
+local PaidPurchaseProtocol = require(ReplicatedStorage.Shared.Monetization.PaidPurchaseProtocol)
 local AnalyticsIntentProtocol = require(
 	ReplicatedStorage.Shared.Analytics.AnalyticsIntentProtocol
 )
 
 local MonsterIncubatorUIController = {}
+
+-- Studio 原始 Robux 图标是写在 Val.Text 里的私有字符，不是独立 ImageLabel。
+local ROBUX_ICON = utf8.char(0xE002)
 
 local PLOT_WAIT_TIMEOUT = 20
 local BUILD_RETRY_DELAY = 0.25
@@ -73,6 +82,16 @@ local function setButtonEnabled(button: TextButton, enabled: boolean)
 	LocalGuiButtonState.SetEnabled(button, enabled)
 end
 
+local function getRobuxButton(panel: Frame): TextButton?
+	local button = panel:FindFirstChild("Button")
+	return if button and button:IsA("TextButton") then button else nil
+end
+
+local function getRobuxValue(button: TextButton): TextLabel?
+	local value = button:FindFirstChild("Val", true)
+	return if value and value:IsA("TextLabel") then value else nil
+end
+
 function MonsterIncubatorUIController.Start()
 	if started then
 		return
@@ -91,6 +110,13 @@ function MonsterIncubatorUIController.Start()
 		end
 		panelReferences.Panel.Visible = false
 		panelReferences.Robux.Visible = false
+		local robuxButton = getRobuxButton(panelReferences.Robux)
+		local robuxValue = if robuxButton then getRobuxValue(robuxButton) else nil
+		if robuxValue then
+			robuxValue.Text = if PaidProductConfigs.MonsterUpgradeToMaxProductId > 0
+				then ROBUX_ICON .. tostring(PaidProductConfigs.MonsterUpgradeToMaxPriceInRobux)
+				else "Soon"
+		end
 		panelReferences.DiamondTip.Text = "Max Level"
 		local plot = LocalMonsterBuildPresentationAccess.WaitForPlot(
 			player.UserId,
@@ -118,12 +144,45 @@ function MonsterIncubatorUIController.Start()
 		local refreshScheduled = false
 		local lastBindingRefresh = 0
 		local managementOpenReported = false
+		local robuxPromptBusy = false
+		local robuxPromptProductId: number? = nil
+		local robuxPromptSpawnPointId: string? = nil
 
 		local function disconnectAll(connections: { RBXScriptConnection })
 			for _, connection in connections do
 				connection:Disconnect()
 			end
 			table.clear(connections)
+		end
+
+		local function clearRobuxPromptState()
+			robuxPromptBusy = false
+			robuxPromptProductId = nil
+			robuxPromptSpawnPointId = nil
+		end
+
+		local function cancelRobuxPrompt()
+			local spawnPointId = robuxPromptSpawnPointId
+			local productId = robuxPromptProductId
+			if not spawnPointId or not productId then
+				clearRobuxPromptState()
+				return
+			end
+			robuxPromptProductId = nil
+			robuxPromptSpawnPointId = nil
+			task.spawn(function()
+				local cancelled = PaidPurchaseRemoteClient.CancelMonsterUpgrade(
+					spawnPointId,
+					productId
+				)
+				if not cancelled.Succeeded then
+					warn("取消付费怪兽意图失败：" .. tostring(cancelled.Reason))
+				end
+				robuxPromptBusy = false
+				if management then
+					management.Retry()
+				end
+			end)
 		end
 
 		local function applyVisibility()
@@ -203,11 +262,17 @@ function MonsterIncubatorUIController.Start()
 				refs.Title.Text = string.format("%s · Lv %d", displayName, snapshot.Level)
 				refs.MoneyValue.Text = if snapshot.Upgrade.Reason == "MaxLevel"
 					then "Max Level"
+					elseif snapshot.Upgrade.Reason == "RebirthRequired"
+					then "Rebirth"
 					else CompactNumberFormatter.Format(snapshot.Upgrade.Cost)
 				refs.DiamondValue.Text = if snapshot.DiamondUpgrade.Reason == "MaxLevel"
 					then "Max Level"
+					elseif snapshot.DiamondUpgrade.Reason == "RebirthRequired"
+					then "Rebirth"
 					else CompactNumberFormatter.Format(snapshot.DiamondUpgrade.Cost)
-				refs.DiamondTip.Text = "Max Level"
+				refs.DiamondTip.Text = if snapshot.DiamondUpgrade.Reason == "RebirthRequired"
+					then "Requires Rebirth"
+					else "Max Level"
 			else
 				refs.Title.Text = "Godzilla"
 				refs.MoneyValue.Text = "..."
@@ -216,6 +281,24 @@ function MonsterIncubatorUIController.Start()
 			end
 
 			local canInteract = state.Mode == "Managing" and snapshot ~= nil
+			local paidUpgrade = snapshot and snapshot.RobuxUpgrade
+			local hasRobuxProduct = type(paidUpgrade) == "table"
+				and type(paidUpgrade.ProductId) == "number"
+				and paidUpgrade.ProductId > 0
+				and paidUpgrade.Allowed == true
+			local showRobuxSlot = canInteract and robuxButton ~= nil
+			if showRobuxSlot then
+				refs.Robux.Visible = true
+				if robuxValue then
+					robuxValue.Text = if paidUpgrade.Reason == "RebirthRequired"
+						then "Rebirth"
+						elseif paidUpgrade.Reason == "MaxLevel"
+						then "Max"
+						elseif hasRobuxProduct
+						then ROBUX_ICON .. tostring(PaidProductConfigs.MonsterUpgradeToMaxPriceInRobux)
+						else "Soon"
+				end
+			end
 			setButtonEnabled(
 				refs.StartButton,
 				boundTargetKind == "Attack"
@@ -230,6 +313,9 @@ function MonsterIncubatorUIController.Start()
 				refs.DiamondButton,
 				canInteract and snapshot.DiamondUpgrade.Allowed
 			)
+			if robuxButton then
+				setButtonEnabled(robuxButton, canInteract and hasRobuxProduct and not robuxPromptBusy)
+			end
 
 			retryToken += 1
 			if state.Mode == "Error" and state.LastReason == "SpawnPointNotBuilt" then
@@ -356,8 +442,83 @@ function MonsterIncubatorUIController.Start()
 				)
 				session.ChooseDiamondUpgrade()
 			end))
+			if robuxButton then
+				table.insert(uiConnections, robuxButton.Activated:Connect(function()
+					if robuxPromptBusy or not boundSpawnPointId then
+						return
+					end
+					local state = session.GetState()
+					local paidUpgrade = state.Snapshot and state.Snapshot.RobuxUpgrade
+					local productId = if type(paidUpgrade) == "table"
+						then paidUpgrade.ProductId
+						else nil
+					if type(productId) ~= "number" or productId <= 0 then
+						TipBlackController.ShowMessage("Paid upgrade is not configured yet.")
+						return
+					end
+					local targetId = boundSpawnPointId
+					robuxPromptBusy = true
+					robuxPromptProductId = productId
+					robuxPromptSpawnPointId = targetId
+					setButtonEnabled(robuxButton, false)
+					task.spawn(function()
+						local prepared = PaidPurchaseRemoteClient.PrepareMonsterUpgrade(targetId)
+						if not prepared.Succeeded
+							or type(prepared.ProductId) ~= "number"
+							or prepared.ProductId <= 0
+						then
+							clearRobuxPromptState()
+							TipBlackController.ShowMessage(
+								prepared.Reason == "ProductNotConfigured"
+									and "Paid upgrade is not configured yet."
+									or "Paid upgrade is unavailable."
+							)
+							if management then
+								management.Retry()
+							end
+							return
+						end
+						local prompted = pcall(function()
+							MarketplaceService:PromptProductPurchase(player, prepared.ProductId)
+						end)
+						if not prompted then
+							cancelRobuxPrompt()
+							TipBlackController.ShowMessage("Unable to open purchase dialog.")
+						end
+					end)
+				end))
+			end
 			session.Open(spawnPointId)
 		end
+
+		local resultEvent = PaidPurchaseRemoteClient.GetResultEvent()
+		resultEvent.OnClientEvent:Connect(function(result)
+			if type(result) ~= "table"
+				or result.Kind ~= PaidPurchaseProtocol.ResultKinds.PurchaseGranted
+				or result.ProductKind ~= "MonsterUpgradeToMax"
+			then
+				return
+			end
+			clearRobuxPromptState()
+			if boundSpawnPointId == result.SpawnPointId then
+				SoundController.Play("Yes")
+				if management then
+					management.Retry()
+				end
+			end
+		end)
+		MarketplaceService.PromptProductPurchaseFinished:Connect(function(
+			finishedPlayer,
+			productId,
+			isPurchased
+		)
+			if finishedPlayer == player
+				and not isPurchased
+				and productId == robuxPromptProductId
+			then
+				cancelRobuxPrompt()
+			end
+		end)
 
 		local function handleMonsterState()
 			if not currentMonster or not management then

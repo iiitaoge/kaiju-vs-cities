@@ -32,6 +32,7 @@ local NestMapRemoteService = require(script.Parent.NestMapRemoteService)
 local VehicleBattleService = require(script.Parent.VehicleBattleService)
 local VehicleDispatchService = require(script.Parent.VehicleDispatchService)
 local VehicleCrateService = require(script.Parent.VehicleCrateService)
+local PaidPurchaseService = require(script.Parent.PaidPurchaseService)
 local VehicleManagementService = require(script.Parent.VehicleManagementService)
 local DefenseMonsterSpawnPointStateService = require(
 	script.Parent.DefenseMonsterSpawnPointStateService
@@ -127,3 +128,4 @@ PlayerCityRuntimeCoordinator.Start()
 IncomeAutoCollectionService.Start()
 PlayerMonsterRuntimeCoordinator.Start()
 PlayerDefenseMonsterRuntimeCoordinator.Start()
+PaidPurchaseService.Start()

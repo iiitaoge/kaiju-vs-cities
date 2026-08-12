@@ -18,6 +18,15 @@ local MonsterSpawnPointPurchaseCoordinator = require(
 local DefenseMonsterSlotCatalog = require(
 	ReplicatedStorage.Shared.Monster.DefenseMonsterSlotCatalog
 )
+local MonsterSpawnPointCatalog = require(
+	ReplicatedStorage.Shared.Monster.MonsterSpawnPointCatalog
+)
+local PaidProductCatalog = require(ReplicatedStorage.Shared.Monetization.PaidProductCatalog)
+local PlayerMonsterRuntimeCoordinator = require(script.Parent.PlayerMonsterRuntimeCoordinator)
+local PlayerDefenseMonsterRuntimeCoordinator = require(
+	script.Parent.PlayerDefenseMonsterRuntimeCoordinator
+)
+local PlayerMonsterLevelLimitQuery = require(script.Parent.PlayerMonsterLevelLimitQuery)
 
 local MonsterManagementCoordinator = {}
 
@@ -31,6 +40,56 @@ local function getSnapshot(player: Player, spawnPointId: string)
 	if not source.Built then
 		return nil, "SpawnPointNotBuilt"
 	end
+	local robuxProductId = PaidProductCatalog.GetMonsterUpgradeToMaxProductId()
+	local configuredTarget = PaidProductCatalog.GetMonsterUpgradeTargetLevel()
+	local progressionId = if DefenseMonsterSlotCatalog.Get(spawnPointId)
+		then assert(DefenseMonsterSlotCatalog.Get(spawnPointId)).ProgressionId
+		else assert(MonsterSpawnPointCatalog.Get(spawnPointId)).ProgressionId
+	local levelLimit = PlayerMonsterLevelLimitQuery.Get(player, progressionId)
+	local maxLevel = levelLimit and levelLimit.MaxLevel
+	local targetLevel = if configuredTarget == "Max"
+		then maxLevel
+		else configuredTarget
+	local paidPermission
+	if type(targetLevel) ~= "number" then
+		paidPermission = { Allowed = false, Reason = "TargetLevelUnavailable" }
+	elseif source.Level >= targetLevel then
+		paidPermission = {
+			Allowed = false,
+			Reason = if configuredTarget == "Max"
+				and levelLimit
+				and levelLimit.MaxLevel < levelLimit.TotalMaxLevel
+			then "RebirthRequired"
+			else "TargetLevelReached",
+			TargetLevel = targetLevel,
+		}
+	elseif targetLevel == source.DiamondUpgrade.TargetLevel then
+		paidPermission = source.DiamondUpgrade
+	elseif DefenseMonsterSlotCatalog.Get(spawnPointId) then
+		paidPermission = PlayerDefenseMonsterRuntimeCoordinator.CanUpgrade(
+			player,
+			spawnPointId,
+			targetLevel
+		)
+	else
+		paidPermission = PlayerMonsterRuntimeCoordinator.CanUpgrade(
+			player,
+			spawnPointId,
+			targetLevel
+		)
+	end
+	local robuxUpgrade = {
+		Allowed = paidPermission.Allowed == true,
+		Reason = paidPermission.Reason,
+		Cost = 0,
+		Affordable = robuxProductId > 0,
+		TargetLevel = targetLevel,
+		ProductId = robuxProductId,
+	}
+	if robuxProductId <= 0 then
+		robuxUpgrade.Allowed = false
+		robuxUpgrade.Reason = "ProductNotConfigured"
+	end
 	return {
 		SpawnPointId = source.SpawnPointId,
 		Built = source.Built,
@@ -41,6 +100,7 @@ local function getSnapshot(player: Player, spawnPointId: string)
 		DiamondBalance = source.DiamondBalance,
 		Upgrade = source.Upgrade,
 		DiamondUpgrade = source.DiamondUpgrade,
+		RobuxUpgrade = robuxUpgrade,
 		Attack = source.Attack,
 	}, nil
 end

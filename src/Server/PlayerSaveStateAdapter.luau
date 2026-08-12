@@ -25,6 +25,7 @@ local ZoneStateService = require(script.Parent.ZoneStateService)
 local SevenDayRewardStateService = require(script.Parent.SevenDayRewardStateService)
 local TaskStateService = require(script.Parent.TaskStateService)
 local VehicleFleetService = require(script.Parent.VehicleFleetService)
+local PurchaseStateService = require(script.Parent.PurchaseStateService)
 local HouseCatalog = require(ReplicatedStorage.Shared.Building.HouseCatalog)
 local DefenseMonsterSlotCatalog = require(
 	ReplicatedStorage.Shared.Monster.DefenseMonsterSlotCatalog
@@ -36,6 +37,7 @@ local MonsterCapacityConfig = require(ReplicatedStorage.Shared.Monster.MonsterCa
 local MonsterSpawnPointCatalog = require(
 	ReplicatedStorage.Shared.Monster.MonsterSpawnPointCatalog
 )
+local PlayerMonsterLevelLimitQuery = require(script.Parent.PlayerMonsterLevelLimitQuery)
 local PlayerSaveSchema = require(ReplicatedStorage.Shared.Persistence.PlayerSaveSchema)
 local ZoneCatalog = require(ReplicatedStorage.Shared.World.ZoneCatalog)
 
@@ -118,6 +120,7 @@ function PlayerSaveStateAdapter.Apply(player: Player, data, now: number?)
 		restoreZone(player, definition, data.Zones[definition.ZoneId])
 	end
 	local vehicleCount = VehicleFleetService.Restore(player, data.Vehicles)
+	PurchaseStateService.Restore(player, data.Purchases)
 
 	local houseCount = 0
 	for _, definition in HouseCatalog.GetAll() do
@@ -155,8 +158,14 @@ function PlayerSaveStateAdapter.Apply(player: Player, data, now: number?)
 	local spawnPointCount = 0
 	for _, definition in MonsterSpawnPointCatalog.GetAll() do
 		local saved = data.Monsters.SpawnPoints[definition.SpawnPointId]
+		local levelLimit = assert(
+			PlayerMonsterLevelLimitQuery.Get(player, definition.ProgressionId)
+		)
+		local restoredLevel = if saved
+			then math.clamp(saved.Level, 1, levelLimit.MaxLevel)
+			else 0
 		local expectedMonsterKey = if saved
-			then MonsterSpawnPointCatalog.GetMonsterKey(definition.SpawnPointId, saved.Level)
+			then MonsterSpawnPointCatalog.GetMonsterKey(definition.SpawnPointId, restoredLevel)
 			else nil
 		local built = saved ~= nil
 			and saved.Built == true
@@ -166,7 +175,7 @@ function PlayerSaveStateAdapter.Apply(player: Player, data, now: number?)
 			player,
 			definition.SpawnPointId,
 			built,
-			if built then saved.Level else 0,
+			if built then restoredLevel else 0,
 			if built then expectedMonsterKey else nil
 		)
 		if built then
@@ -177,8 +186,14 @@ function PlayerSaveStateAdapter.Apply(player: Player, data, now: number?)
 	local defenseMonsterCount = 0
 	for _, definition in DefenseMonsterSlotCatalog.GetAll() do
 		local saved = data.DefenseMonsters.SpawnPoints[definition.SpawnPointId]
+		local levelLimit = assert(
+			PlayerMonsterLevelLimitQuery.Get(player, definition.ProgressionId)
+		)
+		local restoredLevel = if saved
+			then math.clamp(saved.Level, 1, levelLimit.MaxLevel)
+			else 0
 		local savedMonsterKey = if saved
-			then DefenseMonsterSlotCatalog.GetMonsterKey(definition.SpawnPointId, saved.Level)
+			then DefenseMonsterSlotCatalog.GetMonsterKey(definition.SpawnPointId, restoredLevel)
 			else nil
 		local built = saved ~= nil
 			and saved.Built == true
@@ -188,7 +203,7 @@ function PlayerSaveStateAdapter.Apply(player: Player, data, now: number?)
 			player,
 			definition.SpawnPointId,
 			built,
-			if built then saved.Level else 0,
+			if built then restoredLevel else 0,
 			if built then savedMonsterKey else nil
 		)
 		if built then
@@ -255,6 +270,7 @@ function PlayerSaveStateAdapter.Capture(player: Player, now: number?)
 		}
 	end
 	local vehicles = VehicleFleetService.Capture(player)
+	local purchases = PurchaseStateService.Capture(player)
 
 	return {
 		Version = PlayerSaveSchema.CurrentVersion,
@@ -267,6 +283,7 @@ function PlayerSaveStateAdapter.Capture(player: Player, now: number?)
 		DailyReward = SevenDayRewardStateService.Get(player),
 		GroupRewardClaims = GroupRewardStateService.GetAll(player),
 		Vehicles = vehicles,
+		Purchases = purchases,
 		Rebirth = {
 			Count = rebirth.Count,
 			RunEarnings = rebirth.RunEarnings,

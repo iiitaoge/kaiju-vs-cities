@@ -31,6 +31,8 @@ local PlayerMonsterRuntimeCoordinator = require(script.Parent.PlayerMonsterRunti
 local PlayerPersistenceCoordinator = require(script.Parent.PlayerPersistenceCoordinator)
 local PlayerRegionTransactionLock = require(script.Parent.PlayerRegionTransactionLock)
 local PlayerSaveStateAdapter = require(script.Parent.PlayerSaveStateAdapter)
+local PurchaseStateService = require(script.Parent.PurchaseStateService)
+local PaidPurchaseService = require(script.Parent.PaidPurchaseService)
 local PlayerZoneSceneVisibilityService = require(
 	script.Parent.PlayerZoneSceneVisibilityService
 )
@@ -85,11 +87,15 @@ local function snapshot(player: Player, statusOverride: string?, reasonOverride:
 		Allowed = query.Allowed,
 		Count = query.Count,
 		NextCount = query.NextCount,
+		CurrentMaxLevel = query.CurrentMaxLevel,
+		NextMaxLevel = query.NextMaxLevel,
+		TotalMaxLevel = query.TotalMaxLevel,
 		RunEarnings = query.RunEarnings,
 		RequiredRunEarnings = query.RequiredRunEarnings,
 		RemainingRunEarnings = query.RemainingRunEarnings,
 		CurrentBonuses = query.CurrentBonuses,
 		NextBonuses = query.NextBonuses,
+		NextPresentation = query.NextPresentation,
 	}
 end
 
@@ -181,6 +187,7 @@ local function executeLocked(player: Player)
 		Diamond = DiamondService.Get(player),
 		DailyReward = SevenDayRewardStateService.Get(player),
 		GroupRewardClaims = GroupRewardStateService.GetAll(player),
+		Purchases = PurchaseStateService.Capture(player),
 	})
 	local committed = PlayerPersistenceCoordinator.CommitReplacement(player, resetData)
 	if not committed.Succeeded then
@@ -240,6 +247,12 @@ local function executeLocked(player: Player)
 end
 
 function RebirthCoordinator.Execute(player: Player)
+	if PaidPurchaseService.IsBusy(player) then
+		return snapshot(player, "Failed", "ActionBusy"), false
+	end
+	if PurchaseStateService.GetPendingMonsterUpgrade(player) then
+		return snapshot(player, "Failed", "PurchasePending"), false
+	end
 	local releaseRegions = PlayerRegionTransactionLock.TryAcquireExclusive(player)
 	if not releaseRegions then
 		return snapshot(player, "Failed", "ActionBusy"), false

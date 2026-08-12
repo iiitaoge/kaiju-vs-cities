@@ -16,6 +16,7 @@ export type ActionStatus = {
 	Cost: number,
 	Affordable: boolean,
 	TargetLevel: number?,
+	ProductId: number?,
 }
 
 export type Snapshot = {
@@ -28,6 +29,7 @@ export type Snapshot = {
 	DiamondBalance: number,
 	Upgrade: ActionStatus,
 	DiamondUpgrade: ActionStatus,
+	RobuxUpgrade: ActionStatus?,
 	Attack: ActionStatus,
 }
 
@@ -175,6 +177,9 @@ function MonsterManagementStateMachine.Apply(current: State, event): TransitionR
 			snapshot.Upgrade.Affordable = balance >= snapshot.Upgrade.Cost
 		end
 		snapshot.Attack = table.clone(current.Snapshot.Attack)
+		if current.Snapshot.RobuxUpgrade then
+			snapshot.RobuxUpgrade = table.clone(current.Snapshot.RobuxUpgrade)
+		end
 		local lastReason = if currency == "Diamond"
 			and snapshot.DiamondUpgrade.Affordable
 			and current.LastReason == "InsufficientDiamonds"
