@@ -17,6 +17,13 @@ local TaskPresentationProtocol = require(
 	ReplicatedStorage.Shared.Task.TaskPresentationProtocol
 )
 local CurrencyIconRenderer = require(script.Parent.CurrencyIconRenderer)
+local LocalCombatVisibilityService = require(
+	script.Parent.LocalCombatVisibilityService
+)
+local LocalUIModeService = require(script.Parent.LocalUIModeService)
+local UIModeVisibilityRules = require(
+	ReplicatedStorage.Shared.UI.UIModeVisibilityRules
+)
 
 local TaskUIController = {}
 
@@ -42,6 +49,7 @@ local references: References? = nil
 local pendingSnapshot: TaskPresentationProtocol.Snapshot? = nil
 local queryRemote: RemoteFunction? = nil
 local started = false
+local desiredVisible = false
 
 local function childOf(parent: Instance?, name: string): Instance?
 	return parent and parent:FindFirstChild(name)
@@ -134,6 +142,16 @@ local function invoke(): ServerResponse?
 	return response :: ServerResponse
 end
 
+local function applyVisibility()
+	local current = references
+	if not current then
+		return
+	end
+	current.Root.Visible = desiredVisible
+		and LocalUIModeService.IsAllowed(UIModeVisibilityRules.Channels.Gameplay)
+		and not LocalCombatVisibilityService.IsActive()
+end
+
 local function render(snapshot: TaskPresentationProtocol.Snapshot)
 	local current = references
 	if not current then
@@ -142,6 +160,7 @@ local function render(snapshot: TaskPresentationProtocol.Snapshot)
 	end
 
 	if not snapshot.Visible then
+		desiredVisible = false
 		current.Root.Visible = false
 		return
 	end
@@ -149,7 +168,7 @@ local function render(snapshot: TaskPresentationProtocol.Snapshot)
 	local currentValue = assert(snapshot.Current)
 	local targetValue = assert(snapshot.Target)
 	local ratio = math.clamp(currentValue / targetValue, 0, 1)
-	current.Root.Visible = true
+	desiredVisible = true
 	current.Text.Text = assert(snapshot.Text)
 	current.ProgressValue.Text = string.format(
 		"%s/%s",
@@ -164,6 +183,7 @@ local function render(snapshot: TaskPresentationProtocol.Snapshot)
 	)
 	current.RewardValue.Text = CompactNumberFormatter.Format(assert(snapshot.RewardAmount))
 	CurrencyIconRenderer.Apply(current.RewardIcon, assert(snapshot.RewardKind))
+	applyVisibility()
 end
 
 local function refreshState()
@@ -238,7 +258,10 @@ function TaskUIController.Start()
 			local resolved = resolve(playerGui)
 			if resolved then
 				references = resolved
+				desiredVisible = false
 				resolved.Root.Visible = false
+				LocalUIModeService.Observe(applyVisibility)
+				LocalCombatVisibilityService.Observe(applyVisibility)
 				local queued = pendingSnapshot
 				pendingSnapshot = nil
 				if queued then
