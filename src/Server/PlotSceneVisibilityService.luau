@@ -66,6 +66,16 @@ local function resolveState(stateResolver: StateResolver, zoneId: string): ZoneS
 	return state
 end
 
+local function setRegionPanelVisible(zone: Instance, visible: boolean)
+	local region = zone:FindFirstChild("Region")
+	local attachment = region and region:FindFirstChild("Attachment")
+	local billboardGui = attachment and attachment:FindFirstChild("BillboardGui")
+	local panel = billboardGui and billboardGui:FindFirstChild("Panel")
+	if panel and panel:IsA("GuiObject") then
+		panel.Visible = visible
+	end
+end
+
 function PlotSceneVisibilityService.ApplyZone(
 	plot: Model,
 	zoneId: string,
@@ -101,6 +111,7 @@ function PlotSceneVisibilityService.ApplyZone(
 		ZoneSceneVisibility.SetVisible(decoration, state.Unlocked)
 		decorationCount = 1
 	end
+	setRegionPanelVisible(zone, state.Unlocked)
 
 	local buttonCount = 0
 	local buttons = zone:FindFirstChild("Buttons")
