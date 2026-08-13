@@ -31,6 +31,7 @@ local SevenDayRewardUIController = {}
 
 type DayCardReferences = {
 	Button: GuiButton,
+	Claim: GuiObject,
 	Icon: ImageLabel,
 	BackgroundImage: ImageLabel?,
 	Day: TextLabel,
@@ -119,6 +120,7 @@ end
 
 local function resolveCard(dayFrame: Instance?, day: number): (DayCardReferences?, string?)
 	local button = resolveButton(dayFrame, "Button")
+	local claim = resolveGuiObject(button, "Claim")
 	local icon = resolveImageLabel(button, "Icon")
 	local backgroundImage = resolveImageLabel(button, "BG")
 	local dayLabel = resolveTextLabel(button, "Day")
@@ -130,6 +132,9 @@ local function resolveCard(dayFrame: Instance?, day: number): (DayCardReferences
 	end
 	if not button then
 		return nil, string.format("Day%dButtonUnavailable", day)
+	end
+	if not claim then
+		return nil, string.format("Day%dClaimUnavailable", day)
 	end
 	if not icon then
 		return nil, string.format("Day%dIconUnavailable", day)
@@ -143,6 +148,7 @@ local function resolveCard(dayFrame: Instance?, day: number): (DayCardReferences
 
 	return {
 		Button = button,
+		Claim = claim,
 		Icon = icon,
 		BackgroundImage = backgroundImage,
 		Day = dayLabel,
@@ -306,6 +312,18 @@ local function setCardEnabled(card: DayCardReferences, enabled: boolean)
 	LocalGuiButtonState.SetEnabled(card.Button, enabled)
 end
 
+local function setCardClaimVisible(
+	card: DayCardReferences,
+	day: number,
+	state: RewardState?
+)
+	card.Claim.Visible = not claimInFlight
+		and state ~= nil
+		and state.Status == SevenDayRewardProtocol.Statuses.Claimable
+		and state.Available
+		and state.Day == day
+end
+
 local function setCardCompleted(card: DayCardReferences, completed: boolean)
 	if completed then
 		card.Button.BackgroundColor3 = darkenColor(
@@ -349,6 +367,7 @@ local function renderState(state: RewardState)
 		local card = current.Cards[day]
 		local completed = day < state.Day
 		setCardEnabled(card, not completed and not claimInFlight)
+		setCardClaimVisible(card, day, state)
 		setCardCompleted(card, completed)
 	end
 end
@@ -361,7 +380,9 @@ local function refreshCardInteractivity()
 	end
 	for day = 1, SevenDayRewardConfigs.TotalDays do
 		local completed = state ~= nil and day < state.Day
-		setCardEnabled(current.Cards[day], not claimInFlight and not completed)
+		local card = current.Cards[day]
+		setCardEnabled(card, not claimInFlight and not completed)
+		setCardClaimVisible(card, day, state)
 	end
 end
 
