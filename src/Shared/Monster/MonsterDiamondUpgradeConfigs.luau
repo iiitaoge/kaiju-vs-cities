@@ -7,7 +7,7 @@
 
 local configs = {
 	Godzilla = {
-		MaxUpgradeCost = 2_000,
+		MaxUpgradeCost = 5_000,
 	},
 }
 

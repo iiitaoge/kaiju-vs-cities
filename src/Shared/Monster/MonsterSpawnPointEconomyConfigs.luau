@@ -7,7 +7,7 @@ local MonsterSpawnPointCatalog = require(script.Parent.MonsterSpawnPointCatalog)
 local MonsterUpgradeEconomyConfigs = require(script.Parent.MonsterUpgradeEconomyConfigs)
 
 local buildCosts = table.freeze({
-	["M1-S1"] = 250,
+	["M1-S1"] = 120,
 	["M1-S2"] = 500_000,
 	["M1-S3"] = 12_000_000,
 	["M1-S4"] = 150_000_000,

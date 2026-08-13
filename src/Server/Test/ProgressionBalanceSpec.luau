@@ -22,6 +22,12 @@ local MonsterSpawnPointCatalog = require(
 local MonsterSpawnPointEconomyConfigs = require(
 	ReplicatedStorage.Shared.Monster.MonsterSpawnPointEconomyConfigs
 )
+local RebirthProgressionConfigs = require(
+	ReplicatedStorage.Shared.Progression.RebirthProgressionConfigs
+)
+local RebirthProgressionRules = require(
+	ReplicatedStorage.Shared.Progression.RebirthProgressionRules
+)
 local StructureDurabilityConfigs = require(
 	ReplicatedStorage.Shared.Building.StructureDurabilityConfigs
 )
@@ -159,11 +165,39 @@ function Spec.Run(): boolean
 	end
 
 	local upgradeCosts = MonsterSpawnPointEconomyConfigs["M1-S1"].UpgradeCostByTargetLevel
-	for _, level in { 1, 25, 50, 74 } do
-		local monsterKey = assert(MonsterSpawnPointCatalog.GetMonsterKey("M1-S1", level))
-		local ratio = MonsterExpeditionConfigs[monsterKey].RewardAmount / assert(upgradeCosts[level + 1])
-		assert(ratio >= 0.18 and ratio <= 0.22, string.format("怪兽 Level %d 奖励/升级比异常", level))
+	local capBalanceTargets = {
+		{ Level = 15, RebirthCount = 0, MinRaidShare = 0.02, MaxRaidShare = 0.04 },
+		{ Level = 30, RebirthCount = 1, MinRaidShare = 0.18, MaxRaidShare = 0.23 },
+		{ Level = 45, RebirthCount = 2, MinRaidShare = 0.11, MaxRaidShare = 0.15 },
+		{ Level = 60, RebirthCount = 3, MinRaidShare = 0.10, MaxRaidShare = 0.14 },
+		{ Level = 75, RebirthCount = 4, MinRaidShare = 0.11, MaxRaidShare = 0.15 },
+	}
+	local cumulativeUpgradeCost = 0
+	local targetIndex = 1
+	for targetLevel = 2, 75 do
+		cumulativeUpgradeCost += assert(upgradeCosts[targetLevel])
+		local target = capBalanceTargets[targetIndex]
+		if target and targetLevel == target.Level then
+			local eligibility = RebirthProgressionRules.EvaluateEligibility(
+				target.RebirthCount,
+				0,
+				RebirthProgressionConfigs.Eligibility
+			)
+			local requirement = eligibility.RequiredRunEarnings
+			assert(
+				cumulativeUpgradeCost <= requirement * 0.60,
+				string.format("怪兽 Level %d 累计升级费超过重生门槛的 60%%", target.Level)
+			)
+			local monsterKey = assert(MonsterSpawnPointCatalog.GetMonsterKey("M1-S1", target.Level))
+			local raidShare = MonsterExpeditionConfigs[monsterKey].RewardAmount * 8 / requirement
+			assert(
+				raidShare >= target.MinRaidShare and raidShare <= target.MaxRaidShare,
+				string.format("怪兽 Level %d 八栋奖励/重生门槛比例异常：%.3f", target.Level, raidShare)
+			)
+			targetIndex += 1
+		end
 	end
+	assert(targetIndex == #capBalanceTargets + 1, "未验证全部怪兽形态上限")
 	return true
 end
 

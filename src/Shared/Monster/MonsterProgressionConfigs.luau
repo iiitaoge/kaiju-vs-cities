@@ -33,11 +33,11 @@ local configs = {
 		StructureDamageBase = 50,
 		StructureDamageGrowthStages = stages(1.25, 1.12, 1.06),
 
-		-- 单栋摧毁奖励约为下一次怪兽升级成本的 20%。
+		-- 奖励与升级费分别压平：保证新形态可达，同时让八栋攻击保持明显但受控的重生推进。
 		RewardBase = 100,
-		RewardGrowthStages = stages(1.40, 1.25, 1.15),
+		RewardGrowthStages = stages(1.28, 1.08, 1.12),
 		UpgradeBaseCost = 500,
-		UpgradeCostGrowthStages = stages(1.40, 1.25, 1.15),
+		UpgradeCostGrowthStages = stages(1.27, 1.06, 1.10),
 	},
 }
 
