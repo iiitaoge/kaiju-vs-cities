@@ -1,10 +1,10 @@
 --[[
-	职责：当当前任务只差执行区域解锁时，把玩家引导到对应的世界解锁按钮。
-	输入：TaskPresentation 快照、当前玩家 Plot 和任务配置。
-	输出：复用 TutorialPresentation 的世界 Beam 与 HUD.Guide 小手；任务未达到解锁前置、
-	解锁按钮不存在或区域已解锁时隐藏。
-	内部算法：当前快照进度达到 Target 后，从任务要求读取 ZoneId，查找玩家 Plot 中的
-	<ZoneId>-Unlock-Button，并把按钮的 BasePart 交给箭头表现；金币余额不参与显示判定。
+	职责：当前区域任务的下一按钮可执行时，用 HUD.Guide 指向该按钮。
+	输入：TaskPresentation 快照、当前玩家 Plot、ZoneCatalog 和 ButtonRequest 的 Ready 状态。
+	输出：前置区域未满级时指向升级按钮，满级后指向目标区域解锁按钮；只显示小手箭头，
+	不显示遮罩、聚焦高亮或世界 Beam；按钮不可执行时隐藏。
+	内部算法：从 UnlockZone 任务解析目标 Zone；按 Current/Target 选择前置 Upgrade 或目标
+	Unlock 按钮，并使用服务器 GetState 结果决定是否显示。
 	不负责：任务进度计算、区域解锁权限、金币校验、按钮点击或奖励发放。
 ]]
 
@@ -19,20 +19,27 @@ local TutorialPresentation = require(
 	script.Parent.Parent.Tutorial.TutorialPresentation
 )
 local TaskConfigs = require(ReplicatedStorage.Shared.Task.TaskConfigs)
+local InstancePath = require(ReplicatedStorage.Shared.InstancePath)
 local TaskPresentationProtocol = require(
 	ReplicatedStorage.Shared.Task.TaskPresentationProtocol
 )
 local TaskProtocol = require(ReplicatedStorage.Shared.Task.TaskProtocol)
+local ZoneCatalog = require(ReplicatedStorage.Shared.World.ZoneCatalog)
 
 local TaskGuideController = {}
 
 local POLL_SECONDS = 0.35
+local BUTTON_STATE_POLL_SECONDS = 1
 local localPlayer = Players.LocalPlayer
 local started = false
 local queryRemote: RemoteFunction? = nil
+local buttonRequest: RemoteFunction? = nil
 local presentation: TutorialPresentation.Handle? = nil
 local pendingSnapshot: TaskPresentationProtocol.Snapshot? = nil
 local currentTarget: BasePart? = nil
+local checkedButtonName: string? = nil
+local checkedButtonReady = false
+local checkedButtonAt = 0
 
 local GUIDE_DEFINITION = table.freeze({
 	Title = "",
@@ -76,12 +83,11 @@ local function getRemotes(): (RemoteFunction?, RemoteEvent?)
 	return query, taskPresentation
 end
 
-local function getUnlockZoneId(snapshot: TaskPresentationProtocol.Snapshot): string?
+local function getTaskZoneId(snapshot: TaskPresentationProtocol.Snapshot): string?
 	if not snapshot.Visible
 		or not snapshot.TaskId
 		or snapshot.Current == nil
 		or snapshot.Target == nil
-		or snapshot.Current < snapshot.Target
 	then
 		return nil
 	end
@@ -101,9 +107,58 @@ local function getUnlockZoneId(snapshot: TaskPresentationProtocol.Snapshot): str
 	return nil
 end
 
-local function resolveTarget(snapshot: TaskPresentationProtocol.Snapshot): BasePart?
-	local zoneId = getUnlockZoneId(snapshot)
+local function resolveNextButton(
+	snapshot: TaskPresentationProtocol.Snapshot
+): (string?, string?)
+	local zoneId = getTaskZoneId(snapshot)
 	if not zoneId then
+		return nil, nil
+	end
+
+	local definition = ZoneCatalog.Get(zoneId)
+	local current = snapshot.Current
+	local target = snapshot.Target
+	if not definition or current == nil or target == nil then
+		return nil, nil
+	end
+	if current < target then
+		local prerequisiteZoneId = definition.UnlockPrerequisiteZoneId
+		if not prerequisiteZoneId then
+			return nil, nil
+		end
+		return prerequisiteZoneId .. "-Upgrade-Button", prerequisiteZoneId
+	end
+	return zoneId .. "-Unlock-Button", zoneId
+end
+
+local function isButtonReady(buttonName: string): boolean
+	local now = os.clock()
+	if checkedButtonName == buttonName
+		and now - checkedButtonAt < BUTTON_STATE_POLL_SECONDS
+	then
+		return checkedButtonReady
+	end
+
+	checkedButtonName = buttonName
+	checkedButtonAt = now
+	local remote = buttonRequest
+	if not remote then
+		checkedButtonReady = false
+		return false
+	end
+	local succeeded, _, state = pcall(
+		remote.InvokeServer,
+		remote,
+		buttonName,
+		"GetState"
+	)
+	checkedButtonReady = succeeded and state == "Ready"
+	return checkedButtonReady
+end
+
+local function resolveTarget(snapshot: TaskPresentationProtocol.Snapshot): BasePart?
+	local buttonName, buttonZoneId = resolveNextButton(snapshot)
+	if not buttonName or not buttonZoneId then
 		return nil
 	end
 
@@ -111,10 +166,13 @@ local function resolveTarget(snapshot: TaskPresentationProtocol.Snapshot): BaseP
 	local button = if plot
 		then LocalPlotButtonAccess.FindInPlot(
 			plot,
-			zoneId,
-			zoneId .. "-Unlock-Button"
+			buttonZoneId,
+			buttonName
 		)
 		else nil
+	if not button or not isButtonReady(buttonName) then
+		return nil
+	end
 	return findModelPart(button)
 end
 
@@ -131,7 +189,7 @@ local function applySnapshot()
 		currentTarget = target
 		currentPresentation.Show(GUIDE_DEFINITION, {
 			GuiObject = nil,
-			WorldPart = target,
+			WorldPart = nil,
 			WorldPosition = target.Position,
 			WorldBounds = nil,
 			ScreenCenter = nil,
@@ -145,7 +203,7 @@ end
 local function receiveSnapshot(snapshot): boolean
 	local valid, reason = TaskPresentationProtocol.Validate(snapshot)
 	if not valid then
-		warn("拒绝无效任务解锁引导快照：" .. tostring(reason))
+		warn("拒绝无效任务箭头引导快照：" .. tostring(reason))
 		return false
 	end
 	pendingSnapshot = snapshot
@@ -163,7 +221,7 @@ local function refreshState()
 		return remote:InvokeServer(TaskPresentationProtocol.RequestKinds.GetState)
 	end)
 	if not succeeded or type(response) ~= "table" then
-		warn("任务解锁引导状态请求失败：" .. tostring(response))
+		warn("任务箭头引导状态请求失败：" .. tostring(response))
 		return
 	end
 	if response.Snapshot then
@@ -186,18 +244,28 @@ function TaskGuideController.Start()
 			ShowClickHand = true,
 		})
 		if not created then
-			warn("任务解锁引导表现不可用：" .. tostring(reason))
+			warn("任务箭头引导表现不可用：" .. tostring(reason))
 			return
 		end
 		presentation = created
 
 		local query, taskPresentation = getRemotes()
 		if not query or not taskPresentation then
-			warn("任务解锁引导 Remote 不存在")
+			warn("任务箭头引导 Remote 不存在")
 			created.Destroy()
 			presentation = nil
 			return
 		end
+		local buttonRequestInstance = InstancePath.Find(
+			"ReplicatedStorage/Remotes/ButtonRequest"
+		)
+		if not buttonRequestInstance or not buttonRequestInstance:IsA("RemoteFunction") then
+			warn("任务箭头引导 ButtonRequest 不存在")
+			created.Destroy()
+			presentation = nil
+			return
+		end
+		buttonRequest = buttonRequestInstance
 		queryRemote = query
 		taskPresentation.OnClientEvent:Connect(function(snapshot)
 			receiveSnapshot(snapshot)
