@@ -13,8 +13,8 @@ local GroupRewardProtocol = require(script.Parent.GroupRewardProtocol)
 
 local types = GroupRewardProtocol.Types
 local rewards = {
-	{ Type = types.Money, Amount = 500000 },
-	{ Type = types.Diamond, Amount = 500 },
+	{ Type = types.Money, Amount = 15_000 },
+	{ Type = types.Diamond, Amount = 50 },
 }
 
 for _, reward in rewards do

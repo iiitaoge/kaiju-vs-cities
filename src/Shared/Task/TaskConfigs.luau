@@ -42,28 +42,28 @@ local tasks = {
 		1,
 		"R3",
 		"Upgrade Region 2 to Level 5, then unlock Region 3",
-		100
+		20
 	),
 	UnlockR4 = regionUnlockTask(
 		"UnlockR4",
 		2,
 		"R4",
 		"Upgrade Region 3 to Level 5, then unlock Region 4",
-		300
+		40
 	),
 	UnlockR5 = regionUnlockTask(
 		"UnlockR5",
 		3,
 		"R5",
 		"Upgrade Region 4 to Level 5, then unlock Region 5",
-		800
+		80
 	),
 	UnlockR6 = regionUnlockTask(
 		"UnlockR6",
 		4,
 		"R6",
 		"Upgrade Region 5 to Level 5, then unlock Region 6",
-		1_500
+		160
 	),
 }
 

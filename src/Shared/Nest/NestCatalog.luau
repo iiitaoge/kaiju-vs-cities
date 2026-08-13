@@ -16,15 +16,15 @@ export type NestDefinition = {
 }
 
 local definitions: { NestDefinition } = table.freeze({
-	table.freeze({ NestId = "Nest0", Name = "Nest0", BaseIntervalSeconds = 60, BaseDiamonds = 100 }),
-	table.freeze({ NestId = "Nest1", Name = "Nest1", BaseIntervalSeconds = 60, BaseDiamonds = 12 }),
-	table.freeze({ NestId = "Nest2", Name = "Nest2", BaseIntervalSeconds = 60, BaseDiamonds = 14 }),
-	table.freeze({ NestId = "Nest3", Name = "Nest3", BaseIntervalSeconds = 60, BaseDiamonds = 16 }),
-	table.freeze({ NestId = "Nest4", Name = "Nest4", BaseIntervalSeconds = 60, BaseDiamonds = 18 }),
-	table.freeze({ NestId = "Nest5", Name = "Nest5", BaseIntervalSeconds = 60, BaseDiamonds = 20 }),
-	table.freeze({ NestId = "Nest6", Name = "Nest6", BaseIntervalSeconds = 60, BaseDiamonds = 22 }),
-	table.freeze({ NestId = "Nest7", Name = "Nest7", BaseIntervalSeconds = 60, BaseDiamonds = 24 }),
-	table.freeze({ NestId = "Nest8", Name = "Nest8", BaseIntervalSeconds = 60, BaseDiamonds = 26 }),
+	table.freeze({ NestId = "Nest0", Name = "Nest0", BaseIntervalSeconds = 60, BaseDiamonds = 20 }),
+	table.freeze({ NestId = "Nest1", Name = "Nest1", BaseIntervalSeconds = 60, BaseDiamonds = 5 }),
+	table.freeze({ NestId = "Nest2", Name = "Nest2", BaseIntervalSeconds = 60, BaseDiamonds = 5 }),
+	table.freeze({ NestId = "Nest3", Name = "Nest3", BaseIntervalSeconds = 60, BaseDiamonds = 5 }),
+	table.freeze({ NestId = "Nest4", Name = "Nest4", BaseIntervalSeconds = 60, BaseDiamonds = 5 }),
+	table.freeze({ NestId = "Nest5", Name = "Nest5", BaseIntervalSeconds = 60, BaseDiamonds = 5 }),
+	table.freeze({ NestId = "Nest6", Name = "Nest6", BaseIntervalSeconds = 60, BaseDiamonds = 5 }),
+	table.freeze({ NestId = "Nest7", Name = "Nest7", BaseIntervalSeconds = 60, BaseDiamonds = 5 }),
+	table.freeze({ NestId = "Nest8", Name = "Nest8", BaseIntervalSeconds = 60, BaseDiamonds = 5 }),
 })
 
 local byId = {}
