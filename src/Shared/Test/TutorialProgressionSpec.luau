@@ -7,6 +7,10 @@ local TutorialProgression = require(
 local TutorialProgressionSpec = {}
 
 local function expectStep(input, expected: string)
+	input.FirstDefenseMonsterBuildCost = input.FirstDefenseMonsterBuildCost or 500
+	if input.FirstDefenseMonsterBuilt == nil then
+		input.FirstDefenseMonsterBuilt = false
+	end
 	local actual = TutorialProgression.Resolve(input)
 	assert(
 		actual == expected,
@@ -21,6 +25,7 @@ end
 function TutorialProgressionSpec.Run(): boolean
 	local r1UpgradeCost = 137
 	local firstMonsterBuildCost = 421
+	local firstDefenseMonsterBuildCost = 500
 	expectStep({
 		CompletedVersion = 0,
 		R1Level = 0,
@@ -83,6 +88,28 @@ function TutorialProgressionSpec.Run(): boolean
 		FirstMonsterBuildCost = firstMonsterBuildCost,
 		FirstMonsterBuilt = true,
 		FirstMonsterBuildInProgress = false,
+		FirstDefenseMonsterBuildCost = firstDefenseMonsterBuildCost,
+	}, "CollectForDefenseMonsterBuild")
+	expectStep({
+		CompletedVersion = 0,
+		R1Level = 2,
+		Money = firstDefenseMonsterBuildCost,
+		R1UpgradeCost = r1UpgradeCost,
+		FirstMonsterBuildCost = firstMonsterBuildCost,
+		FirstMonsterBuilt = true,
+		FirstMonsterBuildInProgress = false,
+		FirstDefenseMonsterBuildCost = firstDefenseMonsterBuildCost,
+	}, "BuildDefenseMonster")
+	expectStep({
+		CompletedVersion = 0,
+		R1Level = 2,
+		Money = 0,
+		R1UpgradeCost = r1UpgradeCost,
+		FirstMonsterBuildCost = firstMonsterBuildCost,
+		FirstMonsterBuilt = true,
+		FirstMonsterBuildInProgress = false,
+		FirstDefenseMonsterBuildCost = firstDefenseMonsterBuildCost,
+		FirstDefenseMonsterBuilt = true,
 	}, "StartAttack")
 	expectStep({
 		CompletedVersion = TutorialProgression.CurrentVersion,
@@ -111,6 +138,16 @@ function TutorialProgressionSpec.Run(): boolean
 	assert(
 		TutorialProgression.GetDefinition("WaitForMonsterBuild").TargetKind == nil,
 		"TutorialProgressionSpec: monster build wait step must not have a guide target"
+	)
+	assert(
+		TutorialProgression.GetDefinition("CollectForDefenseMonsterBuild").AmountKey
+			== "FirstDefenseMonsterBuildCost",
+		"TutorialProgressionSpec: defense collection copy must use the authoritative cost"
+	)
+	assert(
+		TutorialProgression.GetDefinition("BuildDefenseMonster").TargetKind
+			== "FirstDefenseMonsterButton",
+		"TutorialProgressionSpec: defense build must target the first defense button"
 	)
 	return true
 end

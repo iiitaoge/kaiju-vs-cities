@@ -73,6 +73,8 @@ local function query(remote: RemoteFunction)
 	if type(response.R1UpgradeCost) ~= "number"
 		or type(response.FirstMonsterBuildCost) ~= "number"
 		or type(response.FirstMonsterBuildInProgress) ~= "boolean"
+		or type(response.FirstDefenseMonsterBuildCost) ~= "number"
+		or type(response.FirstDefenseMonsterBuilt) ~= "boolean"
 	then
 		return nil
 	end
@@ -153,11 +155,21 @@ local function resolveTarget(targetKind: string?, plot: Model): BasePart?
 		local houseId = if targetKind == "R1MonsterBuildBuilding" then "R1-H2" else "R1-H1"
 		return findModelPart(LocalPlayerCityRuntimeAccess.FindBuilding(plot, houseId))
 	end
+	if targetKind == "R1DefenseMonsterBuildBuilding" then
+		return findModelPart(LocalPlayerCityRuntimeAccess.FindBuilding(plot, "R1-H2"))
+	end
 	if targetKind == "FirstMonsterButton" then
 		return findModelPart(LocalPlotButtonAccess.FindInPlot(
 			plot,
 			"M1",
 			"M1-S1-Button"
+		))
+	end
+	if targetKind == "FirstDefenseMonsterButton" then
+		return findModelPart(LocalPlotButtonAccess.FindInPlot(
+			plot,
+			"R1",
+			"DM-R1-Button"
 		))
 	end
 	if targetKind == "FirstMonsterIncubator" then

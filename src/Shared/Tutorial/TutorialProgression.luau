@@ -1,8 +1,8 @@
 --[[
 	职责：定义新手引导的英文文案、目标类型，并由权威进度快照解析当前步骤。
-	输入：Resolve 接收完成版本、R1 等级、余额、两项权威费用、M1-S1 建造状态和事务状态。
+	输入：Resolve 接收完成版本、R1 等级、余额、三项权威费用、M1-S1/DM-R1 建造状态和事务状态。
 	输出：稳定 StepId；GetDefinition 返回该步骤的纯表现配置。
-	内部算法：按建造 R1 → 收集升级费 → 升级 R1 → 收集建造费 → 建造怪兽 → 等待建造完成 → 发起攻击顺序判断。
+	内部算法：按建造 R1 → 升级 R1 → 建造进攻怪兽 → 建造防守怪兽 → 发起攻击顺序判断。
 	不负责：读取玩家状态、查找场景实例、显示 UI、绘制 Beam 或写入存档。
 ]]
 
@@ -15,6 +15,8 @@ export type StepId =
 	| "CollectForMonsterBuild"
 	| "BuildMonster"
 	| "WaitForMonsterBuild"
+	| "CollectForDefenseMonsterBuild"
+	| "BuildDefenseMonster"
 	| "StartAttack"
 	| "ChooseTarget"
 	| "Complete"
@@ -27,6 +29,8 @@ export type Input = {
 	FirstMonsterBuildCost: number,
 	FirstMonsterBuilt: boolean,
 	FirstMonsterBuildInProgress: boolean,
+	FirstDefenseMonsterBuildCost: number,
+	FirstDefenseMonsterBuilt: boolean,
 }
 
 export type Definition = {
@@ -36,7 +40,7 @@ export type Definition = {
 	AmountKey: string?,
 }
 
-TutorialProgression.CurrentVersion = 1
+TutorialProgression.CurrentVersion = 2
 
 local DEFINITIONS: { [StepId]: Definition } = {
 	BuildR1 = table.freeze({
@@ -70,6 +74,17 @@ local DEFINITIONS: { [StepId]: Definition } = {
 		Title = "BUILDING GODZILLA",
 		Info = "Wait for the incubator to finish building.",
 		TargetKind = nil,
+	}),
+	CollectForDefenseMonsterBuild = table.freeze({
+		Title = "PREPARE YOUR DEFENSE",
+		Info = "Keep collecting cash until you have %s.",
+		TargetKind = "R1DefenseMonsterBuildBuilding",
+		AmountKey = "FirstDefenseMonsterBuildCost",
+	}),
+	BuildDefenseMonster = table.freeze({
+		Title = "BUILD DEFENSE KAIJU",
+		Info = "Step on the button to build your defense kaiju.",
+		TargetKind = "FirstDefenseMonsterButton",
 	}),
 	StartAttack = table.freeze({
 		Title = "START AN ATTACK",
@@ -122,6 +137,14 @@ function TutorialProgression.Resolve(input: Input): StepId
 		type(input.FirstMonsterBuildInProgress) == "boolean",
 		"FirstMonsterBuildInProgress must be boolean"
 	)
+	assertNonNegativeNumber(
+		input.FirstDefenseMonsterBuildCost,
+		"FirstDefenseMonsterBuildCost"
+	)
+	assert(
+		type(input.FirstDefenseMonsterBuilt) == "boolean",
+		"FirstDefenseMonsterBuilt must be boolean"
+	)
 
 	if input.CompletedVersion >= TutorialProgression.CurrentVersion then
 		return "Complete"
@@ -141,6 +164,11 @@ function TutorialProgression.Resolve(input: Input): StepId
 		return if input.Money < input.FirstMonsterBuildCost
 			then "CollectForMonsterBuild"
 			else "BuildMonster"
+	end
+	if not input.FirstDefenseMonsterBuilt then
+		return if input.Money < input.FirstDefenseMonsterBuildCost
+			then "CollectForDefenseMonsterBuild"
+			else "BuildDefenseMonster"
 	end
 	return "StartAttack"
 end
