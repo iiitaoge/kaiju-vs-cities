@@ -26,7 +26,7 @@ local definitions: { VehicleDefinition } = table.freeze({
 		TemplatePath = "ReplicatedStorage/Assets/Vehicle/V1",
 		MaxHealth = 100,
 		Attack = 10,
-		DiamondMultiplier = 1,
+		DiamondMultiplier = 1.0,
 	}),
 	table.freeze({
 		VehicleId = "V2",
@@ -35,7 +35,7 @@ local definitions: { VehicleDefinition } = table.freeze({
 		TemplatePath = "ReplicatedStorage/Assets/Vehicle/V2",
 		MaxHealth = 130,
 		Attack = 13,
-		DiamondMultiplier = 1.2,
+		DiamondMultiplier = 1.1,
 	}),
 	table.freeze({
 		VehicleId = "V3",
@@ -44,7 +44,7 @@ local definitions: { VehicleDefinition } = table.freeze({
 		TemplatePath = "ReplicatedStorage/Assets/Vehicle/V3",
 		MaxHealth = 170,
 		Attack = 17,
-		DiamondMultiplier = 1.45,
+		DiamondMultiplier = 1.2,
 	}),
 	table.freeze({
 		VehicleId = "V4",
@@ -53,7 +53,7 @@ local definitions: { VehicleDefinition } = table.freeze({
 		TemplatePath = "ReplicatedStorage/Assets/Vehicle/V4",
 		MaxHealth = 220,
 		Attack = 22,
-		DiamondMultiplier = 1.75,
+		DiamondMultiplier = 1.3,
 	}),
 	table.freeze({
 		VehicleId = "V5",
@@ -62,7 +62,7 @@ local definitions: { VehicleDefinition } = table.freeze({
 		TemplatePath = "ReplicatedStorage/Assets/Vehicle/V5",
 		MaxHealth = 280,
 		Attack = 28,
-		DiamondMultiplier = 2.1,
+		DiamondMultiplier = 1.4,
 	}),
 })
 
