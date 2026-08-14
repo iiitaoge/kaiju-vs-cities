@@ -6,8 +6,9 @@
 
 	内部算法：
 	1. 调用 RegionUpgradeService 提交升级事务。
-	2. 只有房屋首次出现或模型等级变化时才刷新 Zone 并广播表现。
-	3. 模型已经封顶时只更新等级、HP 和世界 UI 数值，不重复拆建模型。
+	2. 让 RegionAutoUnlockCoordinator 处理达到门槛的配置型自动解锁。
+	3. 只有房屋首次出现或模型等级变化时才刷新 Zone 并广播表现。
+	4. 模型已经封顶时只更新等级、HP 和世界 UI 数值，不重复拆建模型。
 
 	不负责：不计算升级价格、不 Clone 客户端表现、不解析场景 Slot。
 ]]
@@ -36,6 +37,7 @@ local PlayerZoneSceneVisibilityService = require(script.Parent.PlayerZoneSceneVi
 local PlayerStructureDurabilityResolver = require(
 	script.Parent.PlayerStructureDurabilityResolver
 )
+local RegionAutoUnlockCoordinator = require(script.Parent.RegionAutoUnlockCoordinator)
 local RegionUpgradeService = require(script.Parent.RegionUpgradeService)
 local IncomeBuildingProgressionRules = require(
 	ReplicatedStorage.Shared.Building.IncomeBuildingProgressionRules
@@ -146,6 +148,7 @@ function RegionUpgradeCityCoordinator.Upgrade(player: Player, regionId: string)
 		upgrade.PreviousLevel,
 		newLevel
 	)
+	RegionAutoUnlockCoordinator.UnlockEligibleDependents(player, regionId, newLevel)
 
 	-- 在替换运行时 Model 前迁移已有会话血量，保证受伤建筑升级时保持原比例。
 	for _, definition in HouseCatalog.GetAll() do

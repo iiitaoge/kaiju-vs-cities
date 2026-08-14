@@ -44,6 +44,7 @@ local IncomeBuildingProgressionRules = require(
 	ReplicatedStorage.Shared.Building.IncomeBuildingProgressionRules
 )
 local TaskProtocol = require(ReplicatedStorage.Shared.Task.TaskProtocol)
+local ZoneCatalog = require(ReplicatedStorage.Shared.World.ZoneCatalog)
 
 local RegionUpgradeService = {}
 
@@ -98,11 +99,25 @@ end
 
 function RegionUpgradeService.Unlock(player: Player, regionId: string)
 	local economyConfig = RegionEconomyConfigs[regionId]
-	if not economyConfig then
+	local zone = ZoneCatalog.Get(regionId)
+	if not economyConfig or not zone or zone.Kind ~= "Income" then
 		return nil, "Locked"
 	end
 	if RegionStateService.GetUnlocked(player, regionId) then
 		return nil, "Locked"
+	end
+
+	local prerequisiteZoneId = zone.UnlockPrerequisiteZoneId
+	local prerequisiteLevel = zone.UnlockPrerequisiteLevel
+	if prerequisiteZoneId then
+		if not RegionStateService.GetUnlocked(player, prerequisiteZoneId) then
+			return nil, "PrerequisiteZoneLocked"
+		end
+		if prerequisiteLevel
+			and RegionStateService.GetLevel(player, prerequisiteZoneId) < prerequisiteLevel
+		then
+			return nil, "PrerequisiteZoneLevelTooLow"
+		end
 	end
 
 	local spendResult = MoneyService.TrySpend(player, economyConfig.UnlockCost)

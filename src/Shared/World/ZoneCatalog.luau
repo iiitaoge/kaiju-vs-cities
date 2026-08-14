@@ -29,6 +29,7 @@ export type ZoneDefinition = {
 	InitialUnlocked: boolean,
 	UnlockPrerequisiteZoneId: string?,
 	UnlockPrerequisiteLevel: number?,
+	AutoUnlockWhenPrerequisiteMet: boolean?,
 	Slots: { [string]: SlotDefinition },
 }
 
@@ -70,7 +71,10 @@ local definitions: { [string]: ZoneDefinition } = {
 	R2 = {
 		ZoneId = "R2",
 		Kind = "Income",
-		InitialUnlocked = true,
+		InitialUnlocked = false,
+		UnlockPrerequisiteZoneId = "R1",
+		UnlockPrerequisiteLevel = 5,
+		AutoUnlockWhenPrerequisiteMet = true,
 		Slots = {
 			["R2-H1"] = { SlotId = "R2-H1", Kind = "IncomeBuilding" },
 			["R2-H2"] = { SlotId = "R2-H2", Kind = "IncomeBuilding" },
@@ -165,6 +169,11 @@ for zoneId, definition in pairs(definitions) do
 	assert(type(definition.Kind) == "string" and definition.Kind ~= "", "Zone Kind 必须是非空字符串")
 	local prerequisiteZoneId = definition.UnlockPrerequisiteZoneId
 	local prerequisiteLevel = definition.UnlockPrerequisiteLevel
+	assert(
+		definition.AutoUnlockWhenPrerequisiteMet == nil
+			or type(definition.AutoUnlockWhenPrerequisiteMet) == "boolean",
+		zoneId .. " 的自动解锁配置无效"
+	)
 	if prerequisiteZoneId then
 		assert(prerequisiteZoneId ~= zoneId, "Zone 解锁前置不能指向自身：" .. zoneId)
 		assert(
@@ -179,6 +188,10 @@ for zoneId, definition in pairs(definitions) do
 		)
 	else
 		assert(prerequisiteLevel == nil, zoneId .. " 没有前置 Zone 却配置了前置等级")
+		assert(
+			definition.AutoUnlockWhenPrerequisiteMet ~= true,
+			zoneId .. " 没有前置 Zone 却配置了自动解锁"
+		)
 	end
 
 	for slotId, slot in pairs(definition.Slots) do
