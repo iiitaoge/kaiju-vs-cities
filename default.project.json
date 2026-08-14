@@ -3,46 +3,6 @@
   "tree": {
     "$className": "DataModel",
     "ReplicatedStorage": {
-      "Assets": {
-        "$className": "Folder",
-        "Vehicle": {
-          "$className": "Folder",
-          "V4": {
-            "$className": "Model",
-            "Weaponry": {
-              "$className": "Model",
-              ".50 MG": {
-                "$className": "Model",
-                "Gun1Bullet": {
-                  "$className": "Part",
-                  "Damage": {
-                    "$className": "Script",
-                    "$properties": {
-                      "Disabled": true,
-                      "Sandboxed": true,
-                      "Source": "script.Parent.Touched:connect(function(hit)\r\nif hit.Parent==nil then return end\r\nif hit.Parent:findFirstChild(\"Humanoid\")~=nil then\r\nhit.Parent:breakJoints()\r\nend\r\nend)\r\n\r\ngame.Debris:AddItem(script.Parent,3)"
-                    }
-                  }
-                }
-              },
-              "Mobile Gun System": {
-                "$className": "Model",
-                "Missile": {
-                  "$className": "Part",
-                  "Heat": {
-                    "$className": "Script",
-                    "$properties": {
-                      "Disabled": true,
-                      "Sandboxed": true,
-                      "Source": "wait(.1)\r\nLandMine = script.Parent\r\n\r\nfunction onTouched(hit)\r\nexplosion = Instance.new(\"Explosion\")\r\nexplosion.BlastRadius = 12\r\nexplosion.BlastPressure = 100000000000000\r\nexplosion.Position = script.Parent.Position\r\nexplosion.Parent = game.Workspace\r\nscript.Parent:Remove()\r\nconnection:disconnect()\r\nend\r\n\r\nconnection = LandMine.Touched:connect(onTouched)\r\n\r\n"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
       "Shared": {
         "$path": "src/Shared"
       }
