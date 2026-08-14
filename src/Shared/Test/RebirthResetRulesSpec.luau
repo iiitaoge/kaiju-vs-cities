@@ -3,9 +3,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RebirthResetRules = require(
 	ReplicatedStorage.Shared.Progression.RebirthResetRules
 )
-local TutorialProgression = require(
-	ReplicatedStorage.Shared.Tutorial.TutorialProgression
-)
 
 local Spec = {}
 
@@ -23,10 +20,6 @@ function Spec.Run(): boolean
 	assert(reset.Rebirth.RunEarnings == 0, "本轮累计收入没有归零")
 	assert(reset.SavedAt == 123, "提交时间错误")
 	assert(reset.Economy.Money == 0, "现金没有重置")
-	assert(
-		reset.Tutorial.Version == TutorialProgression.CurrentVersion,
-		"重生后不应再次显示新手引导"
-	)
 	assert(reset.Economy.Diamond == 55, "钻石没有保留")
 	assert(
 		reset.DailyReward.Day == 4 and reset.DailyReward.NextClaimAt == 456,

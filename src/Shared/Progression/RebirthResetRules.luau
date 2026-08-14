@@ -1,13 +1,12 @@
 --[[
 	职责：创建一次重生提交使用的全新业务存档。
 	输入：当前重生次数、提交时间，以及可选的账号级持久字段。
-	输出：重生次数加一、本轮收入归零；钱和城市重置，钻石、七日奖励和群组奖励领取记录保留；新手引导标记为已完成。
-	内部算法：PlayerSaveSchema.Default → 标记当前新手引导版本已完成 → 复制账号级持久字段 → 写入永久次数和 SavedAt。
+	输出：重生次数加一、本轮收入归零；钱和城市重置，钻石、七日奖励和群组奖励领取记录保留。
+	内部算法：PlayerSaveSchema.Default → 复制账号级持久字段 → 写入永久次数和 SavedAt。
 	不负责：资格判断、DataStore、运行时重载、玩家或 UI。
 ]]
 
 local PlayerSaveSchema = require(script.Parent.Parent.Persistence.PlayerSaveSchema)
-local TutorialProgression = require(script.Parent.Parent.Tutorial.TutorialProgression)
 
 local RebirthResetRules = {}
 
@@ -94,7 +93,6 @@ function RebirthResetRules.Create(currentCount: number, savedAt: number, preserv
 	)
 
 	local data = PlayerSaveSchema.Default()
-	data.Tutorial.Version = TutorialProgression.CurrentVersion
 	if type(preserved) == "table" then
 		if type(preserved.Diamond) == "number"
 			and preserved.Diamond == preserved.Diamond

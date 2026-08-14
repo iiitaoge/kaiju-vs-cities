@@ -23,7 +23,7 @@ function Spec.Run(): boolean
 		NextBonuses = bonuses,
 		NextPresentation = {
 			LevelText = "Configured level text",
-			RewardText = "Next rewards: Income x1.25 · Build x1.1",
+			RewardText = "Configured reward text",
 		},
 		RequiredRunEarnings = 1_000_000,
 		RemainingRunEarnings = 250_000,
@@ -31,7 +31,7 @@ function Spec.Run(): boolean
 	})
 	assert(insufficient.Enabled and not insufficient.CanExecute, "收入不足时不得点击")
 	assert(insufficient.RequirementText == "1M", "门槛应使用紧凑格式")
-	assert(insufficient.InfoTitleText == "250K", "剩余门槛显示错误")
+	assert(insufficient.InfoTitleText == "250K more required", "剩余门槛显示错误")
 
 	local ready = Rules.Resolve({
 		Status = "Ready",
@@ -43,7 +43,7 @@ function Spec.Run(): boolean
 		NextBonuses = bonuses,
 		NextPresentation = {
 			LevelText = "Configured level text",
-			RewardText = "Next rewards: Income x1.25 · Build x1.1",
+			RewardText = "Configured reward text",
 		},
 		RequiredRunEarnings = 1_000_000,
 		RemainingRunEarnings = 0,
@@ -51,7 +51,7 @@ function Spec.Run(): boolean
 	})
 	assert(ready.CanExecute and ready.ActionText == "Rebirth", "资格满足时应允许点击")
 	assert(string.find(ready.IntroductionText, "Configured level text", 1, true), "未使用重生等级配置文案")
-	assert(string.find(ready.IntroductionText, "Income x1.25\nBuild x1.1", 1, true), "重生效果没有逐项换行")
+	assert(string.find(ready.IntroductionText, "Configured reward text", 1, true), "未使用重生奖励配置文案")
 	assert(string.find(ready.IntroductionText, "becomes 1", 1, true), "缺少下一次重生次数")
 
 	local tooFar = Rules.Resolve({

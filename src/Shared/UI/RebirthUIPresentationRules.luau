@@ -47,11 +47,6 @@ local function formatNextBonuses(bonuses): string
 	return "Next rewards: " .. table.concat(parts, " · ")
 end
 
-local function formatRewardText(rewardText: string): string
-	local formatted = rewardText:gsub("^Next rewards:%s*", "Next rewards:\n")
-	return formatted:gsub("%s*·%s*", "\n")
-end
-
 local function validPresentation(value): boolean
 	return type(value) == "table"
 		and type(value.LevelText) == "string"
@@ -88,13 +83,13 @@ function RebirthUIPresentationRules.Resolve(snapshot)
 		elseif canExecute then "Rebirth" else "Locked"
 	local infoTitle = if status == "Processing"
 		then "Saving rebirth..."
-	elseif status == "Failed"
-	then "Rebirth unavailable"
+		elseif status == "Failed"
+		then "Rebirth unavailable"
 		elseif activationBlocked
 		then "Approach the rebirth button"
 		elseif canExecute
 		then "Ready to rebirth"
-		else CompactNumberFormatter.Format(snapshot.RemainingRunEarnings)
+		else CompactNumberFormatter.Format(snapshot.RemainingRunEarnings) .. " more required"
 	local levelText = if validPresentation(snapshot.NextPresentation)
 		then snapshot.NextPresentation.LevelText
 		elseif snapshot.CurrentMaxLevel < snapshot.NextMaxLevel
@@ -121,7 +116,7 @@ function RebirthUIPresentationRules.Resolve(snapshot)
 		IntroductionText = string.format(
 			"%s\n%s\nProgress resets · Rebirth count becomes %d",
 			levelText,
-			formatRewardText(rewardText),
+			rewardText,
 			snapshot.NextCount
 		),
 	}
