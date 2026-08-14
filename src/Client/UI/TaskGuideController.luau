@@ -1,8 +1,8 @@
 --[[
-	职责：当前区域任务对应的实体按钮可执行时，用 HUD.Guide 指向该按钮。
+	职责：当前区域任务对应的实体按钮可执行时，用 TutorialAssets.Beam 指向该按钮。
 	输入：TaskPresentation 快照、任务要求、当前玩家 Plot 和 ButtonRequest 的 Ready 状态。
-	输出：区域等级任务指向升级按钮，区域解锁任务指向解锁按钮；只显示小手箭头，
-	不显示遮罩、聚焦高亮或世界 Beam；屏幕外目标把箭头夹在对应屏幕边缘。
+	输出：区域等级任务指向升级按钮，区域解锁任务指向解锁按钮；只显示世界箭头 Beam，
+	不显示教程遮罩、聚焦高亮或 HUD.Guide 小手。
 	内部算法：从当前任务的唯一要求解析按钮合同，再用服务器 GetState 决定是否显示。
 	不负责：任务进度计算、区域解锁权限、金币校验、按钮点击或奖励发放。
 ]]
@@ -166,12 +166,7 @@ local function applySnapshot()
 	if target then
 		currentTarget = target
 		currentPresentation.Show(GUIDE_DEFINITION, {
-			GuiObject = nil,
-			WorldPart = nil,
-			WorldPosition = target.Position,
-			WorldBounds = nil,
-			ScreenCenter = nil,
-			ClampToViewport = true,
+			WorldPart = target,
 		})
 	elseif currentTarget ~= nil then
 		currentTarget = nil
@@ -230,7 +225,7 @@ function TaskGuideController.Start()
 			NamePrefix = "TaskGuide",
 			ShowPopup = false,
 			ShowClickMask = false,
-			ShowClickHand = true,
+			ShowClickHand = false,
 		})
 		if not created then
 			warn("任务箭头引导表现不可用：" .. tostring(reason))
