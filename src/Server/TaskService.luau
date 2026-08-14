@@ -105,30 +105,43 @@ local function tryCompleteTask(
 	return true
 end
 
-local function reconcileUnlockedRequirements(player: Player, definition, state): boolean
+local function reconcileAuthoritativeRequirements(player: Player, definition, state): boolean
 	local stateChanged = false
 	for _, requirement in definition.Requirements do
-		if requirement.Kind ~= TaskProtocol.RequirementKinds.UnlockZone then
-			continue
-		end
-
 		local progress = state.Progress[requirement.Id]
 		if not progress or progress.Completed then
 			continue
 		end
-		if not RegionStateService.GetUnlocked(player, requirement.Config.ZoneId) then
+
+		local event = nil
+		if requirement.Kind == TaskProtocol.RequirementKinds.UnlockZone then
+			if RegionStateService.GetUnlocked(player, requirement.Config.ZoneId) then
+				event = {
+					Kind = TaskProtocol.EventKinds.ZoneUnlocked,
+					ZoneId = requirement.Config.ZoneId,
+				}
+			end
+		elseif requirement.Kind == TaskProtocol.RequirementKinds.ReachRegionLevel then
+			event = {
+				Kind = TaskProtocol.EventKinds.RegionLevelChanged,
+				ZoneId = requirement.Config.ZoneId,
+				Level = RegionStateService.GetLevel(player, requirement.Config.ZoneId),
+			}
+		end
+		if not event then
 			continue
 		end
 
 		local nextProgress = TaskRules.ApplyEvent(
 			requirement,
 			progress,
-			{
-				Kind = TaskProtocol.EventKinds.ZoneUnlocked,
-				ZoneId = requirement.Config.ZoneId,
-			}
+			event
 		)
-		if nextProgress then
+		if nextProgress
+			and (nextProgress.Kind ~= progress.Kind
+				or nextProgress.Current ~= progress.Current
+				or nextProgress.Completed ~= progress.Completed)
+		then
 			state.Progress[requirement.Id] = nextProgress
 			stateChanged = true
 		end
@@ -144,7 +157,7 @@ local function reconcileInternal(player: Player): ReportResult
 			continue
 		end
 
-		if reconcileUnlockedRequirements(player, definition, state) then
+		if reconcileAuthoritativeRequirements(player, definition, state) then
 			TaskStateService.Set(player, taskId, state)
 			result.Changed = true
 		end

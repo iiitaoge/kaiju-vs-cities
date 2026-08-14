@@ -10,6 +10,7 @@ local TaskProtocol = {}
 
 TaskProtocol.RequirementKinds = table.freeze({
 	UnlockZone = "UnlockZone",
+	ReachRegionLevel = "ReachRegionLevel",
 	BuildHouse = "BuildHouse",
 	UpgradeMonster = "UpgradeMonster",
 	EarnMoney = "EarnMoney",

@@ -40,6 +40,7 @@ export type GuideTarget = {
 	WorldPosition: Vector3?,
 	WorldBounds: WorldBounds?,
 	ScreenCenter: boolean?,
+	ClampToViewport: boolean?,
 }
 
 export type Handle = {
@@ -61,6 +62,7 @@ local MASK_TRANSPARENCY = 0.38
 local TARGET_PADDING = 10
 local MAX_WORLD_HIGHLIGHT_RATIO = 0.55
 local WORLD_FOCUS_RATIO = 0.2
+local OFFSCREEN_GUIDE_PADDING = 36
 local RESPONSIVE_CONFIG = table.freeze({
 	ReferenceViewport = Vector2.new(1280, 720),
 	MinScale = 0.58,
@@ -186,6 +188,37 @@ local function projectWorldPoint(camera: Camera, worldPosition: Vector3): (Vecto
 		return nil, projected.Z
 	end
 	return Vector2.new(projected.X, projected.Y), projected.Z
+end
+
+local function projectWorldPointToEdge(
+	camera: Camera,
+	worldPosition: Vector3,
+	overlayOrigin: Vector2,
+	viewport: Vector2
+): Vector2
+	local projected = camera:WorldToScreenPoint(worldPosition)
+	local center = viewport * 0.5
+	local direction = Vector2.new(projected.X, projected.Y) - overlayOrigin - center
+	if projected.Z <= 0 then
+		direction = -direction
+	end
+	if direction.Magnitude < 0.001 then
+		direction = Vector2.new(0, 1)
+	end
+
+	local halfWidth = math.max(0, viewport.X * 0.5 - OFFSCREEN_GUIDE_PADDING)
+	local halfHeight = math.max(0, viewport.Y * 0.5 - OFFSCREEN_GUIDE_PADDING)
+	local horizontalScale = if math.abs(direction.X) > 0.001
+		then halfWidth / math.abs(direction.X)
+		else math.huge
+	local verticalScale = if math.abs(direction.Y) > 0.001
+		then halfHeight / math.abs(direction.Y)
+		else math.huge
+	local scale = math.min(horizontalScale, verticalScale)
+	if scale == math.huge then
+		scale = 0
+	end
+	return center + direction * math.max(0, scale)
 end
 
 local function projectWorldBounds(
@@ -503,6 +536,15 @@ function TutorialPresentation.Create(
 			local position = projectWorldPoint(camera, target.WorldPosition)
 			if position then
 				position -= overlayOrigin
+			elseif target.ClampToViewport then
+				position = projectWorldPointToEdge(
+					camera,
+					target.WorldPosition,
+					overlayOrigin,
+					viewport
+				)
+			end
+			if position then
 				local side = math.clamp(math.min(viewport.X, viewport.Y) * 0.2, 110, 260)
 				local rectPosition, rectSize = inflateRect(
 					position - Vector2.new(side * 0.5, side * 0.5),

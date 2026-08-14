@@ -1,10 +1,9 @@
 --[[
-	职责：当前区域任务的下一按钮可执行时，用 HUD.Guide 指向该按钮。
-	输入：TaskPresentation 快照、当前玩家 Plot、ZoneCatalog 和 ButtonRequest 的 Ready 状态。
-	输出：前置区域未满级时指向升级按钮，满级后指向目标区域解锁按钮；只显示小手箭头，
-	不显示遮罩、聚焦高亮或世界 Beam；按钮不可执行时隐藏。
-	内部算法：从 UnlockZone 任务解析目标 Zone；按 Current/Target 选择前置 Upgrade 或目标
-	Unlock 按钮，并使用服务器 GetState 结果决定是否显示。
+	职责：当前区域任务对应的实体按钮可执行时，用 HUD.Guide 指向该按钮。
+	输入：TaskPresentation 快照、任务要求、当前玩家 Plot 和 ButtonRequest 的 Ready 状态。
+	输出：区域等级任务指向升级按钮，区域解锁任务指向解锁按钮；只显示小手箭头，
+	不显示遮罩、聚焦高亮或世界 Beam；屏幕外目标把箭头夹在对应屏幕边缘。
+	内部算法：从当前任务的唯一要求解析按钮合同，再用服务器 GetState 决定是否显示。
 	不负责：任务进度计算、区域解锁权限、金币校验、按钮点击或奖励发放。
 ]]
 
@@ -18,13 +17,13 @@ local LocalPlotButtonAccess = require(
 local TutorialPresentation = require(
 	script.Parent.Parent.Tutorial.TutorialPresentation
 )
+local TutorialController = require(script.Parent.Parent.Tutorial.TutorialController)
 local TaskConfigs = require(ReplicatedStorage.Shared.Task.TaskConfigs)
 local InstancePath = require(ReplicatedStorage.Shared.InstancePath)
 local TaskPresentationProtocol = require(
 	ReplicatedStorage.Shared.Task.TaskPresentationProtocol
 )
 local TaskProtocol = require(ReplicatedStorage.Shared.Task.TaskProtocol)
-local ZoneCatalog = require(ReplicatedStorage.Shared.World.ZoneCatalog)
 
 local TaskGuideController = {}
 
@@ -83,52 +82,31 @@ local function getRemotes(): (RemoteFunction?, RemoteEvent?)
 	return query, taskPresentation
 end
 
-local function getTaskZoneId(snapshot: TaskPresentationProtocol.Snapshot): string?
+local function resolveTaskButton(
+	snapshot: TaskPresentationProtocol.Snapshot
+): (string?, string?)
 	if not snapshot.Visible
 		or not snapshot.TaskId
-		or snapshot.Current == nil
-		or snapshot.Target == nil
 	then
-		return nil
+		return nil, nil
 	end
 
 	local taskDefinition = TaskConfigs.Tasks[snapshot.TaskId]
 	if not taskDefinition then
-		return nil
+		return nil, nil
 	end
 	for _, requirement in taskDefinition.Requirements do
-		if requirement.Kind == TaskProtocol.RequirementKinds.UnlockZone then
-			local zoneId = requirement.Config.ZoneId
-			if type(zoneId) == "string" and zoneId ~= "" then
-				return zoneId
-			end
+		local zoneId = requirement.Config.ZoneId
+		if type(zoneId) ~= "string" or zoneId == "" then
+			continue
+		end
+		if requirement.Kind == TaskProtocol.RequirementKinds.ReachRegionLevel then
+			return zoneId .. "-Upgrade-Button", zoneId
+		elseif requirement.Kind == TaskProtocol.RequirementKinds.UnlockZone then
+			return zoneId .. "-Unlock-Button", zoneId
 		end
 	end
-	return nil
-end
-
-local function resolveNextButton(
-	snapshot: TaskPresentationProtocol.Snapshot
-): (string?, string?)
-	local zoneId = getTaskZoneId(snapshot)
-	if not zoneId then
-		return nil, nil
-	end
-
-	local definition = ZoneCatalog.Get(zoneId)
-	local current = snapshot.Current
-	local target = snapshot.Target
-	if not definition or current == nil or target == nil then
-		return nil, nil
-	end
-	if current < target then
-		local prerequisiteZoneId = definition.UnlockPrerequisiteZoneId
-		if not prerequisiteZoneId then
-			return nil, nil
-		end
-		return prerequisiteZoneId .. "-Upgrade-Button", prerequisiteZoneId
-	end
-	return zoneId .. "-Unlock-Button", zoneId
+	return nil, nil
 end
 
 local function isButtonReady(buttonName: string): boolean
@@ -157,7 +135,7 @@ local function isButtonReady(buttonName: string): boolean
 end
 
 local function resolveTarget(snapshot: TaskPresentationProtocol.Snapshot): BasePart?
-	local buttonName, buttonZoneId = resolveNextButton(snapshot)
+	local buttonName, buttonZoneId = resolveTaskButton(snapshot)
 	if not buttonName or not buttonZoneId then
 		return nil
 	end
@@ -193,6 +171,7 @@ local function applySnapshot()
 			WorldPosition = target.Position,
 			WorldBounds = nil,
 			ScreenCenter = nil,
+			ClampToViewport = true,
 		})
 	elseif currentTarget ~= nil then
 		currentTarget = nil
@@ -206,7 +185,13 @@ local function receiveSnapshot(snapshot): boolean
 		warn("拒绝无效任务箭头引导快照：" .. tostring(reason))
 		return false
 	end
+	local previousTaskId = pendingSnapshot and pendingSnapshot.TaskId
 	pendingSnapshot = snapshot
+	if previousTaskId ~= snapshot.TaskId then
+		checkedButtonName = nil
+		checkedButtonReady = false
+		checkedButtonAt = 0
+	end
 	applySnapshot()
 	return true
 end
@@ -236,6 +221,10 @@ function TaskGuideController.Start()
 	started = true
 
 	task.spawn(function()
+		TutorialController.WaitUntilComplete()
+		if not started or not localPlayer.Parent then
+			return
+		end
 		local playerGui = localPlayer:WaitForChild("PlayerGui") :: PlayerGui
 		local created, reason = TutorialPresentation.Create(playerGui, {
 			NamePrefix = "TaskGuide",

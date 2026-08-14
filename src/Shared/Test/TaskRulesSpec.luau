@@ -35,6 +35,11 @@ function TaskRulesSpec.Run(): boolean
 				Kind = TaskProtocol.RequirementKinds.EarnMoney,
 				Config = { Amount = 100 },
 			},
+			{
+				Id = "RegionLevel",
+				Kind = TaskProtocol.RequirementKinds.ReachRegionLevel,
+				Config = { ZoneId = "R2", TargetLevel = 5 },
+			},
 		},
 		Reward = { Kind = TaskProtocol.RewardKinds.Diamond, Amount = 2 },
 	}
@@ -90,6 +95,25 @@ function TaskRulesSpec.Run(): boolean
 		"金币进度完成和上限错误"
 	)
 	state.Progress.Money = secondMoneyProgress
+
+	local wrongRegionLevel = TaskRules.ApplyEvent(
+		task.Requirements[5],
+		state.Progress.RegionLevel,
+		{ Kind = TaskProtocol.EventKinds.RegionLevelChanged, ZoneId = "R1", Level = 5 }
+	)
+	expect(wrongRegionLevel == nil, "其他区域等级不得推进任务")
+	local regionLevel = TaskRules.ApplyEvent(
+		task.Requirements[5],
+		state.Progress.RegionLevel,
+		{ Kind = TaskProtocol.EventKinds.RegionLevelChanged, ZoneId = "R2", Level = 5 }
+	)
+	expect(
+		regionLevel ~= nil
+			and regionLevel.Current == 5
+			and regionLevel.Completed,
+		"区域等级任务完成错误"
+	)
+	state.Progress.RegionLevel = regionLevel
 	expect(TaskRules.AreAllRequirementsComplete(state), "全部要求完成判断错误")
 
 	local normalized = TaskRules.NormalizeState(task, {
@@ -99,6 +123,17 @@ function TaskRulesSpec.Run(): boolean
 		},
 	})
 	expect(normalized.Completed and normalized.Progress.Money.Current == 100, "任务状态规范化错误")
+
+	local normalizedLevel = TaskRules.NormalizeState(task, {
+		Progress = {
+			RegionLevel = { Kind = "Level", Current = 99, Completed = false },
+		},
+	})
+	expect(
+		normalizedLevel.Progress.RegionLevel.Current == 5
+			and normalizedLevel.Progress.RegionLevel.Completed,
+		"区域等级任务恢复规范化错误"
+	)
 	return true
 end
 

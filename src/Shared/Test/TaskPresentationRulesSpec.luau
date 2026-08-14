@@ -25,30 +25,51 @@ function TaskPresentationRulesSpec.Run(): boolean
 	end
 
 	local snapshot = TaskPresentationRules.Build(TaskConfigs, states, {
-		R2 = { Unlocked = true, Level = 3 },
-		R3 = { Unlocked = false, Level = 0 },
+		R1 = { Unlocked = true, Level = 3 },
+		R2 = { Unlocked = false, Level = 0 },
 	})
 	expect(snapshot.Visible, "存在未完成任务时卡片必须显示")
-	expect(snapshot.TaskId == "UnlockR3", "必须按 Order 显示首个任务")
+	expect(snapshot.TaskId == "UpgradeR1To5", "必须先显示 R1 升级任务")
 	expect(
-		snapshot.Text == "Upgrade Region 2 to Level 5, then unlock Region 3",
-		"区域解锁任务文案错误"
+		snapshot.Text == "Upgrade Region 1 to Level 5",
+		"区域升级任务文案错误"
 	)
 	expect(snapshot.Current == 3 and snapshot.Target == 5, "区域等级进度错误")
 	expect(
-		snapshot.RewardKind == "Diamond" and snapshot.RewardAmount == 100,
-		"R3 钻石奖励展示错误"
+		snapshot.RewardKind == "Diamond" and snapshot.RewardAmount == 5,
+		"R1 升级钻石奖励展示错误"
 	)
 
-	states.UnlockR3.Progress.UnlockZone.Completed = true
-	states.UnlockR3.Progress.UnlockZone.Current = 1
-	states.UnlockR3.Completed = true
+	states.UpgradeR1To5.Progress.ReachRegionLevel.Completed = true
+	states.UpgradeR1To5.Progress.ReachRegionLevel.Current = 5
+	states.UpgradeR1To5.Completed = true
 	local nextSnapshot = TaskPresentationRules.Build(TaskConfigs, states, {
-		R2 = { Unlocked = true, Level = 5 },
-		R3 = { Unlocked = true, Level = 0 },
+		R1 = { Unlocked = true, Level = 5 },
+		R2 = { Unlocked = false, Level = 0 },
 	})
-	expect(nextSnapshot.TaskId == "UnlockR4", "完成 R3 后必须切换到 R4 任务")
-	expect(nextSnapshot.Current == 0 and nextSnapshot.Target == 5, "R4 初始进度错误")
+	expect(nextSnapshot.TaskId == "UnlockR2", "升级 R1 后必须切换到 R2 解锁任务")
+	expect(nextSnapshot.Current == 0 and nextSnapshot.Target == 1, "R2 解锁进度错误")
+
+	states.UnlockR2.Progress.UnlockZone.Completed = true
+	states.UnlockR2.Progress.UnlockZone.Current = 1
+	states.UnlockR2.Completed = true
+	local r2Upgrade = TaskPresentationRules.Build(TaskConfigs, states, {
+		R1 = { Unlocked = true, Level = 5 },
+		R2 = { Unlocked = true, Level = 3 },
+	})
+	expect(r2Upgrade.TaskId == "UpgradeR2To5", "解锁 R2 后必须切换到 R2 升级任务")
+	expect(r2Upgrade.Current == 3 and r2Upgrade.Target == 5, "R2 升级进度错误")
+
+	states.UpgradeR2To5.Progress.ReachRegionLevel.Completed = true
+	states.UpgradeR2To5.Progress.ReachRegionLevel.Current = 5
+	states.UpgradeR2To5.Completed = true
+	local r3Unlock = TaskPresentationRules.Build(TaskConfigs, states, {
+		R2 = { Unlocked = true, Level = 5 },
+		R3 = { Unlocked = false, Level = 0 },
+	})
+	expect(r3Unlock.TaskId == "UnlockR3", "R2 达到 Level 5 后必须切换到 R3 解锁任务")
+	expect(r3Unlock.Current == 0 and r3Unlock.Target == 1, "R3 解锁进度错误")
+	expect(r3Unlock.RewardAmount == 10, "R3 解锁奖励拆分错误")
 
 	local hiddenStates = {}
 	for taskId, definition in TaskConfigs.Tasks do

@@ -78,6 +78,16 @@ local function validateRequirement(requirement, taskId: string, index: number): 
 		if not ZoneCatalog.Get(config.ZoneId) then
 			return false, "UnknownUnlockZoneId:" .. taskId .. ":" .. requirement.Id
 		end
+	elseif requirement.Kind == TaskProtocol.RequirementKinds.ReachRegionLevel then
+		if not isValidIdentifier(config.ZoneId) then
+			return false, "InvalidRegionLevelZoneId:" .. taskId .. ":" .. requirement.Id
+		end
+		if not ZoneCatalog.Get(config.ZoneId) then
+			return false, "UnknownRegionLevelZoneId:" .. taskId .. ":" .. requirement.Id
+		end
+		if not isPositiveInteger(config.TargetLevel) then
+			return false, "InvalidRegionTargetLevel:" .. taskId .. ":" .. requirement.Id
+		end
 	elseif requirement.Kind == TaskProtocol.RequirementKinds.BuildHouse then
 		if not isValidIdentifier(config.HouseId) then
 			return false, "InvalidBuildHouseId:" .. taskId .. ":" .. requirement.Id
@@ -168,7 +178,9 @@ end
 local function progressKindForRequirement(kind: string): string
 	if kind == TaskProtocol.RequirementKinds.EarnMoney then
 		return TaskProtocol.ProgressKinds.Counter
-	elseif kind == TaskProtocol.RequirementKinds.UpgradeMonster then
+	elseif kind == TaskProtocol.RequirementKinds.UpgradeMonster
+		or kind == TaskProtocol.RequirementKinds.ReachRegionLevel
+	then
 		return TaskProtocol.ProgressKinds.Level
 	end
 	return TaskProtocol.ProgressKinds.Boolean
@@ -214,7 +226,9 @@ function TaskRules.NormalizeState(task: TaskDefinition, saved): TaskState
 			or requirement.Kind == TaskProtocol.RequirementKinds.BuildHouse
 		then
 			current = if rawProgress.Completed == true then 1 else 0
-		elseif requirement.Kind == TaskProtocol.RequirementKinds.UpgradeMonster then
+		elseif requirement.Kind == TaskProtocol.RequirementKinds.UpgradeMonster
+			or requirement.Kind == TaskProtocol.RequirementKinds.ReachRegionLevel
+		then
 			current = math.min(current, requirement.Config.TargetLevel)
 		elseif requirement.Kind == TaskProtocol.RequirementKinds.EarnMoney then
 			current = math.min(current, requirement.Config.Amount)
@@ -222,7 +236,8 @@ function TaskRules.NormalizeState(task: TaskDefinition, saved): TaskState
 
 		progress.Current = current
 		progress.Completed = rawProgress.Completed == true
-			or (requirement.Kind == TaskProtocol.RequirementKinds.UpgradeMonster
+			or ((requirement.Kind == TaskProtocol.RequirementKinds.UpgradeMonster
+				or requirement.Kind == TaskProtocol.RequirementKinds.ReachRegionLevel)
 				and current >= requirement.Config.TargetLevel)
 			or (requirement.Kind == TaskProtocol.RequirementKinds.EarnMoney
 				and current >= requirement.Config.Amount)
@@ -270,6 +285,23 @@ function TaskRules.ApplyEvent(
 			Kind = TaskProtocol.ProgressKinds.Boolean,
 			Current = 1,
 			Completed = true,
+		}
+	elseif requirement.Kind == TaskProtocol.RequirementKinds.ReachRegionLevel then
+		if not eventMatches(event, TaskProtocol.EventKinds.RegionLevelChanged)
+			or event.ZoneId ~= config.ZoneId
+			or not ValueValidation.IsFiniteNumber(event.Level)
+			or event.Level < 0
+		then
+			return nil
+		end
+		local current = math.min(
+			config.TargetLevel,
+			math.max(progress.Current, event.Level)
+		)
+		return {
+			Kind = TaskProtocol.ProgressKinds.Level,
+			Current = current,
+			Completed = current >= config.TargetLevel,
 		}
 	elseif requirement.Kind == TaskProtocol.RequirementKinds.BuildHouse then
 		if not eventMatches(event, TaskProtocol.EventKinds.HouseBuilt)

@@ -2,16 +2,13 @@
 	职责：把任务配置、任务状态和区域状态转换为单卡片 UI 快照。
 	输入：任务配置、玩家任务状态、玩家 Zone 状态。
 	输出：第一个未完成任务的文本、进度和奖励；没有任务时返回隐藏快照。
-	内部算法：按 Order 选择第一个未完成任务；单要求任务显示真实进度，多要求任务显示完成要求数；
-	区域解锁任务的进度读取目标区域前置 Zone 的当前等级，完成判定仍由 UnlockZone 状态负责。
+	内部算法：按 Order 选择第一个未完成任务；区域等级任务读取权威 Zone Level，
+	区域解锁任务显示 0/1，多要求任务显示完成要求数。
 	不负责：服务器状态写入、任务完成、发奖、Remote 或 UI Instance。
 ]]
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
 local TaskProtocol = require(script.Parent.TaskProtocol)
 local TaskPresentationProtocol = require(script.Parent.TaskPresentationProtocol)
-local ZoneCatalog = require(ReplicatedStorage.Shared.World.ZoneCatalog)
 
 local TaskPresentationRules = {}
 
@@ -46,15 +43,11 @@ local function singleRequirementProgress(requirement, progress, zoneStates): (nu
 		return clampProgress(progress.Current, config.Amount)
 	elseif kind == TaskProtocol.RequirementKinds.UpgradeMonster then
 		return clampProgress(progress.Current, config.TargetLevel)
+	elseif kind == TaskProtocol.RequirementKinds.ReachRegionLevel then
+		local zoneState: ZoneState? = zoneStates[config.ZoneId]
+		local currentLevel = if zoneState then zoneState.Level else progress.Current
+		return clampProgress(currentLevel, config.TargetLevel)
 	elseif kind == TaskProtocol.RequirementKinds.UnlockZone then
-		local targetZone = ZoneCatalog.Get(config.ZoneId)
-		local prerequisiteZoneId = targetZone and targetZone.UnlockPrerequisiteZoneId
-		local prerequisiteLevel = targetZone and targetZone.UnlockPrerequisiteLevel
-		if prerequisiteZoneId and prerequisiteLevel then
-			local prerequisiteState: ZoneState? = zoneStates[prerequisiteZoneId]
-			local currentLevel = if prerequisiteState then prerequisiteState.Level else 0
-			return clampProgress(currentLevel, prerequisiteLevel)
-		end
 		return clampProgress(if progress.Completed then 1 else progress.Current, 1)
 	end
 	return clampProgress(if progress.Completed then 1 else progress.Current, 1)
