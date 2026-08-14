@@ -21,6 +21,7 @@ local LocalCombatVisibilityService = require(
 	script.Parent.LocalCombatVisibilityService
 )
 local LocalUIModeService = require(script.Parent.LocalUIModeService)
+local TutorialController = require(script.Parent.Parent.Tutorial.TutorialController)
 local UIModeVisibilityRules = require(
 	ReplicatedStorage.Shared.UI.UIModeVisibilityRules
 )
@@ -50,6 +51,7 @@ local pendingSnapshot: TaskPresentationProtocol.Snapshot? = nil
 local queryRemote: RemoteFunction? = nil
 local started = false
 local desiredVisible = false
+local tutorialComplete = false
 
 local function childOf(parent: Instance?, name: string): Instance?
 	return parent and parent:FindFirstChild(name)
@@ -148,6 +150,7 @@ local function applyVisibility()
 		return
 	end
 	current.Root.Visible = desiredVisible
+		and tutorialComplete
 		and LocalUIModeService.IsAllowed(UIModeVisibilityRules.Channels.Gameplay)
 		and not LocalCombatVisibilityService.IsActive()
 end
@@ -268,6 +271,13 @@ function TaskUIController.Start()
 					render(queued)
 				end
 				refreshState()
+				task.spawn(function()
+					TutorialController.WaitUntilComplete()
+					if started then
+						tutorialComplete = true
+						applyVisibility()
+					end
+				end)
 				return
 			end
 			task.wait()
