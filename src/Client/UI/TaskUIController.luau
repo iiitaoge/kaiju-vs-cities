@@ -17,14 +17,7 @@ local TaskPresentationProtocol = require(
 	ReplicatedStorage.Shared.Task.TaskPresentationProtocol
 )
 local CurrencyIconRenderer = require(script.Parent.CurrencyIconRenderer)
-local LocalCombatVisibilityService = require(
-	script.Parent.LocalCombatVisibilityService
-)
-local LocalUIModeService = require(script.Parent.LocalUIModeService)
 local TutorialController = require(script.Parent.Parent.Tutorial.TutorialController)
-local UIModeVisibilityRules = require(
-	ReplicatedStorage.Shared.UI.UIModeVisibilityRules
-)
 
 local TaskUIController = {}
 
@@ -149,10 +142,7 @@ local function applyVisibility()
 	if not current then
 		return
 	end
-	current.Root.Visible = desiredVisible
-		and tutorialComplete
-		and LocalUIModeService.IsAllowed(UIModeVisibilityRules.Channels.Gameplay)
-		and not LocalCombatVisibilityService.IsActive()
+	current.Root.Visible = desiredVisible and tutorialComplete
 end
 
 local function render(snapshot: TaskPresentationProtocol.Snapshot)
@@ -164,7 +154,7 @@ local function render(snapshot: TaskPresentationProtocol.Snapshot)
 
 	if not snapshot.Visible then
 		desiredVisible = false
-		current.Root.Visible = false
+		applyVisibility()
 		return
 	end
 
@@ -263,8 +253,6 @@ function TaskUIController.Start()
 				references = resolved
 				desiredVisible = false
 				resolved.Root.Visible = false
-				LocalUIModeService.Observe(applyVisibility)
-				LocalCombatVisibilityService.Observe(applyVisibility)
 				local queued = pendingSnapshot
 				pendingSnapshot = nil
 				if queued then

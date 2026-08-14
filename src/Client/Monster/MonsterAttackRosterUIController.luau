@@ -21,9 +21,6 @@ local LocalUIVisibilityGate = require(script.Parent.Parent.UI.LocalUIVisibilityG
 local LocalGuiButtonState = require(
 	script.Parent.Parent.UI.LocalGuiButtonState
 )
-local LocalCombatVisibilityService = require(
-	script.Parent.Parent.UI.LocalCombatVisibilityService
-)
 local UIModeVisibilityRules = require(
 	ReplicatedStorage.Shared.UI.UIModeVisibilityRules
 )
@@ -76,29 +73,23 @@ function MonsterAttackRosterUIController.Start()
 		unitTemplate.Visible = false
 
 		local panelDesiredVisible = false
-		local combatAllowsGameplay = not LocalCombatVisibilityService.IsActive()
 		local refreshToken = 0
 		local attackOpening = false
 
 		local panelVisibility = LocalUIVisibilityGate.Create(
 			UIModeVisibilityRules.Channels.Gameplay,
 			function(visible)
-				references.DestroyPanel.Visible = visible and combatAllowsGameplay
+				references.DestroyPanel.Visible = visible
 			end,
 			false
 		)
 		local attackButtonVisibility = LocalUIVisibilityGate.Create(
 			UIModeVisibilityRules.Channels.Gameplay,
 			function(visible)
-				references.AttackButton.Visible = visible and combatAllowsGameplay
+				references.AttackButton.Visible = visible
 			end,
 			false
 		)
-		LocalCombatVisibilityService.Observe(function(active)
-			combatAllowsGameplay = not active
-			panelVisibility:Refresh()
-			attackButtonVisibility:Refresh()
-		end)
 
 		local function clearClonedUnits()
 			for _, child in references.ScrollingFrame:GetChildren() do

@@ -23,9 +23,6 @@ local MonsterExpeditionProgressProtocol = require(
 local MonsterExpeditionTimingConfigs = require(
 	ReplicatedStorage.Shared.Monster.MonsterExpeditionTimingConfigs
 )
-local LocalCombatVisibilityService = require(
-	script.Parent.Parent.UI.LocalCombatVisibilityService
-)
 
 local MonsterExpeditionProgressUIController = {}
 
@@ -119,11 +116,9 @@ end
 local function stop()
 	local run = activeRun
 	if not run then
-		LocalCombatVisibilityService.SetActive(false)
 		return
 	end
 	activeRun = nil
-	LocalCombatVisibilityService.SetActive(false)
 
 	local currentReferences = references
 	if not currentReferences then
@@ -146,7 +141,6 @@ local function start(command: MonsterExpeditionProgressProtocol.StartedCommand)
 	local baseSize = fullBarSize
 	if not currentReferences or not baseSize then
 		pendingCommand = command
-		LocalCombatVisibilityService.SetActive(true)
 		return
 	end
 
@@ -158,7 +152,6 @@ local function start(command: MonsterExpeditionProgressProtocol.StartedCommand)
 		StartedAt = command.StartedAt,
 		PreviousRootVisible = currentReferences.Root.Visible,
 	}
-	LocalCombatVisibilityService.SetActive(true)
 
 	currentReferences.Root.Visible = true
 	currentReferences.ProgressBar.Visible = true
@@ -176,8 +169,6 @@ local function handleCommand(command: MonsterExpeditionProgressProtocol.Command)
 	local run = activeRun
 	if run and isSameExpedition(run, command) then
 		stop()
-	elseif not run then
-		LocalCombatVisibilityService.SetActive(false)
 	end
 end
 
