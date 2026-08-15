@@ -3,12 +3,15 @@
 	输入：本地玩家发起的无参数查询。
 	输出：稳定的成功快照，或 Succeeded=false 与 Reason。
 	内部算法：先检查存档 Ready，再保护调用 TutorialSnapshotQuery。
-	不负责：轮询、UI、Beam、步骤计算或完成写入。
+	不负责：轮询、UI、Beam、步骤计算或完成写入；分析记录失败不影响快照返回。
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local PlayerDataReadyService = require(script.Parent.PlayerDataReadyService)
+local PlayerJourneyAnalyticsCoordinator = require(
+	script.Parent.Analytics.PlayerJourneyAnalyticsCoordinator
+)
 local ServerRemoteAccess = require(script.Parent.ServerRemoteAccess)
 local TutorialSnapshotQuery = require(script.Parent.TutorialSnapshotQuery)
 local TutorialProtocol = require(ReplicatedStorage.Shared.Tutorial.TutorialProtocol)
@@ -25,6 +28,23 @@ remote.OnServerInvoke = function(player)
 	if not succeeded then
 		warn(string.format("查询新手引导异常：%s (%s)", player.Name, tostring(responseOrError)))
 		return { Succeeded = false, Reason = "ServerError" }
+	end
+	if type(responseOrError) == "table"
+		and responseOrError.Succeeded == true
+		and type(responseOrError.StepId) == "string"
+	then
+		local analyticsSucceeded, analyticsError = pcall(
+			PlayerJourneyAnalyticsCoordinator.RecordTutorialStep,
+			player,
+			responseOrError.StepId
+		)
+		if not analyticsSucceeded then
+			warn(string.format(
+				"记录新手引导漏斗失败：%s (%s)",
+				player.Name,
+				tostring(analyticsError)
+			))
+		end
 	end
 	return responseOrError
 end

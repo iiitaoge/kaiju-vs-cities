@@ -27,6 +27,8 @@ return table.freeze({
 	IntentRateWindowSeconds = 10,
 	IntentRateLimit = 30,
 	SessionLoadFunnelName = "SessionLoad",
+	TutorialFunnelName = "TutorialV2",
+	TaskCompletionFunnelName = "TaskCompletion",
 	AttackLaunchFunnelName = "AttackLaunch",
 	MonsterUpgradeFunnelName = "MonsterUpgrade",
 	RebirthFunnelName = "Rebirth",

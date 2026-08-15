@@ -17,7 +17,7 @@
 
 ## Roblox 原生漏斗
 
-所有原生漏斗只从服务器发送。重复流程每次使用新的 GUID `FunnelSessionId`；只有相邻步骤成功才前进，防止客户端跳步污染转化率。
+所有原生漏斗只从服务器发送。Attack/Upgrade/Rebirth 使用新的 GUID `FunnelSessionId`；TutorialV2 和 TaskCompletion 使用可跨重连复用的稳定会话 ID；只有相邻步骤成功才前进，防止客户端跳步污染转化率。
 
 ### `SessionLoad`
 
@@ -27,18 +27,37 @@
 
 `Playable` 表示存档、Plot、City、Monster 和 Character placement 均完成。
 
-### Onboarding（一次性新手漏斗）
+### `TutorialV2`（完整新手漏斗）
 
-1. `Playable`
-2. `First City Built`
-3. `First Cash Collected`
-4. `First City Level 2`
-5. `First Monster Built`
-6. `Attack Targets Loaded`
-7. `Attack Target Selected`
-8. `First Attack Accepted`
+使用命名的重复漏斗，避免旧版 Onboarding 数据和当前步骤混在一起。会话 ID 为 `TutorialV2:<UserId>`，从服务器返回的当前 `TutorialProgression.StepId` 逐级补齐阶段；攻击目标查询成功时记录 `ChooseTarget`。
 
-最后一步是服务器接受攻击，而不是客户端点击；已完成当前教程版本的玩家不会重复进入。
+1. `BuildR1`
+2. `CollectForR1Upgrade`
+3. `UpgradeR1`
+4. `CollectForMonsterBuild`
+5. `BuildMonster`
+6. `WaitForMonsterBuild`
+7. `StartAttack`
+8. `ChooseTarget`
+9. `CollectForDefenseMonsterBuild`
+10. `BuildDefenseMonster`
+11. `Complete`
+
+### `TaskCompletion`（任务汇总漏斗）
+
+所有左侧任务共用一条漏斗，按任务配置 `Order` 依次进入；会话 ID 为 `TaskCompletion:<UserId>:<RebirthCount>`，重生后任务重置并开始新的任务轮次。
+
+1. `Task List Available`
+2. `UpgradeR1To5` Completed
+3. `UnlockR2` Completed
+4. `UpgradeR2To5` Completed
+5. `UnlockR3` Completed
+6. `UpgradeR3To5` Completed
+7. `UnlockR4` Completed
+8. `UpgradeR4To5` Completed
+9. `UnlockR5` Completed
+10. `UpgradeR5To5` Completed
+11. `UnlockR6` Completed
 
 ### `AttackLaunch`
 

@@ -4,13 +4,16 @@
 	输出：Visible、Text、Current/Target、RewardKind/RewardAmount；无任务时返回隐藏快照。
 	内部算法：等待玩家存档就绪 → 同步已在历史状态中完成的区域任务 → 按任务 Order 选择首个未完成任务
 	→ 使用纯 TaskPresentationRules 生成快照 → RemoteEvent 推送。
-	不负责：计算区域解锁权限、发放奖励、修改任务状态或操作 UI Instance。
+	不负责：计算区域解锁权限、发放奖励、修改任务状态、分析规则或操作 UI Instance。
 ]]
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local PlayerDataReadyService = require(script.Parent.PlayerDataReadyService)
+local PlayerJourneyAnalyticsCoordinator = require(
+	script.Parent.Analytics.PlayerJourneyAnalyticsCoordinator
+)
 local ServerRemoteAccess = require(script.Parent.ServerRemoteAccess)
 local TaskEventBus = require(script.Parent.TaskEventBus)
 local TaskService = require(script.Parent.TaskService)
@@ -82,6 +85,29 @@ local function buildSnapshot(player: Player): TaskPresentationProtocol.Snapshot
 	)
 end
 
+local function getCompletedTaskIds(player: Player): { string }
+	local completedTaskIds = {}
+	for taskId, state in TaskStateService.GetAll(player) do
+		if state.Completed then
+			table.insert(completedTaskIds, taskId)
+		end
+	end
+	return completedTaskIds
+end
+
+local function recordTaskFunnel(player: Player)
+	local succeeded, reason = pcall(function()
+		PlayerJourneyAnalyticsCoordinator.RecordTaskListAvailable(player)
+		PlayerJourneyAnalyticsCoordinator.RecordTasksCompleted(
+			player,
+			getCompletedTaskIds(player)
+		)
+	end)
+	if not succeeded then
+		warn("记录任务完成漏斗失败：" .. tostring(reason))
+	end
+end
+
 local function sameSnapshot(
 	left: TaskPresentationProtocol.Snapshot?,
 	right: TaskPresentationProtocol.Snapshot
@@ -109,6 +135,7 @@ local function publish(player: Player): boolean
 		warn("任务卡片快照无效：" .. tostring(reason))
 		return false
 	end
+	recordTaskFunnel(player)
 	if sameSnapshot(lastSnapshots[player], snapshot) then
 		return true
 	end
@@ -153,6 +180,7 @@ local function onRequest(player: Player, requestKind)
 
 	TaskService.Reconcile(player)
 	local snapshot = buildSnapshot(player)
+	recordTaskFunnel(player)
 	lastSnapshots[player] = snapshot
 	return {
 		Succeeded = true,

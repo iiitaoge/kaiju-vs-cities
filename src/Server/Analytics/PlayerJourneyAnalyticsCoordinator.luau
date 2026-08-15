@@ -2,7 +2,7 @@
 	职责：组合受限 UI 意图与服务器权威事实，记录核心漏斗、GA Progression 和关键数值。
 	输入：RecordClientIntent 接收已校验白名单意图；其余 Record 方法接收已提交的服务器结果。
 	输出：向 Roblox 原生漏斗与 GameAnalytics 提交事件；所有方法不影响业务返回值。
-	内部算法：按玩家维护 Attack/Upgrade/Rebirth 会话 → 只允许相邻步骤前进；教程使用一次性漏斗。
+	内部算法：按玩家维护教程、任务、Attack/Upgrade/Rebirth 会话；每条漏斗只允许相邻步骤前进。
 	不负责：接收 Remote、执行业务、修改金钱/等级/存档、计算价格或信任客户端成功声明。
 ]]
 
@@ -17,9 +17,10 @@ local PlayerProgressionSnapshotAnalytics = require(
 )
 local RebirthStateService = require(script.Parent.Parent.RebirthStateService)
 local RobloxFunnelGateway = require(script.Parent.RobloxFunnelGateway)
-local TutorialProgressStateService = require(
-	script.Parent.Parent.TutorialProgressStateService
+local TaskCompletionFunnelRules = require(
+	ReplicatedStorage.Shared.Analytics.TaskCompletionFunnelRules
 )
+local TutorialFunnelRules = require(ReplicatedStorage.Shared.Analytics.TutorialFunnelRules)
 local AnalyticsIntentProtocol = require(
 	ReplicatedStorage.Shared.Analytics.AnalyticsIntentProtocol
 )
@@ -31,9 +32,6 @@ local DefenseMonsterSlotCatalog = require(
 )
 local MonsterSpawnPointCatalog = require(
 	ReplicatedStorage.Shared.Monster.MonsterSpawnPointCatalog
-)
-local TutorialProgression = require(
-	ReplicatedStorage.Shared.Tutorial.TutorialProgression
 )
 
 local PlayerJourneyAnalyticsCoordinator = {}
@@ -49,24 +47,14 @@ type PendingAttackTargetsLoaded = {
 }
 
 type PlayerRecord = {
+	Tutorial: Flow?,
+	TaskCompletion: Flow?,
 	Attack: Flow?,
 	PendingAttackTargetsLoaded: PendingAttackTargetsLoaded?,
 	Upgrade: Flow?,
 	Rebirth: Flow?,
 	MoneyRun: Flow?,
-	TutorialLastStep: number,
 }
-
-local TUTORIAL_STEPS = table.freeze({
-	[1] = "Playable",
-	[2] = "First City Built",
-	[3] = "First Cash Collected",
-	[4] = "First City Level 2",
-	[5] = "First Monster Built",
-	[6] = "Attack Targets Loaded",
-	[7] = "Attack Target Selected",
-	[8] = "First Attack Accepted",
-})
 
 local ATTACK_STEPS = table.freeze({
 	[1] = "Management Opened",
@@ -98,12 +86,13 @@ local function getRecord(player: Player): PlayerRecord
 	local record = records[player]
 	if not record then
 		record = {
+			Tutorial = nil,
+			TaskCompletion = nil,
 			Attack = nil,
 			PendingAttackTargetsLoaded = nil,
 			Upgrade = nil,
 			Rebirth = nil,
 			MoneyRun = nil,
-			TutorialLastStep = 0,
 		}
 		records[player] = record
 	end
@@ -121,6 +110,42 @@ local function getMoneyRunFlow(player: Player, rebirthCount: number): Flow
 		}
 	end
 	return record.MoneyRun
+end
+
+local function getTutorialFlow(player: Player): Flow
+	local record = getRecord(player)
+	local sessionId = string.format(
+		"%s:%d",
+		GameAnalyticsConfig.TutorialFunnelName,
+		player.UserId
+	)
+	if not record.Tutorial or record.Tutorial.SessionId ~= sessionId then
+		record.Tutorial = {
+			SessionId = sessionId,
+			SubjectId = nil,
+			LastStep = 0,
+		}
+	end
+	return record.Tutorial
+end
+
+local function getTaskCompletionFlow(player: Player): Flow
+	local record = getRecord(player)
+	local rebirth = RebirthStateService.Get(player)
+	local sessionId = string.format(
+		"%s:%d:%d",
+		GameAnalyticsConfig.TaskCompletionFunnelName,
+		player.UserId,
+		rebirth.Count
+	)
+	if not record.TaskCompletion or record.TaskCompletion.SessionId ~= sessionId then
+		record.TaskCompletion = {
+			SessionId = sessionId,
+			SubjectId = nil,
+			LastStep = 0,
+		}
+	end
+	return record.TaskCompletion
 end
 
 local function newFlow(subjectId: string?): Flow
@@ -190,28 +215,67 @@ local function reasonCategory(reason: string?): string
 	return string.sub(category, 1, 32)
 end
 
-local function logTutorialStep(player: Player, step: number): boolean
-	local record = getRecord(player)
-	local stepName = TUTORIAL_STEPS[step]
-	-- Roblox 会自动补齐跳过的漏斗步骤；6~8 必须在本服会话中连续上报，保留名称。
-	if not stepName
-		or step <= record.TutorialLastStep
-		or (step >= 6 and step ~= record.TutorialLastStep + 1)
-		or TutorialProgressStateService.Get(player) >= TutorialProgression.CurrentVersion
-	then
+local function logTutorialStep(player: Player, stepId: string): boolean
+	local targetStep = TutorialFunnelRules.GetStep(stepId)
+	if not targetStep then
 		return false
 	end
-	if not RobloxFunnelGateway.LogOnboardingStep(player, step, stepName) then
+	local flow = getTutorialFlow(player)
+	if targetStep.Step <= flow.LastStep then
 		return false
 	end
-	record.TutorialLastStep = step
+
+	local advanced = false
+	local steps = TutorialFunnelRules.GetSteps()
+	for stepNumber = flow.LastStep + 1, targetStep.Step do
+		local step = steps[stepNumber]
+		if not step
+			or not RobloxFunnelGateway.LogRecurringStep(
+				player,
+				GameAnalyticsConfig.TutorialFunnelName,
+				flow.SessionId,
+				step.Step,
+				step.Name
+			)
+		then
+			break
+		end
+		flow.LastStep = step.Step
+		advanced = true
+		GameAnalyticsGateway.LogProgression(
+			player,
+			"Complete",
+			"Tutorial",
+			GameAnalyticsConfig.TutorialFunnelName,
+			step.StepId,
+			step.Step
+		)
+	end
+	return advanced
+end
+
+local function logTaskStep(player: Player, step: TaskCompletionFunnelRules.Step): boolean
+	local flow = getTaskCompletionFlow(player)
+	if flow.LastStep ~= step.Step - 1 then
+		return false
+	end
+	if not RobloxFunnelGateway.LogRecurringStep(
+		player,
+		GameAnalyticsConfig.TaskCompletionFunnelName,
+		flow.SessionId,
+		step.Step,
+		step.Name
+	) then
+		return false
+	end
+	flow.LastStep = step.Step
 	GameAnalyticsGateway.LogProgression(
 		player,
 		"Complete",
-		"Tutorial",
-		"V" .. TutorialProgression.CurrentVersion,
-		string.gsub(stepName, " ", "-"),
-		step
+		"Task",
+		GameAnalyticsConfig.TaskCompletionFunnelName,
+		step.Name,
+		step.Step
 	)
 	return true
 end
@@ -231,8 +295,51 @@ local function logBalanceAfter(
 end
 
 function PlayerJourneyAnalyticsCoordinator.RecordPlayable(player: Player)
-	logTutorialStep(player, 1)
 	PlayerProgressionSnapshotAnalytics.Log(player, "Playable")
+end
+
+-- 输入：服务器刚返回的当前 TutorialProgression StepId。
+-- 输出：无；只把当前步骤按顺序写入 TutorialV2 漏斗。
+-- 内部算法：使用玩家稳定会话和相邻步骤校验，重复轮询不会重复上报。
+function PlayerJourneyAnalyticsCoordinator.RecordTutorialStep(
+	player: Player,
+	stepId: string
+): boolean
+	return logTutorialStep(player, stepId)
+end
+
+-- 输入：任务面板已经由服务器准备好可读取的任务列表。
+-- 输出：无；只写入任务汇总漏斗入口阶段。
+-- 内部算法：使用玩家 + 重生次数作为任务轮次，入口失败时等待下一次任务快照重试。
+function PlayerJourneyAnalyticsCoordinator.RecordTaskListAvailable(player: Player): boolean
+	return logTaskStep(player, TaskCompletionFunnelRules.GetEntryStep())
+end
+
+-- 输入：当前已经完成的全部任务 Id 列表。
+-- 输出：无；只补齐按任务 Order 排列且连续可达的完成阶段。
+-- 内部算法：映射任务 Id → 漏斗阶段并排序；网关失败或阶段断档时停在当前阶段。
+function PlayerJourneyAnalyticsCoordinator.RecordTasksCompleted(
+	player: Player,
+	completedTaskIds: { string }
+): boolean
+	local steps = {}
+	for _, taskId in completedTaskIds do
+		local step = TaskCompletionFunnelRules.GetTaskStep(taskId)
+		if step then
+			table.insert(steps, step)
+		end
+	end
+	table.sort(steps, function(left, right)
+		return left.Step < right.Step
+	end)
+
+	local advanced = false
+	for _, step in steps do
+		if logTaskStep(player, step) then
+			advanced = true
+		end
+	end
+	return advanced
 end
 
 -- 输入：已由 MoneyService.Earn 累加后的玩家本轮收入。
@@ -304,11 +411,6 @@ function PlayerJourneyAnalyticsCoordinator.RecordRegionLevel(
 		level = tostring(level),
 		cost = tostring(cost),
 	})
-	if regionId == "R1" and level == 1 then
-		logTutorialStep(player, 2)
-	elseif regionId == "R1" and level == 2 then
-		logTutorialStep(player, 4)
-	end
 end
 
 function PlayerJourneyAnalyticsCoordinator.RecordManualIncome(
@@ -317,7 +419,6 @@ function PlayerJourneyAnalyticsCoordinator.RecordManualIncome(
 	balance: number
 )
 	if collected > 0 then
-		logTutorialStep(player, 3)
 		logBalanceAfter(player, "ManualIncome", balance, {
 			collected = tostring(collected),
 		})
@@ -384,10 +485,6 @@ function PlayerJourneyAnalyticsCoordinator.RecordMonsterPurchase(
 		level = tostring(level),
 		cost = tostring(cost),
 	})
-	if action == "Build" and spawnPointId == "M1-S1" then
-		logTutorialStep(player, 5)
-	end
-
 	if action == "Upgrade" then
 		local record = getRecord(player)
 		if advanceFlow(
@@ -439,8 +536,8 @@ function PlayerJourneyAnalyticsCoordinator.RecordAttackTargetsLoaded(
 			SubjectId = attack.SubjectId,
 		}
 	end
-	-- 新手漏斗与 AttackLaunch 是两条独立漏斗；目标查询成功即可完成新手第 6 步。
-	logTutorialStep(player, 6)
+	-- 目标查询成功后，当前完整新手引导进入 ChooseTarget。
+	logTutorialStep(player, "ChooseTarget")
 	GameAnalyticsGateway.LogDesign(player, "Gameplay:Attack:TargetsLoaded", targetCount)
 end
 
@@ -474,7 +571,6 @@ function PlayerJourneyAnalyticsCoordinator.RecordAttackAccepted(
 	)
 	record.Attack = nil
 	record.PendingAttackTargetsLoaded = nil
-	logTutorialStep(player, 8)
 end
 
 function PlayerJourneyAnalyticsCoordinator.RecordAttackRejected(
@@ -722,8 +818,6 @@ function PlayerJourneyAnalyticsCoordinator.RecordClientIntent(
 			4,
 			subjectId
 		)
-		-- 合法目标选择本身完成新手第 7 步，不依赖 AttackLaunch 会话是否顺序到达。
-		logTutorialStep(player, 7)
 		GameAnalyticsGateway.LogDesign(player, "UI:Attack:TargetSelected:" .. subjectId)
 		return true
 	end
