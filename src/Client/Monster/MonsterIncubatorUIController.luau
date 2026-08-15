@@ -255,6 +255,13 @@ function MonsterIncubatorUIController.Start()
 				startFrame.Visible = boundTargetKind == "Attack"
 			end
 			refs.StartValue.Text = if state.Mode == "SelectingAttack" then "Select Target" else "Start"
+			local requiresRebirth = boundTargetKind == "Attack"
+				and snapshot ~= nil
+				and snapshot.Upgrade.Reason == "RebirthRequired"
+			refs.Diamond.Visible = not requiresRebirth
+			if refs.MoneyIcon then
+				refs.MoneyIcon.Visible = not requiresRebirth
+			end
 
 			if snapshot then
 				local definition = snapshot.MonsterKey and MonsterCatalog.Get(snapshot.MonsterKey)
@@ -286,7 +293,7 @@ function MonsterIncubatorUIController.Start()
 				and type(paidUpgrade.ProductId) == "number"
 				and paidUpgrade.ProductId > 0
 				and paidUpgrade.Allowed == true
-			local showRobuxSlot = canInteract and robuxButton ~= nil
+			local showRobuxSlot = not requiresRebirth and canInteract and robuxButton ~= nil
 			if showRobuxSlot then
 				refs.Robux.Visible = true
 				if robuxValue then

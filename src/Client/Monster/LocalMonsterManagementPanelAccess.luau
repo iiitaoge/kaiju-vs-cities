@@ -1,7 +1,7 @@
 --[[
 	职责：解析 HUD.Panel 中供怪兽攻击与升级共用的管理面板。
 	输入：本地 PlayerGui。
-	输出：HUD.Panel、标题、发动攻击按钮、金币逐级升级按钮、钻石满级升级按钮及其显示文本；失败返回稳定原因。
+	输出：HUD.Panel、标题、发动攻击按钮、金币逐级升级按钮、钻石满级升级按钮及其显示控件；失败返回稳定原因。
 	内部算法：按 HUD.Panel 的稳定层级解析控件；Money 数值兼容旧模板的 Frame 和新 HUD 的 Money 子节点。
 	不负责：面板显隐、怪兽状态、攻击目标、升级请求或货币计算。
 ]]
@@ -16,6 +16,8 @@ export type References = {
 	StartValue: TextLabel,
 	MoneyButton: TextButton,
 	MoneyValue: TextLabel,
+	MoneyIcon: ImageLabel?,
+	Diamond: Frame,
 	DiamondButton: TextButton,
 	DiamondValue: TextLabel,
 	DiamondTip: TextLabel,
@@ -63,6 +65,7 @@ function LocalMonsterManagementPanelAccess.Resolve(
 	local moneyValueFrame = childOfClass(moneyButton, "Money", "Frame")
 		or childOfClass(moneyButton, "Frame", "Frame")
 	local moneyValue = childOfClass(moneyValueFrame, "Val", "TextLabel")
+	local moneyIcon = childOfClass(moneyValueFrame, "Icon", "ImageLabel")
 	if not moneyButton or not moneyValue then
 		return missing("HUD.Panel.Money.Button.Money.Val")
 	end
@@ -94,6 +97,8 @@ function LocalMonsterManagementPanelAccess.Resolve(
 		StartValue = startValue :: TextLabel,
 		MoneyButton = moneyButton :: TextButton,
 		MoneyValue = moneyValue :: TextLabel,
+		MoneyIcon = moneyIcon :: ImageLabel?,
+		Diamond = diamondFrame :: Frame,
 		DiamondButton = diamondButton :: TextButton,
 		DiamondValue = diamondValue :: TextLabel,
 		DiamondTip = diamondTip :: TextLabel,
