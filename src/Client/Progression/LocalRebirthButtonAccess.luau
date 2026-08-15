@@ -84,6 +84,7 @@ function LocalRebirthButtonAccess.Resolve(button: Model)
 		InfoFrame = infoFrame,
 		InfoTitle = infoTitle,
 		Introduction = introduction,
+		RebirthFrame = rebirthFrame,
 	}
 end
 

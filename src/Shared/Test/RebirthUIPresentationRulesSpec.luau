@@ -31,7 +31,7 @@ function Spec.Run(): boolean
 	})
 	assert(insufficient.Enabled and not insufficient.CanExecute, "收入不足时不得点击")
 	assert(insufficient.RequirementText == "1M", "门槛应使用紧凑格式")
-	assert(insufficient.InfoTitleText == "250K more required", "剩余门槛显示错误")
+	assert(insufficient.InfoTitleText == "", "收入不足时不应显示额外标题")
 
 	local ready = Rules.Resolve({
 		Status = "Ready",
@@ -50,9 +50,13 @@ function Spec.Run(): boolean
 		ActivationAllowed = true,
 	})
 	assert(ready.CanExecute and ready.ActionText == "Rebirth", "资格满足时应允许点击")
+	assert(ready.InfoTitleText == "", "资格满足时不应显示 Ready 文案")
 	assert(string.find(ready.IntroductionText, "Configured level text", 1, true), "未使用重生等级配置文案")
 	assert(string.find(ready.IntroductionText, "Configured reward text", 1, true), "未使用重生奖励配置文案")
-	assert(string.find(ready.IntroductionText, "becomes 1", 1, true), "缺少下一次重生次数")
+	assert(
+		not string.find(ready.IntroductionText, "Progress resets", 1, true),
+		"不应显示进度重置文案"
+	)
 
 	local tooFar = Rules.Resolve({
 		Status = "Ready",
@@ -74,8 +78,8 @@ function Spec.Run(): boolean
 	assert(not tooFar.CanExecute, "距离按钮过远时不得点击")
 	assert(tooFar.ActionText == "Approach", "距离按钮过远时应提示靠近")
 	assert(
-		tooFar.InfoTitleText == "Approach the rebirth button",
-		"距离按钮过远时说明错误"
+		tooFar.InfoTitleText == "",
+		"距离按钮过远时不应显示额外标题"
 	)
 	return true
 end

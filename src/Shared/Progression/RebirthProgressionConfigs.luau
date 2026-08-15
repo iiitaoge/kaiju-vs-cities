@@ -12,6 +12,23 @@
 	- MonsterMoveSpeedMultiplier：怪兽基础移动速度乘以该值。
 ]]
 
+local function rewardText(
+	income: string,
+	build: string,
+	damage: string,
+	health: string,
+	move: string
+): string
+	return table.concat({
+		"Next rewards:",
+		"Income x" .. income,
+		"Build x" .. build,
+		"Damage x" .. damage,
+		"HP x" .. health,
+		"Move x" .. move,
+	}, "\n")
+end
+
 local config = {
 	Button = {
 		ButtonName = "Rebirth-Button",
@@ -59,27 +76,27 @@ local config = {
 	Presentation = {
 		[1] = {
 			LevelText = "Kaiju max Lv. 15 → 30",
-			RewardText = "Next rewards: Income x1.25 · Build x1.1 · Damage x1.15 · HP x1.1 · Move x1.02",
+			RewardText = rewardText("1.25", "1.1", "1.15", "1.1", "1.02"),
 		},
 		[2] = {
 			LevelText = "Kaiju max Lv. 30 → 45",
-			RewardText = "Next rewards: Income x1.5 · Build x1.2 · Damage x1.3 · HP x1.2 · Move x1.04",
+			RewardText = rewardText("1.5", "1.2", "1.3", "1.2", "1.04"),
 		},
 		[3] = {
 			LevelText = "Kaiju max Lv. 45 → 60",
-			RewardText = "Next rewards: Income x1.75 · Build x1.3 · Damage x1.45 · HP x1.3 · Move x1.06",
+			RewardText = rewardText("1.75", "1.3", "1.45", "1.3", "1.06"),
 		},
 		[4] = {
 			LevelText = "Kaiju max Lv. 60 → 75",
-			RewardText = "Next rewards: Income x2 · Build x1.4 · Damage x1.6 · HP x1.4 · Move x1.08",
+			RewardText = rewardText("2", "1.4", "1.6", "1.4", "1.08"),
 		},
 		[5] = {
 			LevelText = "Kaiju max Lv. 75 · All forms unlocked",
-			RewardText = "Next rewards: Income x2.25 · Build x1.5 · Damage x1.75 · HP x1.5 · Move x1.1",
+			RewardText = rewardText("2.25", "1.5", "1.75", "1.5", "1.1"),
 		},
 		Default = {
 			LevelText = "Kaiju max Lv. 75 · All forms unlocked",
-			RewardText = "Next rewards: Permanent bonuses continue to grow",
+			RewardText = "Next rewards:\nPermanent bonuses continue to grow",
 		},
 	},
 }

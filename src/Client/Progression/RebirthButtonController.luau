@@ -39,11 +39,22 @@ local AnalyticsIntentProtocol = require(
 
 local RebirthButtonController = {}
 
-local function configureInformationLayout(ui)
-	-- 新模板已经由 Studio 配置好 Info 布局；这里只屏蔽未配置资源的占位图。
+local function configureInformationLayout(ui, showInfoTitle: boolean)
+	-- 标题隐藏时，说明区域占满标题与操作按钮之间的可用空间。
+	-- 全部使用模板坐标系中的比例，保持 Billboard 在不同屏幕上的布局一致。
 	if ui.BuyIcon then
 		ui.BuyIcon.Visible = false
 	end
+	ui.InfoTitle.Visible = showInfoTitle
+	if showInfoTitle then
+		ui.Introduction.Position = UDim2.fromScale(0.5, 0.2)
+		ui.Introduction.Size = UDim2.fromScale(0.95, 0.5)
+		ui.Introduction.TextYAlignment = Enum.TextYAlignment.Center
+		return
+	end
+	ui.Introduction.Position = UDim2.fromScale(0.5, 0.02)
+	ui.Introduction.Size = UDim2.fromScale(0.95, 0.7)
+	ui.Introduction.TextYAlignment = Enum.TextYAlignment.Top
 end
 
 -- 输入：按钮世界包围盒、UI 锚点零件及 Billboard 的世界尺寸。
@@ -109,7 +120,7 @@ function RebirthButtonController.Start()
 	end
 
 	local ui = LocalRebirthButtonAccess.Resolve(button)
-	configureInformationLayout(ui)
+	configureInformationLayout(ui, false)
 	ui.Billboard.Adornee = ui.Pull
 	placeBillboardAboveButton(button, ui.Pull, ui.Billboard)
 	attachBillboardToLocalPlayerGui(ui.Billboard)
@@ -159,6 +170,7 @@ function RebirthButtonController.Start()
 		ui.RequirementValue.Text = presentation.RequirementText
 		ui.InfoTitle.Text = presentation.InfoTitleText
 		ui.Introduction.Text = presentation.IntroductionText
+		configureInformationLayout(ui, presentation.InfoTitleText ~= "")
 		setGuiButtonsEnabled(not busy)
 		setPhysicalButtonState(snapshot.Status)
 	end

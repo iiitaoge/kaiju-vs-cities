@@ -44,7 +44,7 @@ local function formatNextBonuses(bonuses): string
 	for _, field in BONUS_FIELDS do
 		table.insert(parts, field.Label .. " x" .. formatMultiplier(bonuses[field.Key]))
 	end
-	return "Next rewards: " .. table.concat(parts, " · ")
+	return "Next rewards:\n" .. table.concat(parts, "\n")
 end
 
 local function validPresentation(value): boolean
@@ -85,11 +85,7 @@ function RebirthUIPresentationRules.Resolve(snapshot)
 		then "Saving rebirth..."
 		elseif status == "Failed"
 		then "Rebirth unavailable"
-		elseif activationBlocked
-		then "Approach the rebirth button"
-		elseif canExecute
-		then "Ready to rebirth"
-		else CompactNumberFormatter.Format(snapshot.RemainingRunEarnings) .. " more required"
+		else ""
 	local levelText = if validPresentation(snapshot.NextPresentation)
 		then snapshot.NextPresentation.LevelText
 		elseif snapshot.CurrentMaxLevel < snapshot.NextMaxLevel
@@ -114,10 +110,9 @@ function RebirthUIPresentationRules.Resolve(snapshot)
 		RequirementText = CompactNumberFormatter.Format(snapshot.RequiredRunEarnings),
 		InfoTitleText = infoTitle,
 		IntroductionText = string.format(
-			"%s\n%s\nProgress resets · Rebirth count becomes %d",
+			"%s\n%s",
 			levelText,
-			rewardText,
-			snapshot.NextCount
+			rewardText
 		),
 	}
 end

@@ -81,7 +81,7 @@ function RebirthProgressionRulesSpec.Run(): boolean
 		"第二次重生等级文案配置错误"
 	)
 	expect(
-		configuredPresentation.RewardText == "Next rewards: Income x1.5 · Build x1.2 · Damage x1.3 · HP x1.2 · Move x1.04",
+		configuredPresentation.RewardText == "Next rewards:\nIncome x1.5\nBuild x1.2\nDamage x1.3\nHP x1.2\nMove x1.04",
 		"第二次重生奖励文案配置错误"
 	)
 	local fallbackPresentation = RebirthProgressionRules.ResolvePresentation(
