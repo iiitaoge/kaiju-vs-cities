@@ -1,6 +1,6 @@
 --[[
 	职责：从共享 Attachment 模板创建一个仅本客户端存在的世界 UI，并应用完整显示快照。
-	输入：房屋 Model 顶部或按钮 BasePart，以及显示快照。
+	输入：房屋 Model 顶部或按钮 BasePart、显示快照和可选的 Billboard 显示策略。
 	输出：可 Apply / Destroy 的本地句柄。
 	内部算法：Clone 模板 → 计算世界锚点到父零件的局部位置 → 严格解析 Text1～Text5/Money。
 	不负责：业务查询、收入/HP 计算、按钮 Remote 或选择玩家 Plot。
@@ -26,6 +26,11 @@ export type Handle = {
 	Destroy: (self: Handle) -> (),
 }
 
+export type BillboardOptions = {
+	AlwaysOnTop: boolean?,
+	MaxDistance: number?,
+}
+
 local function firstBasePart(model: Model): BasePart?
 	if model.PrimaryPart then
 		return model.PrimaryPart
@@ -47,7 +52,8 @@ end
 local function createAt(
 	parentPart: BasePart,
 	worldPosition: Vector3,
-	localName: string
+	localName: string,
+	billboardOptions: BillboardOptions?
 ): Handle
 	local attachment = template:Clone()
 	attachment.Name = localName
@@ -62,6 +68,14 @@ local function createAt(
 	end
 	local money = requireChild(panel, "Money", "Frame") :: Frame
 	local moneyValue = requireChild(money, "Val", "TextLabel") :: TextLabel
+	if billboardOptions then
+		if billboardOptions.AlwaysOnTop ~= nil then
+			billboard.AlwaysOnTop = billboardOptions.AlwaysOnTop
+		end
+		if billboardOptions.MaxDistance ~= nil then
+			billboard.MaxDistance = billboardOptions.MaxDistance
+		end
+	end
 
 	billboard.Enabled = false
 	attachment.Parent = parentPart
@@ -125,14 +139,18 @@ function LocalWorldObjectUI.CreateAboveModel(model: Model, localName: string): H
 	local worldPosition = boundsCFrame.Position
 		+ boundsCFrame.UpVector
 			* (boundsSize.Y * 0.5 + WorldObjectUIPlacement.HouseTopOffsetStuds)
-	return createAt(parentPart, worldPosition, localName)
+	return createAt(parentPart, worldPosition, localName, nil)
 end
 
-function LocalWorldObjectUI.CreateAbovePart(part: BasePart, localName: string): Handle
+function LocalWorldObjectUI.CreateAbovePart(
+	part: BasePart,
+	localName: string,
+	billboardOptions: BillboardOptions?
+): Handle
 	assert(part:IsA("BasePart"), "part 必须是 BasePart")
 	local worldPosition = part.Position
 		+ part.CFrame.UpVector * WorldObjectUIPlacement.ButtonTopOffsetStuds
-	return createAt(part, worldPosition, localName)
+	return createAt(part, worldPosition, localName, billboardOptions)
 end
 
 return LocalWorldObjectUI

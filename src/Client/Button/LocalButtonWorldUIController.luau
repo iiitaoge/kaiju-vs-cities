@@ -2,7 +2,8 @@
 	职责：为一个已配置实体按钮创建并更新仅本地可见的 WorldObjectUI。
 	输入：按钮 Model、服务器返回的完整显示快照。
 	输出：可 SetPresentation / Destroy 的句柄。
-	内部算法：固定使用按钮合同中的 Pull 作为锚点，委托通用 UI 应用快照。
+	内部算法：固定使用按钮合同中的 Pull 作为锚点，委托通用 UI 应用快照；按钮文案
+		始终置顶且不按距离裁掉，避免移动端被场景遮挡。
 	不负责：按钮触碰、颜色、业务请求或价格计算。
 ]]
 
@@ -17,7 +18,12 @@ function LocalButtonWorldUIController.Bind(button: Model)
 
 	local worldUI = LocalWorldObjectUI.CreateAbovePart(
 		pull,
-		"LocalButtonWorldUI"
+		"LocalButtonWorldUI",
+		{
+			AlwaysOnTop = true,
+			-- 0 表示不限制渲染距离；按钮 UI 不会因相机远离而消失。
+			MaxDistance = 0,
+		}
 	)
 	local destroyed = false
 	local handle = {}
