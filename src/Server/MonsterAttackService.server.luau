@@ -14,6 +14,9 @@ local PlayerMonsterAttackApplication = require(script.Parent.PlayerMonsterAttack
 local PlayerSoloMonsterAttackApplication = require(
 	script.Parent.PlayerSoloMonsterAttackApplication
 )
+local DefenseMonsterSpawnPointStateService = require(
+	script.Parent.DefenseMonsterSpawnPointStateService
+)
 local GameAnalyticsGateway = require(script.Parent.Analytics.GameAnalyticsGateway)
 local PlayerJourneyAnalyticsCoordinator = require(
 	script.Parent.Analytics.PlayerJourneyAnalyticsCoordinator
@@ -27,6 +30,14 @@ local MonsterAttackProtocol = require(ReplicatedStorage.Shared.Monster.MonsterAt
 local ValueValidation = require(ReplicatedStorage.Shared.ValueValidation)
 
 local attackCoordinateLog = DebugLog.Create("AttackSelectionCoordinates")
+
+local function advanceTutorialAfterAttack(player: Player)
+	if DefenseMonsterSpawnPointStateService.Get(player, "DM-R1").Built then
+		TutorialProgressStateService.Complete(player)
+	else
+		TutorialProgressStateService.MarkAttackCompleted(player)
+	end
+end
 
 local function vector3Text(value: Vector3): string
 	return string.format("(%.2f,%.2f,%.2f)", value.X, value.Y, value.Z)
@@ -118,7 +129,7 @@ commandRemote.OnServerInvoke = function(player, spawnPointId, targetPlayerId, en
 	end
 	if responseOrError.Succeeded then
 		PlayerJourneyAnalyticsCoordinator.RecordAttackAccepted(player, spawnPointId)
-		TutorialProgressStateService.Complete(player)
+		advanceTutorialAfterAttack(player)
 	else
 		local reason = responseOrError.Reason or "Unknown"
 		PlayerJourneyAnalyticsCoordinator.RecordAttackRejected(
@@ -191,7 +202,7 @@ soloCommandRemote.OnServerInvoke = function(player, spawnPointId, entryPoint)
 	end
 	if responseOrError.Succeeded then
 		PlayerJourneyAnalyticsCoordinator.RecordAttackAccepted(player, spawnPointId)
-		TutorialProgressStateService.Complete(player)
+		advanceTutorialAfterAttack(player)
 		GameAnalyticsGateway.LogDesign(
 			player,
 			"Gameplay:SoloAttack:Accepted:" .. spawnPointId

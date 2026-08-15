@@ -33,6 +33,9 @@ local MonsterSpawnPointActionQuery = require(script.Parent.Parent.MonsterSpawnPo
 local MonsterSpawnPointPurchaseCoordinator = require(
 	script.Parent.Parent.MonsterSpawnPointPurchaseCoordinator
 )
+local TutorialProgressStateService = require(
+	script.Parent.Parent.TutorialProgressStateService
+)
 local ButtonPresentationQuery = require(script.Parent.ButtonPresentationQuery)
 local handlers = {
 	IncomeZonePrimary = function(player, action)
@@ -63,6 +66,9 @@ local handlers = {
 			player,
 			action.SpawnPointId
 		)
+		if outcome.Succeeded and action.SpawnPointId == "DM-R1" then
+			TutorialProgressStateService.CompleteAfterDefenseMonsterBuild(player)
+		end
 		return nil, outcome.NextButtonState, outcome.Reason
 	end,
 }

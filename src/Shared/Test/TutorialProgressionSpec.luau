@@ -7,6 +7,9 @@ local TutorialProgression = require(
 local TutorialProgressionSpec = {}
 
 local function expectStep(input, expected: string)
+	if input.AttackCompleted == nil then
+		input.AttackCompleted = false
+	end
 	input.FirstDefenseMonsterBuildCost = input.FirstDefenseMonsterBuildCost or 500
 	if input.FirstDefenseMonsterBuilt == nil then
 		input.FirstDefenseMonsterBuilt = false
@@ -88,6 +91,16 @@ function TutorialProgressionSpec.Run(): boolean
 		FirstMonsterBuildCost = firstMonsterBuildCost,
 		FirstMonsterBuilt = true,
 		FirstMonsterBuildInProgress = false,
+	}, "StartAttack")
+	expectStep({
+		CompletedVersion = 0,
+		R1Level = 2,
+		Money = 0,
+		R1UpgradeCost = r1UpgradeCost,
+		FirstMonsterBuildCost = firstMonsterBuildCost,
+		FirstMonsterBuilt = true,
+		FirstMonsterBuildInProgress = false,
+		AttackCompleted = true,
 		FirstDefenseMonsterBuildCost = firstDefenseMonsterBuildCost,
 	}, "CollectForDefenseMonsterBuild")
 	expectStep({
@@ -98,6 +111,7 @@ function TutorialProgressionSpec.Run(): boolean
 		FirstMonsterBuildCost = firstMonsterBuildCost,
 		FirstMonsterBuilt = true,
 		FirstMonsterBuildInProgress = false,
+		AttackCompleted = true,
 		FirstDefenseMonsterBuildCost = firstDefenseMonsterBuildCost,
 	}, "BuildDefenseMonster")
 	expectStep({
@@ -108,9 +122,10 @@ function TutorialProgressionSpec.Run(): boolean
 		FirstMonsterBuildCost = firstMonsterBuildCost,
 		FirstMonsterBuilt = true,
 		FirstMonsterBuildInProgress = false,
+		AttackCompleted = true,
 		FirstDefenseMonsterBuildCost = firstDefenseMonsterBuildCost,
 		FirstDefenseMonsterBuilt = true,
-	}, "StartAttack")
+	}, "Complete")
 	expectStep({
 		CompletedVersion = TutorialProgression.CurrentVersion,
 		R1Level = 0,

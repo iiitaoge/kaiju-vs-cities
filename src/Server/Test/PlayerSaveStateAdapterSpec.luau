@@ -73,6 +73,7 @@ function PlayerSaveStateAdapterSpec.Run(player: Player?): boolean
 		normalized.Tutorial.Version == TutorialProgression.CurrentVersion,
 		"引导完成版本没有进入存档"
 	)
+	expect(normalized.Tutorial.AttackCompleted, "攻击完成状态没有进入存档")
 	expect(normalized.Houses["R1-H1"].Built, "Destroyed 房屋仍是已建资产")
 	expect(normalized.Houses["R1-H1"].LifeState == nil, "不得保存房屋临时生命周期")
 	expect(normalized.Monsters.SpawnPoints["M1-S1"].Health == nil, "不得保存怪兽临时血量")

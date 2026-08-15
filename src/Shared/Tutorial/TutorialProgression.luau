@@ -1,8 +1,8 @@
 --[[
 	职责：定义新手引导的英文文案、目标类型，并由权威进度快照解析当前步骤。
-	输入：Resolve 接收完成版本、R1 等级、余额、三项权威费用、M1-S1/DM-R1 建造状态和事务状态。
+	输入：Resolve 接收完成版本、首次攻击完成状态、R1 等级、余额、三项权威费用、M1-S1/DM-R1 建造状态和事务状态。
 	输出：稳定 StepId；GetDefinition 返回该步骤的纯表现配置。
-	内部算法：按建造 R1 → 升级 R1 → 建造进攻怪兽 → 建造防守怪兽 → 发起攻击顺序判断。
+	内部算法：按建造 R1 → 升级 R1 → 建造进攻怪兽 → 发起攻击 → 建造防守怪兽顺序判断。
 	不负责：读取玩家状态、查找场景实例、显示 UI、绘制 Beam 或写入存档。
 ]]
 
@@ -23,6 +23,7 @@ export type StepId =
 
 export type Input = {
 	CompletedVersion: number,
+	AttackCompleted: boolean,
 	R1Level: number,
 	Money: number,
 	R1UpgradeCost: number,
@@ -41,6 +42,8 @@ export type Definition = {
 }
 
 TutorialProgression.CurrentVersion = 2
+-- 旧版 Version=1 表示旧教程已完成，其中已经包含首次攻击；兼容旧存档时视为攻击完成。
+TutorialProgression.AttackCompletedVersion = 1
 
 local DEFINITIONS: { [StepId]: Definition } = {
 	BuildR1 = table.freeze({
@@ -133,6 +136,7 @@ function TutorialProgression.Resolve(input: Input): StepId
 	assertNonNegativeNumber(input.R1UpgradeCost, "R1UpgradeCost")
 	assertNonNegativeNumber(input.FirstMonsterBuildCost, "FirstMonsterBuildCost")
 	assert(type(input.FirstMonsterBuilt) == "boolean", "FirstMonsterBuilt must be boolean")
+	assert(type(input.AttackCompleted) == "boolean", "AttackCompleted must be boolean")
 	assert(
 		type(input.FirstMonsterBuildInProgress) == "boolean",
 		"FirstMonsterBuildInProgress must be boolean"
@@ -165,12 +169,17 @@ function TutorialProgression.Resolve(input: Input): StepId
 			then "CollectForMonsterBuild"
 			else "BuildMonster"
 	end
+	local attackCompleted = input.AttackCompleted
+		or input.CompletedVersion >= TutorialProgression.AttackCompletedVersion
+	if not attackCompleted then
+		return "StartAttack"
+	end
 	if not input.FirstDefenseMonsterBuilt then
 		return if input.Money < input.FirstDefenseMonsterBuildCost
 			then "CollectForDefenseMonsterBuild"
 			else "BuildDefenseMonster"
 	end
-	return "StartAttack"
+	return "Complete"
 end
 
 function TutorialProgression.GetDefinition(stepId: StepId): Definition?

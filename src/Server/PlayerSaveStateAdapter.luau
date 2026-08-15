@@ -114,7 +114,11 @@ function PlayerSaveStateAdapter.Apply(player: Player, data, now: number?)
 		data.Rebirth.Count,
 		data.Rebirth.RunEarnings
 	)
-	TutorialProgressStateService.Restore(player, data.Tutorial.Version)
+	TutorialProgressStateService.Restore(
+		player,
+		data.Tutorial.Version,
+		data.Tutorial.AttackCompleted
+	)
 	TaskStateService.Restore(player, data.Tasks)
 	for _, definition in ZoneCatalog.GetAll() do
 		restoreZone(player, definition, data.Zones[definition.ZoneId])
@@ -290,6 +294,7 @@ function PlayerSaveStateAdapter.Capture(player: Player, now: number?)
 		},
 		Tutorial = {
 			Version = TutorialProgressStateService.Get(player),
+			AttackCompleted = TutorialProgressStateService.GetAttackCompleted(player),
 		},
 		Tasks = TaskStateService.Capture(player),
 		Zones = zones,

@@ -23,7 +23,10 @@ function PlayerSaveSchemaSpec.Run(): boolean
 	expect(next(default.GroupRewardClaims) == nil, "默认群组奖励领取记录必须为空")
 	expect(default.Rebirth.Count == 0, "默认重生次数必须为 0")
 	expect(default.Rebirth.RunEarnings == 0, "默认本轮累计收入必须为 0")
-	expect(default.Tutorial.Version == 0, "默认引导版本必须为 0")
+	expect(
+		default.Tutorial.Version == 0 and not default.Tutorial.AttackCompleted,
+		"默认引导状态错误"
+	)
 	expect(next(default.Tasks) == nil, "默认任务状态必须为空")
 	expect(next(default.Purchases.ProcessedPurchaseIds) == nil, "默认收据记录必须为空")
 	expect(default.Purchases.PendingMonsterUpgrade == nil, "默认付费怪兽意图必须为空")
@@ -51,7 +54,10 @@ function PlayerSaveSchemaSpec.Run(): boolean
 		"旧存档七日奖励默认值错误"
 	)
 	expect(migrated.Rebirth.Count == 0, "旧存档重生次数应默认为 0")
-	expect(migrated.Tutorial.Version == 0, "旧存档引导版本应默认为 0")
+	expect(
+		migrated.Tutorial.Version == 0 and not migrated.Tutorial.AttackCompleted,
+		"旧存档引导状态应默认为未完成"
+	)
 	expect(migrated.Purchases.PendingMonsterUpgrade == nil, "旧存档付费意图应默认为空")
 	expect(next(migrated.Tasks) == nil, "旧存档任务状态应默认为空")
 	expect(migrated.Monsters.Capacity == 4, "V0 容量迁移错误")
@@ -76,16 +82,32 @@ function PlayerSaveSchemaSpec.Run(): boolean
 	expect(invalidRebirth.Rebirth.Count == 0, "非法重生次数必须回退为 0")
 	expect(invalidRebirth.Rebirth.RunEarnings == 0, "非法本轮收入必须回退为 0")
 
-	local tutorial = PlayerSaveSchema.Normalize({
+	local tutorialVersion = PlayerSaveSchema.Normalize({
 		Version = 1,
 		Tutorial = { Version = 1 },
 	})
-	expect(tutorial.Tutorial.Version == 1, "引导完成版本规范化错误")
+	expect(
+		tutorialVersion.Tutorial.Version == 1
+			and not tutorialVersion.Tutorial.AttackCompleted,
+		"引导完成版本规范化错误"
+	)
+
+	local tutorial = PlayerSaveSchema.Normalize({
+		Version = 1,
+		Tutorial = { Version = 0, AttackCompleted = true },
+	})
+	expect(
+		tutorial.Tutorial.Version == 0 and tutorial.Tutorial.AttackCompleted,
+		"引导中间进度规范化错误"
+	)
 	local invalidTutorial = PlayerSaveSchema.Normalize({
 		Version = 1,
-		Tutorial = { Version = -1 },
+		Tutorial = { Version = -1, AttackCompleted = "bad" },
 	})
-	expect(invalidTutorial.Tutorial.Version == 0, "非法引导版本必须回退为 0")
+	expect(
+		invalidTutorial.Tutorial.Version == 0 and not invalidTutorial.Tutorial.AttackCompleted,
+		"非法引导状态必须回退为默认值"
+	)
 
 	local rewards = PlayerSaveSchema.Normalize({
 		Version = 1,

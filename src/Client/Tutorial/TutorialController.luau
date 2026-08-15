@@ -73,6 +73,7 @@ local function query(remote: RemoteFunction)
 	if type(response.R1UpgradeCost) ~= "number"
 		or type(response.FirstMonsterBuildCost) ~= "number"
 		or type(response.FirstMonsterBuildInProgress) ~= "boolean"
+		or type(response.AttackCompleted) ~= "boolean"
 		or type(response.FirstDefenseMonsterBuildCost) ~= "number"
 		or type(response.FirstDefenseMonsterBuilt) ~= "boolean"
 	then

@@ -259,7 +259,10 @@ function PlayerSaveSchema.Default()
 			Count = 0,
 			RunEarnings = 0,
 		},
-		Tutorial = { Version = 0 },
+		Tutorial = {
+			Version = 0,
+			AttackCompleted = false,
+		},
 		Zones = {},
 		Houses = {},
 		Monsters = {
@@ -349,6 +352,7 @@ function PlayerSaveSchema.Normalize(raw)
 		},
 		Tutorial = {
 			Version = nonNegativeInteger(tutorial.Version, 0),
+			AttackCompleted = tutorial.AttackCompleted == true,
 		},
 		Zones = normalizeZones(raw.Zones),
 		Houses = normalizeHouses(raw.Houses),
