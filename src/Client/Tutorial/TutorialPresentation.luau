@@ -2,7 +2,7 @@
 	职责：用 ReplicatedStorage/TutorialAssets 中的 PopUp 与 Beam 模板显示客户端引导表现。
 	输入：Create 接收 PlayerGui 和可选表现选项；Show 接收英文步骤定义和可选世界/UI 引导目标。
 	输出：可 Show/Hide/Destroy 的表现句柄；支持完整教程模式和仅箭头/Beam 模式。
-	内部算法：世界目标继续使用角色到目标的 Beam；UI/世界落点目标使用四块遮罩围出目标矩形，
+	内部算法：世界目标继续使用角色到目标的 Beam；UI/世界落点目标使用四块全屏遮罩围出目标矩形，
 	矩形和小手指每帧按当前 GUI 绝对位置或摄像机投影刷新。
 	不负责：步骤判断、服务器查询、Plot/按钮定位、攻击输入或完成持久化。
 ]]
@@ -107,9 +107,10 @@ local function createOverlayGui(
 	gui.DisplayOrder = displayOrder
 	gui.ZIndexBehavior = Enum.ZIndexBehavior.Global
 	gui.IgnoreGuiInset = true
-	gui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets
+	-- 遮罩必须覆盖刘海、底部安全区在内的整个游戏画面；目标坐标会按本 Overlay 原点换算。
+	gui.ScreenInsets = Enum.ScreenInsets.None
 	gui.SafeAreaCompatibility = Enum.SafeAreaCompatibility.FullscreenExtension
-	gui.ClipToDeviceSafeArea = true
+	gui.ClipToDeviceSafeArea = false
 	gui.AutoLocalize = false
 	gui.Parent = playerGui
 	return gui
