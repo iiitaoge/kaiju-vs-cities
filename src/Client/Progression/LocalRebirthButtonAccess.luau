@@ -2,11 +2,14 @@
 	职责：从 ReplicatedStorage.UI.Rebith 克隆并解析重生按钮的本地 BillboardGui。
 	输入：Rebirth-Button Model，以及 ReplicatedStorage.UI.Rebith 模板。
 	输出：客户端控制器需要的 Pull、BillboardGui 和新 UI 控件引用；结构不符时直接报合同错误。
-	内部算法：关闭按钮模型中旧的 BillboardGui，克隆新模板，再按新 UI 的固定层级解析。
+	内部算法：关闭按钮模型中旧的 BillboardGui，克隆新模板，再按新 UI 的固定层级解析；
+		货币图标/文本行使用固定比例槽位，避免 Billboard 缩放时脱节。
 	不负责：等待场景、触碰、文本计算、Remote 或重生。
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local LocalCurrencyInfoRowLayout = require(script.Parent.Parent.UI.LocalCurrencyInfoRowLayout)
 
 local LocalRebirthButtonAccess = {}
 
@@ -63,6 +66,8 @@ function LocalRebirthButtonAccess.Resolve(button: Model)
 	local actionTip = child(moneyFrame, "Tip", "TextLabel") :: TextLabel
 	local moneyContent = child(moneyFrame, "Money", "Frame")
 	local requirementValue = child(moneyContent, "Val", "TextLabel") :: TextLabel
+	LocalCurrencyInfoRowLayout.Configure(actionContent, false, true)
+	LocalCurrencyInfoRowLayout.Configure(moneyContent, false, true)
 
 	local buyIcon = buyFrame:FindFirstChild("Icon")
 	if buyIcon and not buyIcon:IsA("GuiObject") then

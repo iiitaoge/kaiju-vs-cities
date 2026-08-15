@@ -20,6 +20,7 @@ local CompactNumberFormatter = require(
 	ReplicatedStorage.Shared.UI.CompactNumberFormatter
 )
 local CurrencyIconRenderer = require(script.Parent.CurrencyIconRenderer)
+local LocalCurrencyInfoRowLayout = require(script.Parent.LocalCurrencyInfoRowLayout)
 local DiamondProtocol = require(ReplicatedStorage.Shared.Economy.DiamondProtocol)
 local MoneyProtocol = require(ReplicatedStorage.Shared.Economy.MoneyProtocol)
 local VehicleCatalog = require(ReplicatedStorage.Shared.Vehicle.VehicleCatalog)
@@ -770,61 +771,6 @@ local function setVehicleCardWidth(unit: GuiObject)
 	end
 end
 
--- 输入：货币按钮内部的横向 Info 行，以及是否包含 SCRAP 这类标题。
--- 输出：标题、图标、数值始终在按钮边界内的布局。
--- 内部算法：取消文本的横向自动扩展，按固定比例分配槽位，TextScaled 只在槽位内缩放；
--- 同时保留较小的 TextSize 作为模板属性被恢复时的安全值，避免标题溢出到相邻控件。
-local function configureCurrencyInfoRow(info: GuiObject, hasTitle: boolean)
-	local layout = info:FindFirstChildOfClass("UIListLayout")
-	if not layout then
-		return
-	end
-
-	info.ClipsDescendants = true
-	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	layout.VerticalAlignment = Enum.VerticalAlignment.Center
-	layout.Padding = UDim.new(0.01, 0)
-
-	local title = info:FindFirstChild("Title")
-	local icon = info:FindFirstChild("Icon")
-	local value = info:FindFirstChild("Val")
-
-	local function configureText(target: Instance?, widthScale: number)
-		if not target or not target:IsA("TextLabel") and not target:IsA("TextButton") then
-			return
-		end
-		local textTarget = target :: TextLabel | TextButton
-		textTarget.AutomaticSize = Enum.AutomaticSize.None
-		textTarget.Size = UDim2.fromScale(widthScale, 0.8)
-		textTarget.TextSize = 16
-		textTarget.TextScaled = true
-		textTarget.TextWrapped = false
-		textTarget.ClipsDescendants = true
-		textTarget.TextXAlignment = Enum.TextXAlignment.Center
-		textTarget.TextYAlignment = Enum.TextYAlignment.Center
-	end
-
-	local function configureIcon(target: Instance?, widthScale: number)
-		if not target or not target:IsA("ImageLabel") and not target:IsA("ImageButton") then
-			return
-		end
-		local imageTarget = target :: ImageLabel | ImageButton
-		imageTarget.AutomaticSize = Enum.AutomaticSize.None
-		imageTarget.Size = UDim2.fromScale(widthScale, 0.8)
-	end
-
-	if hasTitle and title and icon and value then
-		configureText(title, 0.38)
-		configureIcon(icon, 0.16)
-		configureText(value, 0.34)
-	elseif icon and value then
-		configureIcon(icon, 0.24)
-		configureText(value, 0.58)
-	else
-		configureText(value, 0.8)
-	end
-end
-
 local function configureVehicleList()
 	local current = references
 	if not current then
@@ -1019,7 +965,7 @@ local function renderCrateCard(crate, layoutOrder: number)
 	local crateConfig = VehicleCrateConfigs.Get(crateId)
 	local iconName = if crateConfig then crateConfig.IconName else ""
 	CurrencyIconRenderer.ApplyNamed(card.Icon, iconName)
-	configureCurrencyInfoRow(card.DiamondInfo, false)
+	LocalCurrencyInfoRowLayout.Configure(card.DiamondInfo, false)
 	card.TitleValue.Text = tostring(crate.Name or crateId)
 	card.DiamondValue.Text = formatBalance(crate.DiamondPrice)
 	local robuxSingleProductId = if type(crate.RobuxSingleProductId) == "number"
@@ -1279,8 +1225,8 @@ local function renderVehicleCard(vehicle)
 	card.UpgradeValue.Text = if level >= VehicleProgressionConfigs.MaxLevel
 		then "MAX"
 		else formatBalance(vehicle.UpgradeCost)
-	configureCurrencyInfoRow(card.DestroyInfo, true)
-	configureCurrencyInfoRow(card.UpgradeInfo, false)
+	LocalCurrencyInfoRowLayout.Configure(card.DestroyInfo, true)
+	LocalCurrencyInfoRowLayout.Configure(card.UpgradeInfo, false)
 	card.DeployValue.Text = if active then "Recall" else "Deploy"
 	setButtonEnabled(card.DestroyButton, not active and not vehicleActionBusy[instanceId])
 	setButtonEnabled(

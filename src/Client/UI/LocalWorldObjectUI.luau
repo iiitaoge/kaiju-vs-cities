@@ -15,6 +15,7 @@ local UIModeVisibilityRules = require(
 	ReplicatedStorage.Shared.UI.UIModeVisibilityRules
 )
 local LocalUIVisibilityGate = require(script.Parent.LocalUIVisibilityGate)
+local LocalCurrencyInfoRowLayout = require(script.Parent.LocalCurrencyInfoRowLayout)
 
 local template = ReplicatedStorage:WaitForChild("WorldObjectUI")
 assert(template:IsA("Attachment"), "ReplicatedStorage.WorldObjectUI 必须是 Attachment")
@@ -68,6 +69,7 @@ local function createAt(
 	end
 	local money = requireChild(panel, "Money", "Frame") :: Frame
 	local moneyValue = requireChild(money, "Val", "TextLabel") :: TextLabel
+	LocalCurrencyInfoRowLayout.Configure(money, false, true)
 	if billboardOptions then
 		if billboardOptions.AlwaysOnTop ~= nil then
 			billboard.AlwaysOnTop = billboardOptions.AlwaysOnTop
