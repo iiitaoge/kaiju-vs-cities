@@ -41,8 +41,13 @@ local function playTweens(tweens, tweenInfo, pull, pullCFrame, pullColor, base, 
 	end
 end
 
--- onActivated：按钮第一次踩下时调用的可选函数。
-function LocalButtonController.Bind(button: Model, onActivated: ((string) -> ())?)
+-- onActivated：按钮第一次可激活踩下时调用的可选函数。
+-- onTouchChanged：本地角色进入或离开按钮时调用；不受按钮业务状态限制。
+function LocalButtonController.Bind(
+	button: Model,
+	onActivated: ((string) -> ())?,
+	onTouchChanged: ((boolean) -> ())?
+)
 	assert(button:IsA("Model"), "LocalButtonController.Bind expected a Model")
 
 	local pull = button:FindFirstChild("Pull")
@@ -61,6 +66,7 @@ function LocalButtonController.Bind(button: Model, onActivated: ((string) -> ())
 	local inputEnabled = true
 	local activationConsumed = false
 	local isPressed = false
+	local isTouching = false
 	local isDestroyed = false
 
 	local function setPressed(pressed: boolean)
@@ -107,6 +113,19 @@ function LocalButtonController.Bind(button: Model, onActivated: ((string) -> ())
 		return character ~= nil and part:IsDescendantOf(character)
 	end
 
+	local function setTouching(touching: boolean)
+		if isDestroyed then
+			return
+		end
+
+		local changed = isTouching ~= touching
+		isTouching = touching
+		if changed and onTouchChanged then
+			onTouchChanged(touching)
+		end
+		setPressed(touching)
+	end
+
 	local function refreshTouchingParts()
 		table.clear(touchingParts)
 		activationConsumed = false
@@ -115,7 +134,7 @@ function LocalButtonController.Bind(button: Model, onActivated: ((string) -> ())
 				touchingParts[part] = true
 			end
 		end
-		setPressed(next(touchingParts) ~= nil)
+		setTouching(next(touchingParts) ~= nil)
 	end
 
 	table.insert(connections, pull.Touched:Connect(function(part)
@@ -124,7 +143,7 @@ function LocalButtonController.Bind(button: Model, onActivated: ((string) -> ())
 				activationConsumed = false
 			end
 			touchingParts[part] = true
-			setPressed(true)
+			setTouching(true)
 		end
 	end))
 
@@ -134,14 +153,14 @@ function LocalButtonController.Bind(button: Model, onActivated: ((string) -> ())
 			if next(touchingParts) == nil then
 				activationConsumed = false
 			end
-			setPressed(next(touchingParts) ~= nil)
+			setTouching(next(touchingParts) ~= nil)
 		end
 	end))
 
 	table.insert(connections, Players.LocalPlayer.CharacterAdded:Connect(function()
 		table.clear(touchingParts)
 		activationConsumed = false
-		setPressed(false)
+		setTouching(false)
 		task.defer(refreshTouchingParts)
 	end))
 	task.defer(refreshTouchingParts)
@@ -177,7 +196,7 @@ function LocalButtonController.Bind(button: Model, onActivated: ((string) -> ())
 		if next(touchingParts) == nil then
 			activationConsumed = false
 		end
-		setPressed(next(touchingParts) ~= nil)
+		setTouching(next(touchingParts) ~= nil)
 	end
 
 	function handle:SetInputEnabled(enabled: boolean)
@@ -192,6 +211,10 @@ function LocalButtonController.Bind(button: Model, onActivated: ((string) -> ())
 			return
 		end
 
+		if isTouching and onTouchChanged then
+			onTouchChanged(false)
+		end
+		isTouching = false
 		isDestroyed = true
 
 		for _, connection in ipairs(connections) do

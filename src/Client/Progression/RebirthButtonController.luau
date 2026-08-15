@@ -124,17 +124,27 @@ function RebirthButtonController.Start()
 	ui.Billboard.Adornee = ui.Pull
 	placeBillboardAboveButton(button, ui.Pull, ui.Billboard)
 	attachBillboardToLocalPlayerGui(ui.Billboard)
-	ui.Billboard.Enabled = true
+	ui.Billboard.Enabled = false
 	local visibilityGate = LocalUIVisibilityGate.Create(
 		UIModeVisibilityRules.Channels.Gameplay,
 		function(nextVisible)
 			ui.Billboard.Enabled = nextVisible
 		end,
-		true
+		false
 	)
 
-	local physicalButton = LocalButtonController.Bind(button)
-	local visible = true
+	local isStandingOnButton = false
+	local physicalButton = LocalButtonController.Bind(button, nil, function(touching)
+		local wasStandingOnButton = isStandingOnButton
+		isStandingOnButton = touching
+		visibilityGate:SetDesiredVisible(touching)
+		if touching and not wasStandingOnButton then
+			SoundController.Play("Click")
+			AnalyticsIntentClient.Record(
+				AnalyticsIntentProtocol.Intents.RebirthOpened
+			)
+		end
+	end)
 	local busy = false
 	local lastSnapshot = nil
 
@@ -202,7 +212,7 @@ function RebirthButtonController.Start()
 	end
 
 	local function executeRebirth()
-		if busy or not visible then
+		if busy or not isStandingOnButton then
 			return
 		end
 
@@ -231,10 +241,6 @@ function RebirthButtonController.Start()
 
 	ui.ActionButton.Activated:Connect(executeRebirth)
 
-	SoundController.Play("Click")
-	AnalyticsIntentClient.Record(
-		AnalyticsIntentProtocol.Intents.RebirthOpened
-	)
 	task.spawn(function()
 		while Players.LocalPlayer.Parent and ui.Billboard.Parent do
 			refresh()
