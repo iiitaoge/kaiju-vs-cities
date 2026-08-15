@@ -1,6 +1,6 @@
 --[[
 	职责：把服务器权威按钮操作快照映射为 WorldObjectUI 文本。
-	输入：IncomeUnlock、IncomePrimary、IncomeBoost 或带 Role 的 MonsterBuild 规范化快照。
+	输入：带 RegionId 的 IncomeUnlock、IncomePrimary、IncomeBoost 或带 Role 的 MonsterBuild 规范化快照。
 	输出：Text1～Text5 与 Money.Val 的完整显示快照。
 	内部算法：Unlock/建造动作显示语义与现金；MonsterBuild 按 Attack/Defense 显示不同文案；
 		Boost 只显示下一笔顺序事务；付费占位永远隐藏。
@@ -44,6 +44,15 @@ local function validCost(cost): boolean
 	return type(cost) == "number" and cost == cost and cost < math.huge and cost >= 0
 end
 
+local function unlockLabel(regionId): string?
+	if type(regionId) ~= "string" then
+		return nil
+	end
+
+	local regionNumber = string.match(regionId, "^R(%d+)$")
+	return if regionNumber then "Unlock Region " .. regionNumber else nil
+end
+
 function ButtonWorldUIPresentationRules.Resolve(snapshot)
 	if type(snapshot) ~= "table" or type(snapshot.Kind) ~= "string" then
 		return { Enabled = false }
@@ -75,7 +84,10 @@ function ButtonWorldUIPresentationRules.Resolve(snapshot)
 		if snapshot.Unlocked ~= false or not validCost(snapshot.Cost) then
 			return { Enabled = false }
 		end
-		return output("Unlock", nil, nil, nil, true, snapshot.Cost)
+		local label = unlockLabel(snapshot.RegionId)
+		return if label
+			then output(label, nil, nil, nil, true, snapshot.Cost)
+			else { Enabled = false }
 	end
 
 	if snapshot.Kind == "IncomeBoost" then

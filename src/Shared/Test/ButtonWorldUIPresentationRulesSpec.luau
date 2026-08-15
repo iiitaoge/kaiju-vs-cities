@@ -19,14 +19,16 @@ function ButtonWorldUIPresentationRulesSpec.Run(): boolean
 
 	local unlock = ButtonWorldUIPresentationRules.Resolve({
 		Kind = "IncomeUnlock",
+		RegionId = "R3",
 		Cost = 500,
 		Unlocked = false,
 	})
-	assert(unlock.Enabled and unlock.Texts.Text1.Text == "Unlock", "区域解锁文本错误")
+	assert(unlock.Enabled and unlock.Texts.Text1.Text == "Unlock Region 3", "区域解锁文本错误")
 	assert(unlock.Money.Text == "500", "区域解锁现金价格错误")
 
 	local unlocked = ButtonWorldUIPresentationRules.Resolve({
 		Kind = "IncomeUnlock",
+		RegionId = "R3",
 		Cost = 500,
 		Unlocked = true,
 	})

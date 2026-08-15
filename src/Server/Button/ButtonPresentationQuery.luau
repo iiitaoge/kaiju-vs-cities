@@ -42,6 +42,7 @@ function ButtonPresentationQuery.Get(player: Player, action)
 		end
 		return ButtonWorldUIPresentationRules.Resolve({
 			Kind = "IncomeUnlock",
+			RegionId = action.RegionId,
 			Cost = snapshot.Unlock.Cost,
 			Unlocked = snapshot.Unlocked,
 		})
