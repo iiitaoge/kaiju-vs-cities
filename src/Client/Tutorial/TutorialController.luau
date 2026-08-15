@@ -1,6 +1,6 @@
 --[[
 	职责：轮询服务器权威引导步骤，解析本地场景目标并驱动 Tip、Beam 与点击引导表现。
-	输入：Start 无参数；状态来自 TutorialSnapshot、攻击选择 HUD 与本地攻击选择状态。
+	输入：Start 无参数；状态来自 TutorialSnapshot、攻击选择 HUD、本地攻击选择状态和怪兽管理面板显隐。
 	输出：未完成玩家的英文引导；首次完成时短暂显示完成提示后清理，并提供完成提示结束信号。
 	内部算法：服务端步骤 → 本地 ChooseTarget 子步骤 → 世界目标/UI 目标 → TutorialPresentation。
 	不负责：修改金钱/区域/怪兽、提交攻击、判定完成或写入存档。
@@ -128,6 +128,11 @@ local function isVisibleGuiObject(guiObject: GuiObject?): boolean
 		current = current.Parent
 	end
 	return true
+end
+
+local function isMonsterManagementPanelVisible(playerGui: PlayerGui): boolean
+	local management = LocalMonsterManagementPanelAccess.Resolve(playerGui)
+	return management ~= nil and isVisibleGuiObject(management.Panel)
 end
 
 local function findModelPart(model: Model?): BasePart?
@@ -317,6 +322,9 @@ function TutorialController.Start()
 
 			if response.StepId == "Complete" then
 				if hadActiveTutorial and presentation then
+					presentation.SetPopupVisible(
+						not isMonsterManagementPanelVisible(playerGui)
+					)
 					presentation.Show(
 						assert(TutorialProgression.GetDefinition("Complete")),
 						nil
@@ -340,6 +348,9 @@ function TutorialController.Start()
 				end
 			end
 
+			presentation.SetPopupVisible(
+				not isMonsterManagementPanelVisible(playerGui)
+			)
 			local stepId = resolveLocalStep(response.StepId, playerGui)
 			local definition = resolveDefinition(stepId, response)
 			local plot = LocalPlayerCityRuntimeAccess.FindPlot(player.UserId)

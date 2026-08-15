@@ -1,7 +1,7 @@
 --[[
 	职责：用 ReplicatedStorage/TutorialAssets 中的 PopUp 与 Beam 模板显示客户端引导表现。
-	输入：Create 接收 PlayerGui 和可选表现选项；Show 接收英文步骤定义和可选世界/UI 引导目标。
-	输出：可 Show/Hide/Destroy 的表现句柄；支持完整教程模式和仅箭头/Beam 模式。
+	输入：Create 接收 PlayerGui 和可选表现选项；Show 接收英文步骤定义和可选世界/UI 引导目标；SetPopupVisible 接收提示框显隐。
+	输出：可 Show/Hide/SetPopupVisible/Destroy 的表现句柄；支持完整教程模式和仅箭头/Beam 模式。
 	内部算法：世界目标继续使用角色到目标的 Beam；UI/世界落点目标使用四块全屏遮罩围出目标矩形，
 	矩形和小手指每帧按当前 GUI 绝对位置或摄像机投影刷新。
 	不负责：步骤判断、服务器查询、Plot/按钮定位、攻击输入或完成持久化。
@@ -46,6 +46,7 @@ export type GuideTarget = {
 export type Handle = {
 	Show: (Definition, GuideTarget?) -> (),
 	Hide: () -> (),
+	SetPopupVisible: (boolean) -> (),
 	Destroy: () -> (),
 }
 
@@ -394,6 +395,7 @@ function TutorialPresentation.Create(
 	local currentGuideTarget: GuideTarget? = nil
 	local clickGuideRequested = false
 	local presentationVisible = false
+	local popupVisible = true
 	local connections: { RBXScriptConnection } = {}
 	local cameraConnection: RBXScriptConnection? = nil
 	local renderConnection: RBXScriptConnection? = nil
@@ -473,8 +475,15 @@ function TutorialPresentation.Create(
 		beam.Parent = originAttachment
 	end
 
+	local function updatePopupVisibility()
+		if gui then
+			gui.Enabled = presentationVisible and popupVisible
+		end
+	end
+
 	local function setClickGuideVisible(visible: boolean)
 		presentationVisible = visible
+		updatePopupVisibility()
 		clickMaskGui.Enabled = showClickMask and visible and clickGuideRequested
 		clickHandGui.Enabled = showClickHand and visible and clickGuideRequested
 	end
@@ -623,9 +632,6 @@ function TutorialPresentation.Create(
 	visibilityGate = LocalUIVisibilityGate.Create(
 		UIModeVisibilityRules.Channels.Tutorial,
 		function(visible)
-			if gui then
-				gui.Enabled = visible
-			end
 			setClickGuideVisible(visible)
 		end,
 		false
@@ -654,6 +660,15 @@ function TutorialPresentation.Create(
 		currentGuideTarget = nil
 		clickGuideRequested = false
 		clearBeam()
+	end
+
+	function handle.SetPopupVisible(visible: boolean)
+		if destroyed then
+			return
+		end
+		assert(type(visible) == "boolean", "visible 必须是 boolean")
+		popupVisible = visible
+		updatePopupVisibility()
 	end
 
 	function handle.Destroy()
